@@ -1,0 +1,12 @@
+#!/bin/bash
+# cmd/uninstall_init —— 卸载前：停止运行中的服务
+set -u
+APP_DIR="${TRIM_APPDEST}"
+PID_FILE="${TRIM_PKGVAR}/vditor.pid"
+if [ -f "$PID_FILE" ]; then
+  p="$(cat "$PID_FILE" 2>/dev/null | tr -d '[:space:]')"
+  [ -n "$p" ] && kill "$p" 2>/dev/null
+  rm -f "$PID_FILE"
+fi
+pkill -f "${APP_DIR}/server.py" 2>/dev/null
+exit 0

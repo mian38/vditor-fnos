@@ -1,0 +1,10 @@
+#!/bin/bash
+# cmd/install_init —— 安装前检查：确认系统具备 python3
+set -u
+
+if ! command -v python3 >/dev/null 2>&1 && [ ! -x /usr/bin/python3 ]; then
+  echo "未检测到 python3。请在飞牛『应用中心』搜索并安装 Python3 后，再安装本应用。" > "$TRIM_TEMP_LOGFILE"
+  exit 1
+fi
+
+exit 0

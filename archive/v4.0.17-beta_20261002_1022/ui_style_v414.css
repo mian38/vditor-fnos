@@ -1,0 +1,470 @@
+/* ==========================================================
+   设计变量：全站唯一色板 / 字号 / 圆角 / 阴影
+   配色取自 Vditor 官方浅色主题（classic），并把同一套值
+   反向同步给 Vditor 自身的 CSS 变量，确保编辑器与外围 UI 一致。
+   ========================================================== */
+:root {
+    --ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --ui-mono: Consolas, "Courier New", SFMono-Regular, Menlo, monospace;
+
+    --fs-xs: 11px;      /* 极小型标注 */
+    --fs-sm: 12px;      /* 次级说明 */
+    --fs-md: 13px;      /* 正文 / 控件 */
+    --fs-lg: 14px;      /* 分区标题 */
+    --fs-xl: 18px;      /* 弹层标题 */
+
+    --c-text: #24292e;        /* 主文本 = Vditor --textarea-text-color */
+    --c-text-2: #586069;      /* 次级文本 = Vditor --toolbar-icon-color */
+    --c-text-3: #8a9099;      /* 三级 / 占位提示 */
+
+    --c-bg: #fff;
+    --c-bg-subtle: #f6f8fa;   /* = Vditor --toolbar-background-color */
+    --c-bg-fill: #fafbfc;     /* = Vditor --textarea-background-color */
+
+    --c-border: #d1d5da;      /* = Vditor --border-color */
+    --c-border-2: #eaecef;    /* 更浅的分隔线 = Vditor --heading-border-color */
+
+    --c-brand: #4285f4;       /* = Vditor --toolbar-icon-hover-color */
+    --c-brand-hover: #1a73e8;
+    --c-brand-soft: #e8f0fe;
+    --c-danger: #d73a49;
+    --c-danger-hover: #b92534;
+    --c-success: #237804;
+    --c-info: #1a4ed8;
+
+    --r-sm: 4px;              /* 行内小按钮 */
+    --r: 6px;                 /* 常规控件 */
+    --r-lg: 12px;             /* 卡片 */
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.10);
+    --mask: rgba(27,31,35,.55);
+}
+
+/* 与 Vditor 官方浅色主题对齐（覆盖 Vditor 自身变量取值，避免两边各说各话） */
+.vditor {
+    --border-color: var(--c-border);
+    --toolbar-background-color: var(--c-bg-subtle);
+    --toolbar-icon-color: var(--c-text-2);
+    --toolbar-icon-hover-color: var(--c-brand);
+    --panel-background-color: var(--c-bg);
+}
+
+* { box-sizing: border-box; }
+html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: var(--ui-font); font-size: var(--fs-md); color: var(--c-text); background: var(--c-bg);
+}
+button, input, select { font-family: inherit; }
+code { font-family: var(--ui-mono); }
+#app { display: flex; height: 100vh; transition: all .2s; }
+#app.sidebar-collapsed #sidebar { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
+
+/* ---------------- 侧边栏 ---------------- */
+#sidebar {
+    width: 280px; flex: 0 0 auto; background: var(--c-bg-subtle); border-right: 1px solid var(--c-border);
+    display: flex; flex-direction: column; min-height: 0; transition: all .2s; overflow: hidden;
+}
+#sidebar .side-head {
+    display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--c-border);
+}
+#sidebar .side-head .title { font-weight: 600; font-size: var(--fs-lg); color: var(--c-text); margin-right: auto; }
+#side-scroll { overflow-y: auto; flex: 1 1 auto; padding: 6px; }
+.root-block { margin-bottom: 10px; }
+.root-head {
+    display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+    font-weight: 600; font-size: var(--fs-md); color: var(--c-text);
+    background: var(--c-border-2); border-radius: var(--r);
+}
+.root-head .rname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.root-head .rpath { font-weight: 400; font-size: var(--fs-xs); color: var(--c-text-3); margin-left: auto; }
+/* 分区头部「+」新建按钮：与主按钮同色，仅尺寸为行内小按钮 */
+.root-head .rnew {
+    background: var(--c-brand); color: #fff; border: none; border-radius: var(--r-sm);
+    cursor: pointer; font-size: var(--fs-xs); padding: 2px 7px; flex: 0 0 auto; line-height: 1.4;
+}
+.root-head .rnew:hover { background: var(--c-brand-hover); }
+.root-warn { font-size: var(--fs-xs); color: var(--c-danger); padding: 4px 8px; }
+#file-list { list-style: none; margin: 4px 0 0; padding: 0 0 0 4px; }
+#file-list li {
+    padding: 7px 10px; border-radius: var(--r); font-size: var(--fs-md); cursor: pointer; line-height: 1.4;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--c-text);
+}
+#file-list li:hover { background: var(--c-border-2); }
+#file-list li.active { background: var(--c-brand-soft); color: var(--c-brand-hover); font-weight: 600; }
+#side-tip { padding: 10px 14px; font-size: var(--fs-sm); color: var(--c-text-3); border-top: 1px solid var(--c-border-2); line-height: 1.5; }
+
+/* ---------------- 主区 / 顶栏（浅色，与 Vditor 工具栏同系） ---------------- */
+#main { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#topbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; background: var(--c-bg-subtle); color: var(--c-text);
+    border-bottom: 1px solid var(--c-border); flex: 0 0 auto;
+    overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap;
+}
+#topbar::-webkit-scrollbar { height: 0; }
+#topbar .fname { font-size: var(--fs-sm); color: var(--c-text-2); white-space: nowrap; flex: 0 0 auto; min-width: 0; }
+#topbar .fname b { color: var(--c-text); font-weight: 600; }
+#topbar .top-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
+#topbar .user { font-size: var(--fs-sm); color: var(--c-text-3); flex: 0 0 auto; }
+/* 顶栏字数统计：双口径（正文 / 含语法）+ 预计阅读时间，移动端也与顶栏内容同行 */
+#topbar .word-counter {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: var(--fs-sm); color: var(--c-text-3);
+    white-space: nowrap; flex: 0 0 auto;
+    padding: 3px 10px; border-radius: var(--r-sm);
+    background: var(--c-bg-fill); border: 1px solid var(--c-border-2);
+}
+#topbar .word-counter b { color: var(--c-text); font-weight: 600; }
+#topbar .word-counter .wc-sep { color: var(--c-border); }
+/* 隐藏 Vditor 内置右下角字数，改用顶栏统一统计（双口径 + 阅读时间） */
+.vditor-counter { display: none !important; }
+/* 移动端下拉面板脱离裁剪容器后，强制 position:fixed 不被内联 absolute 覆盖，浮层覆盖编辑区 */
+#vditor { flex: 1 1 auto; min-height: 0; }
+
+/* ---------------- 通用控件：按钮 ---------------- */
+#sidebar .side-head button,
+#topbar button,
+.modal-card button.action,
+.modal-card .danger,
+.frow button,
+#login-card button,
+#folders-list .fdel,
+#history-list .vitem button {
+    font-family: inherit; font-size: var(--fs-md); line-height: 1.4;
+    border: 1px solid transparent; border-radius: var(--r); padding: 7px 14px;
+    cursor: pointer; white-space: nowrap;
+    transition: background-color .15s, border-color .15s, color .15s;
+}
+#sidebar .side-head button:active,
+#topbar button:active,
+.modal-card button.action:active,
+.frow button:active,
+#login-card button:active { transform: translateY(1px); }
+
+/* 主按钮 */
+#sidebar .side-head button,
+#topbar button,
+.modal-card button.action,
+.frow button,
+#login-card button { background: var(--c-brand); color: #fff; }
+#sidebar .side-head button:hover,
+#topbar button:hover,
+.modal-card button.action:hover,
+.frow button:hover,
+#login-card button:hover { background: var(--c-brand-hover); }
+
+/* 次级按钮（描边式） */
+#topbar button.ghost,
+.modal-card button.ghost,
+#sidebar .side-head button.ghost {
+    background: #fff; color: var(--c-text-2); border-color: var(--c-border);
+}
+#topbar button.ghost:hover,
+.modal-card button.ghost:hover,
+#sidebar .side-head button.ghost:hover { color: var(--c-brand); border-color: var(--c-brand); }
+
+/* 危险按钮 */
+.modal-card .danger { background: var(--c-danger); color: #fff; }
+.modal-card .danger:hover { background: var(--c-danger-hover); }
+
+/* ---------------- 通用控件：输入框 ---------------- */
+#login-card input,
+.set-num input,
+.set-pw input,
+.frow input,
+#set-page-title,
+#set-favicon {
+    font-family: inherit; font-size: var(--fs-md); color: var(--c-text);
+    background: var(--c-bg); border: 1px solid var(--c-border); border-radius: var(--r);
+    padding: 7px 10px; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+}
+/* 「网页标题」输入框过短：与标签同为整行宽度，左右间距一致 */
+#set-page-title { width: 100%; }
+#login-card input:focus,
+.set-num input:focus,
+.set-pw input:focus,
+.frow input:focus,
+#set-page-title:focus { border-color: var(--c-brand); box-shadow: 0 0 0 3px var(--c-brand-soft); }
+#login-card input::placeholder,
+.set-num input::placeholder,
+.set-pw input::placeholder,
+.frow input::placeholder,
+#set-page-title::placeholder { color: var(--c-text-3); }
+
+/* ---------------- 通用弹层 ---------------- */
+.modal-mask {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--mask); z-index: 10001;
+    display: none; align-items: center; justify-content: center; padding: 14px;
+}
+/* 二次确认对话框：始终置顶于其它弹层（如文档信息卡）之上，避免被遮挡 */
+.modal-mask#confirm-mask { z-index: 10010; }
+.modal-card {
+    background: var(--c-bg); border: 1px solid var(--c-border); border-radius: var(--r-lg);
+    padding: 22px 24px; width: 520px; max-width: 92vw;
+    max-height: 86vh; box-shadow: var(--shadow); overflow-y: auto;
+}
+.modal-card h2 { margin: 0; font-size: var(--fs-xl); color: var(--c-text); }
+.set-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.set-head .close {
+    margin-left: auto; background: #fff; color: var(--c-text-2);
+    border: 1px solid var(--c-border); border-radius: var(--r);
+    width: 30px; height: 30px; font-size: 18px; line-height: 1; cursor: pointer; padding: 0;
+}
+.set-head .close:hover { color: var(--c-brand); border-color: var(--c-brand); }
+
+/* ---------------- 设置面板：区块与控件统一 ---------------- */
+.set-sec { border-top: 1px solid var(--c-border-2); padding: 16px 0; }
+.set-sec:first-of-type { border-top: none; }
+.set-sec h3 { margin: 0 0 8px; font-size: var(--fs-lg); color: var(--c-text); font-weight: 600; }
+.set-sec h4 { margin: 14px 0 6px; font-size: var(--fs-md); color: var(--c-text-2); font-weight: 600; }
+.set-sec .sub { margin: 0 0 10px; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.6; }
+/* 统一所有字段标签（开关型 label 由 .set-toggle 自行定义，不在此列） */
+.set-sec label:not(.set-toggle),
+.set-num label,
+.set-pw label,
+#login-card label {
+    display: block; font-size: var(--fs-sm); color: var(--c-text-2); margin: 10px 0 5px;
+}
+.set-toggle {
+    display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-md);
+    color: var(--c-text); margin: 8px 0; cursor: pointer; line-height: 1.5;
+}
+.set-toggle input { accent-color: var(--c-brand); width: 14px; height: 14px; margin: 3px 0 0; flex: 0 0 auto; }
+.set-num { margin: 12px 0; }
+.set-num input { width: 160px; }
+.set-pw { margin-top: 12px; }
+.set-pw input { width: 100%; }
+/* 设置面板内的操作按钮（含「修改密码」与「维护」各按钮）：统一上下 10px、左右 8px 间距，避免拥挤 */
+.set-sec button.action { margin: 10px 8px 0 0; }
+.set-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    border-top: 1px solid var(--c-border-2); padding-top: 14px;
+}
+#pw-err, #folders-err { color: var(--c-danger); font-size: var(--fs-sm); margin-top: 8px; min-height: 14px; }
+
+/* 文件夹列表 */
+#folders-list .fitem {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--c-border);
+    border-radius: var(--r); margin-bottom: 6px; font-size: var(--fs-md); background: #fff;
+}
+#folders-list .fitem .fname { font-weight: 600; color: var(--c-text); flex: 0 0 auto; }
+#folders-list .fitem .fpath {
+    color: var(--c-text-3); font-size: var(--fs-xs); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto;
+}
+#folders-list .fitem .fdel {
+    background: var(--c-danger); color: #fff; border-radius: var(--r-sm);
+    font-size: var(--fs-xs); padding: 3px 8px; flex: 0 0 auto;
+}
+#folders-list .fitem .fdel:hover { background: var(--c-danger-hover); }
+/* 「恢复」与「删除/隐藏」同为行内小按钮，仅配色不同 */
+#folders-list .fitem .fdel.restore { background: var(--c-brand); }
+#folders-list .fitem .fdel.restore:hover { background: var(--c-brand-hover); }
+.frow { display: flex; gap: 8px; margin-top: 8px; }
+.frow input { flex: 1 1 auto; min-width: 0; }
+.frow button { flex: 0 0 auto; padding: 8px 14px; }
+/* 两列布局（分区显示名 / 绝对路径）：路径列更宽，窄屏自动堆叠以免占位文字被截断 */
+.frow.frow-2col {
+    display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 8px;
+}
+@media screen and (max-width: 520px) {
+    .frow.frow-2col { grid-template-columns: 1fr; }
+}
+
+/* 登录日志 */
+#log-box {
+    margin-top: 10px; max-height: 220px; overflow-y: auto;
+    border: 1px solid var(--c-border-2); border-radius: var(--r); background: #fff;
+}
+#log-box .logitem {
+    display: flex; gap: 10px; font-size: var(--fs-sm); padding: 7px 10px;
+    border-bottom: 1px solid var(--c-border-2);
+}
+#log-box .logitem:last-child { border-bottom: none; }
+#log-box .logitem .lt { color: var(--c-text-3); flex: 0 0 auto; }
+#log-box .logitem .lk { flex: 0 0 auto; font-weight: 600; }
+#log-box .logitem .lip { color: var(--c-text-2); margin-left: auto; }
+.log-ok { color: var(--c-success); }
+.log-fail { color: var(--c-danger); }
+.log-info { color: var(--c-info); }
+
+/* 历史版本 */
+#history-file { font-size: var(--fs-md); color: var(--c-text); margin-bottom: 10px; font-weight: 600; }
+#history-list .vitem {
+    display: flex; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--c-border);
+    border-radius: var(--r); margin-bottom: 6px; font-size: var(--fs-md); background: #fff;
+}
+#history-list .vitem .vtime { color: var(--c-text); }
+#history-list .vitem .vsize { color: var(--c-text-3); font-size: var(--fs-xs); }
+#history-list .vitem button {
+    margin-left: auto; border-radius: var(--r-sm); font-size: var(--fs-sm); padding: 4px 10px;
+}
+#history-list .vitem .vrestore { background: var(--c-brand); color: #fff; }
+#history-list .vitem .vrestore:hover { background: var(--c-brand-hover); }
+#history-list .vitem .vdel { background: var(--c-danger); color: #fff; }
+#history-list .vitem .vdel:hover { background: var(--c-danger-hover); }
+#history-list .vitem .vdiff { background: #fff; color: var(--c-text-2); border: 1px solid var(--c-border); }
+#history-list .vitem .vdiff:hover { color: var(--c-brand); border-color: var(--c-brand); }
+#history-path { font-size: var(--fs-sm); color: var(--c-text-3); margin: 2px 0 8px; word-break: break-all; line-height: 1.6; }
+#history-path code, .help-body code, #login-help code {
+    background: var(--c-bg-subtle); padding: 1px 5px; border-radius: var(--r-sm); color: var(--c-text);
+}
+#history-diff {
+    margin-top: 12px; border: 1px solid var(--c-border-2); border-radius: var(--r);
+    background: var(--c-bg-fill); max-height: 320px; overflow: auto;
+}
+#history-diff .dh {
+    padding: 7px 10px; font-size: var(--fs-sm); color: var(--c-text);
+    background: var(--c-bg-subtle); font-weight: 600; border-bottom: 1px solid var(--c-border-2);
+}
+#history-diff pre {
+    margin: 0; font-family: var(--ui-mono); font-size: var(--fs-sm); line-height: 1.55;
+    padding: 8px 10px; white-space: pre;
+}
+#history-diff .d-add { color: var(--c-success); background: #f6ffed; display: block; }
+#history-diff .d-del { color: var(--c-danger); background: #fff1f0; display: block; }
+#history-diff .d-ctx { color: var(--c-text-2); display: block; }
+#history-diff .d-hunk { color: var(--c-info); display: block; font-weight: 600; }
+
+/* 帮助正文 */
+.help-body { max-height: 70vh; overflow: auto; }
+.help-body p { margin: 8px 0; line-height: 1.7; font-size: var(--fs-md); }
+.help-body .g-h { margin: 14px 0 4px; font-size: var(--fs-lg); font-weight: 600; color: var(--c-text); }
+.help-body hr { border: none; border-top: 1px solid var(--c-border-2); margin: 12px 0; }
+
+/* toast 须高于所有弹层（.modal-mask 10001 / #confirm-mask 10010），否则在设置面板中保存后的成功提示会被遮罩挡住 */
+.toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--c-text); color: #fff; padding: 8px 16px; border-radius: var(--r);
+    font-size: var(--fs-md); opacity: 0; transition: opacity .25s; pointer-events: none;
+    z-index: 10020; box-shadow: var(--shadow);
+}
+.toast.show { opacity: 1; }
+
+/* 登录层 */
+#login-mask {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--mask); z-index: 10000;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+#login-card {
+    background: var(--c-bg); border: 1px solid var(--c-border); border-radius: var(--r-lg);
+    padding: 28px 30px; width: 320px; box-shadow: var(--shadow);
+}
+#login-card h2 { margin: 0 0 4px; font-size: var(--fs-xl); color: var(--c-text); }
+#login-card p.sub { margin: 0 0 18px; font-size: var(--fs-sm); color: var(--c-text-3); }
+/* 登录页输入框需与下方「进入」按钮等宽（左右边距对称） */
+#login-card input { width: 100%; }
+#login-card button { width: 100%; margin-top: 18px; padding: 9px 10px; }
+#login-err { color: var(--c-danger); font-size: var(--fs-sm); margin-top: 10px; min-height: 16px; }
+#login-lock { color: var(--c-danger); font-size: var(--fs-sm); margin-top: 10px; }
+#login-help {
+    margin-top: 14px; font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.7;
+    border-top: 1px dashed var(--c-border); padding-top: 10px;
+}
+
+/* 侧边栏抽屉背景（手机端） */
+#sidebar-backdrop {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,.4); z-index: 8900; display: none;
+}
+/* ==========================================================
+   暗黑模式：仅覆盖 :root 令牌，组件样式无需改动即自动适配。
+   同时把同一套暗色值同步给 Vditor 自身的 CSS 变量，
+   使其顶栏 / 面板 / 编辑区与本页整体配色保持一致。
+   注：选择器 html[data-theme="dark"] .vditor 的优先级
+   高于 Vditor 自带的 .vditor--dark，故能覆盖其默认暗色。
+   ========================================================== */
+html[data-theme="light"] { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
+
+html[data-theme="dark"] {
+    --c-text: #d1d5da;
+    --c-text-2: #b9b9b9;
+    --c-text-3: #8b949e;
+
+    --c-bg: #0d1117;
+    --c-bg-subtle: #161b22;
+    --c-bg-fill: #1c2128;
+
+    --c-border: #30363d;
+    --c-border-2: #21262d;
+
+    /* 暗色下主色改用 Vditor 暗色主题自身的强调蓝 #58a6ff，对比度更佳 */
+    --c-brand: #58a6ff;
+    --c-brand-hover: #79c0ff;
+    --c-brand-soft: rgba(88,166,255,.16);
+    --c-danger: #f85149;
+    --c-danger-hover: #da3633;
+    --c-success: #3fb950;
+    --c-info: #58a6ff;
+
+    --mask: rgba(1,4,9,.72);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.5);
+}
+/* 同步 Vditor 顶栏 / 面板 / 编辑区配色，使其与本页一致 */
+html[data-theme="dark"] .vditor {
+    --border-color: var(--c-border);
+    --second-color: rgba(185,185,185,.36);
+    --panel-background-color: var(--c-bg-fill);
+    --panel-shadow: 0 1px 2px rgba(255,255,255,.2);
+    --toolbar-background-color: var(--c-bg-subtle);
+    --toolbar-icon-color: var(--c-text-2);
+    --toolbar-icon-hover-color: var(--c-brand);
+    --textarea-background-color: var(--c-bg);
+    --textarea-text-color: var(--c-text);
+    --count-background-color: rgba(88,166,255,.36);
+    --heading-border-color: var(--c-border);
+    --blockquote-color: var(--c-text-2);
+}
+/* 少数在浅色下写死为白色的表面，暗色下改用填充色 */
+html[data-theme="dark"] #folders-list .fitem,
+html[data-theme="dark"] #history-list .vitem,
+html[data-theme="dark"] #log-box { background: var(--c-bg-fill); }
+html[data-theme="dark"] #topbar button.ghost,
+html[data-theme="dark"] .modal-card button.ghost,
+html[data-theme="dark"] #sidebar .side-head button.ghost,
+html[data-theme="dark"] .set-head .close { background: var(--c-bg-fill); }
+html[data-theme="dark"] #history-list .vitem .vdiff { background: var(--c-bg-fill); }
+html[data-theme="dark"] #history-diff .d-add { background: rgba(63,185,80,.15); }
+html[data-theme="dark"] #history-diff .d-del { background: rgba(248,81,73,.15); }
+html[data-theme="dark"] .toast { background: var(--c-bg-fill); border: 1px solid var(--c-border); }
+
+/* Vditor 自身顶栏：窄屏时把 float 工具项改为横向排列并支持横向滑动，避免堆叠成多行。
+   重要：这组覆盖必须限定在窄屏（≤520px，与 Vditor 自身移动端断点一致），不可无条件生效。
+   否则 .vditor-toolbar 会成为裁剪容器（overflow-x:auto + overflow-y:hidden）。
+   窄屏下 Vditor 的下拉面板(.vditor-panel / .vditor-hint)是 position:absolute，且被挂进工具栏按钮内部，
+   按钮(.vditor-toolbar__item)是 position:relative —— 面板包含块位于工具栏内，向下弹出被工具栏裁掉。
+   该问题在 JS 中统一处理：菜单打开时把面板改为 position:fixed 浮层（不受祖先 overflow 裁剪），
+   同时【保留】工具栏 overflow-x:auto 以保证横向滚动可用；桌面宽度一律保持 Vditor 原生样式。 */
+@media screen and (max-width: 520px) {
+    .vditor-toolbar {
+        overflow-x: auto !important; overflow-y: hidden !important;
+        white-space: nowrap !important; -webkit-overflow-scrolling: touch;
+    }
+    .vditor-toolbar::-webkit-scrollbar { height: 0; }
+    .vditor-toolbar__item, .vditor-toolbar__divider {
+        float: none !important; display: inline-block !important; vertical-align: top !important;
+    }
+    .vditor-toolbar__br { display: none !important; }
+}
+/* 响应式：手机 / 平板 / 低分辨率 */
+@media (max-width: 820px) {
+    #sidebar {
+        position: fixed; top: 0; left: 0; bottom: 0; width: 80%; max-width: 320px; z-index: 9000;
+        transform: translateX(-100%); -webkit-transition: -webkit-transform .2s ease; transition: transform .2s ease;
+        box-shadow: 2px 0 16px rgba(0,0,0,.25); opacity: 1; pointer-events: auto;
+    }
+    #app.sidebar-open #sidebar { transform: translateX(0); }
+    #app.sidebar-collapsed #sidebar { width: 80%; min-width: 0; opacity: 1; pointer-events: auto; transform: translateX(-100%); }
+    #app.sidebar-collapsed.sidebar-open #sidebar { transform: translateX(0); }
+    #sidebar-backdrop.show { display: block; }
+    #login-card { width: 90%; max-width: 340px; padding: 22px; }
+    .modal-card { width: 94vw; padding: 18px; }
+}
+@media (max-width: 480px) {
+    #topbar { padding: 8px 10px; gap: 6px; }
+    #topbar button { padding: 6px 10px; font-size: var(--fs-sm); }
+    #topbar .fname { font-size: var(--fs-sm); }
+    .modal-card { padding: 14px; }
+    #login-card { padding: 18px; }
+}

@@ -1,0 +1,55 @@
+#!/bin/bash
+# app/bin/vditor —— 飞牛终端命令（由 fnOS 的 usr-local-linker 资源软链到 /usr/local/bin/vditor，
+# 同时 install/upgrade_callback 会兜底软链到 /usr/bin、/bin）。
+# 用法：
+#   vditor reset-password   重置 Vditor 访问密码（删除 pwhash 文件，重启应用后由“首次设置密码”页重设）
+#   vditor help             查看帮助
+# 说明：在 NAS 终端直接执行时，应用环境变量（TRIM_PKGETC 等）未注入，脚本会按应用名在常见数据盘搜索 pwhash。
+set -u
+
+APPNAME="com.mian38.vditor"
+SUB="${1:-reset-password}"
+
+reset_password() {
+  # 定位应用配置目录（pwhash 所在）
+  CFG="${VDITOR_CONFIG:-${TRIM_PKGETC:-}}"
+  if [ -z "$CFG" ] || [ ! -f "$CFG/pwhash" ]; then
+    # 终端直接执行时环境变量未注入，先按常见数据盘快速搜索，再回退全盘搜索
+    hits=$(find /vol1 -name pwhash -type f 2>/dev/null)
+    if [ -z "$hits" ]; then
+      hits=$(find / -name pwhash -type f 2>/dev/null | grep -v '^/proc/')
+    fi
+    n=$(printf '%s\n' "$hits" | grep -c .)
+    if [ "$n" -eq 0 ]; then
+      echo "未找到 pwhash 文件，可能尚未设置密码，无需重置。"
+      return 0
+    elif [ "$n" -eq 1 ]; then
+      CFG="$(dirname "$hits")"
+    else
+      echo "找到多个 pwhash 文件，请手动删除其中一个："
+      printf '%s\n' "$hits"
+      return 1
+    fi
+  fi
+  rm -f "$CFG/pwhash"
+  echo "已删除密码文件：$CFG/pwhash"
+  echo "请到 fnOS 应用中心停止并重新启动本应用，重启后，打开本应用页面，将会出现「首次设置」页，按指引设置新密码即可。文档数据不受影响。"
+}
+
+case "$SUB" in
+  reset-password|reset|rp)
+    reset_password
+    ;;
+  help|-h|--help)
+    echo "Vditor 终端工具 ($APPNAME)"
+    echo "用法："
+    echo "  vditor reset-password   重置 Vditor 访问密码（删除 pwhash，重启后重设；文档数据不受影响）"
+    echo "  vditor help             显示本帮助"
+    ;;
+  *)
+    echo "未知命令：$SUB"
+    echo "可用命令：vditor reset-password"
+    exit 1
+    ;;
+esac
+exit 0

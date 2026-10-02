@@ -1,0 +1,10 @@
+# 归档目录不参与构建，但体积大；用归档压缩包代替
+archive/_tmp_split/
+archive/**/app/
+archive/**/vditor/
+*.fpk
+*.pyc
+__pycache__/
+.audit_backup/
+.verify_pkg/
+.audit_full.txt

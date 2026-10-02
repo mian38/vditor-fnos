@@ -1,0 +1,74 @@
+#!/bin/bash
+# cmd/uninstall_callback —— 卸载后：是否清除应用数据由 WebUI“设置 → 卸载清理”开关决定
+# 该开关写入 @appconf/settings.json 的 clear_on_uninstall（默认 false=保留，便于重装恢复）。
+# 注意：fnOS 在卸载阶段不会把卸载向导字段作为环境变量注入本回调（实测 env 无任何 wizard_* 变量），
+# 且 fnOS 卸载默认保留 @appconf(etc) 与 @appdata(var)，不会自动清配置。
+# 因此“是否清除”只能从已落盘的设置文件读取，绝不能依赖卸载向导字段。
+set -u
+
+ETC="${TRIM_PKGETC:-}"
+VAR="${TRIM_PKGVAR:-}"
+
+# 读取 WebUI 设置中的“卸载时清除数据”开关（默认保留）
+CLEAR="false"
+if [ -n "$ETC" ] && [ -f "$ETC/settings.json" ]; then
+  CLEAR=$(grep -o '"clear_on_uninstall"[[:space:]]*:[[:space:]]*\(true\|false\)' "$ETC/settings.json" 2>/dev/null | head -1 | grep -o '\(true\|false\)')
+fi
+
+# 清理安装时建立的裸命令软链（防止残留）
+clean_bin_links() {
+  for f in /usr/bin/vditor /usr/local/bin/vditor /bin/vditor /sbin/vditor /usr/local/sbin/vditor; do
+    [ -L "$f" ] && rm -f "$f" 2>/dev/null
+  done
+}
+
+# 辅助：清理指定根目录下的应用生成历史版本目录（保留原始文档）
+clean_versions() {
+  for r in "$@"; do
+    [ -z "$r" ] && continue
+    [ -d "$r" ] || continue
+    find "$r" -type d -name '.vditor_versions' -prune -exec rm -rf {} + 2>/dev/null
+  done
+}
+
+if [ "$CLEAR" != "true" ]; then
+  # 保留：不动任何应用数据与文档（便于卸载后重装恢复），仅清理安装时建立的裸命令软链
+  clean_bin_links
+  echo "已保留全部软件数据与配置（含历史版本），仅移除了终端命令软链。" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+  exit 0
+fi
+
+# === 以下为“卸载时清除数据”分支（clear_on_uninstall=true）===
+# 在删除 etc 之前，先收集文档根目录（含应用内手动管理的文件夹 / 已隐藏分区）
+ROOTS=""
+if [ -n "$ETC" ] && [ -f "$ETC/doc_dir" ]; then
+  ROOTS="$ROOTS $(cat "$ETC/doc_dir" 2>/dev/null)"
+fi
+if [ -n "$ETC" ] && [ -f "$ETC/folders.json" ]; then
+  ROOTS="$ROOTS $(sed -n 's/.*"path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ETC/folders.json" 2>/dev/null)"
+fi
+if [ -n "$ETC" ] && [ -f "$ETC/excluded.json" ]; then
+  ROOTS="$ROOTS $(sed -n 's/.*"path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ETC/excluded.json" 2>/dev/null)"
+fi
+[ -n "$VAR" ] && ROOTS="$ROOTS $VAR/docs"
+
+# ① 删除全部应用配置文件（etc：密码哈希/设置/登录日志/分区列表/图标/文档目录引用等）
+if [ -n "$ETC" ] && [ -d "$ETC" ]; then
+  rm -rf "$ETC"/* 2>/dev/null
+fi
+
+# ② 删除运行时数据（上传 / 日志 / 会话 / pid），但保留文档根目录 var/docs
+if [ -n "$VAR" ] && [ -d "$VAR" ]; then
+  for item in "$VAR"/*; do
+    [ -e "$item" ] || continue
+    [ "$(basename "$item")" = "docs" ] && continue
+    rm -rf "$item" 2>/dev/null
+  done
+fi
+
+# ③ 删除所有“应用生成的历史版本目录” .vditor_versions，保留原始文档文件
+clean_versions $ROOTS
+
+clean_bin_links
+echo "已删除全部应用配置、历史版本与运行时数据；您的 Markdown 文档文件已保留。" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+exit 0

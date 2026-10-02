@@ -1,0 +1,4 @@
+#!/bin/bash
+# cmd/config_init —— 配置前（无配置向导，留空）
+set -u
+exit 0

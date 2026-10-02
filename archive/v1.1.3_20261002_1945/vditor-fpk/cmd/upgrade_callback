@@ -1,0 +1,20 @@
+#!/bin/bash
+# cmd/upgrade_callback —— 更新后：从持久化配置恢复端口并同步桌面图标
+set -u
+PORT="$(cat "${TRIM_PKGETC}/port" 2>/dev/null || echo 9000)"
+CFG="${TRIM_APPDEST}/ui/config"
+if [ -f "$CFG" ]; then
+  sed -i "s/\"port\"[[:space:]]*:[[:space:]]*\"[0-9]*\"/\"port\": \"$PORT\"/" "$CFG"
+fi
+
+# 确保终端命令 vditor 软链存在（幂等，失败容忍）；指向安装包内持久化的 app/bin/vditor
+TARGET="${TRIM_APPDEST}/bin/vditor"
+if [ -f "$TARGET" ]; then
+  chmod +x "$TARGET" 2>/dev/null || true
+  for BIN_DIR in /usr/bin /usr/local/bin /bin; do
+    [ -d "$BIN_DIR" ] || continue
+    ln -sf "$TARGET" "${BIN_DIR}/vditor" 2>/dev/null || true
+  done
+fi
+
+exit 0

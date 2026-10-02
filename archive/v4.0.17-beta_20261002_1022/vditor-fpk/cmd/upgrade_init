@@ -1,0 +1,12 @@
+#!/bin/bash
+# cmd/upgrade_init —— 更新前：停止旧版本服务，避免文件被占用
+set -u
+APP_DIR="${TRIM_APPDEST}"
+PID_FILE="${TRIM_PKGVAR}/vditor.pid"
+if [ -f "$PID_FILE" ]; then
+  p="$(cat "$PID_FILE" 2>/dev/null | tr -d '[:space:]')"
+  [ -n "$p" ] && kill "$p" 2>/dev/null
+  rm -f "$PID_FILE"
+fi
+pkill -f "${APP_DIR}/server.py" 2>/dev/null
+exit 0

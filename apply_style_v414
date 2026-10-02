@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""把 ui_style_v414.css 整体替换进各 index.html 的 <style>…</style> 区块（幂等）。
+
+用脚本而非 Edit 工具：按本项目既有教训，大块替换必须「读-替换-写 + 断言」，
+便于确认改动确实落盘（Edit 曾出现报成功但未实改的历史问题）。
+"""
+import io, os, re, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CSS = os.path.join(HERE, "ui_style_v414.css")
+TARGETS = [
+    ("vditor-fpk/app/index.html", "打包源（交付物）"),
+    ("vditor-nas/index.html", "独立部署副本"),
+]
+
+MUST = [
+    ("--c-brand: #4285f4", "Vditor 官方蓝主色"),
+    ("--toolbar-background-color: var(--c-bg-subtle)", "与 Vditor 变量对齐"),
+    ("accent-color: var(--c-brand)", "开关控件统一主色"),
+    (".root-head .rnew", "分区新建按钮（避免漏样式）"),
+    ("@media screen and (max-width: 520px)", "保留 v4.0.13 工具栏裁剪修复"),
+    ("z-index: 10020", "保留 toast 置顶修复"),
+    ("#login-card input { width: 100%; }", "登录输入框与按钮等宽"),
+    (".frow.frow-2col", "文件夹两列布局"),
+    (".set-sec button.action { margin: 10px 8px 0 0; }", "设置按钮统一间距"),
+    ("#set-page-title { width: 100%; }", "网页标题输入整行宽"),
+    ('html[data-theme="dark"]', "暗黑模式令牌"),
+    ('html[data-theme="dark"] .vditor', "暗色同步 Vditor 顶栏配色"),
+    ("#topbar .word-counter {", "顶栏双口径字数统计容器"),
+    (".vditor-counter { display: none !important; }", "隐藏内置右下角字数"),
+    ('.set-pw input:not([type="checkbox"])', "子选项卡内开关复选框不受整行输入框样式影响"),
+    # ↓ 1.1.3 新增：上传黑名单控件（样式须与同页其它输入控件完全一致）
+    (".set-ext-row input:focus", "上传黑名单输入框聚焦态与其它输入框一致"),
+    (".set-ext-chip", "上传黑名单条目（chip）样式"),
+    (".set-sec .set-ext-row button.action { margin: 0;", "黑名单行按钮须与输入框对齐（须压过 .set-sec button.action 的上边距）"),
+    ("#upload-deny-err", "上传黑名单校验反馈与其它字段错误提示一致"),
+]
+GONE = ["#2f6bff", "#3a3f47", "#e54848", "#f0f2f5", "#f3f4f6", "#1f2329"]
+
+
+def splice(path, css):
+    src = io.open(path, encoding="utf-8").read()
+    m = re.search(r"( *)<style>\n.*?\n\1</style>", src, re.S)
+    if not m:
+        raise SystemExit("FAIL 未匹配到 <style> 区块：%s" % path)
+    indent = m.group(1)
+    body = "\n".join((indent + "    " + ln) if ln.strip() else ln for ln in css.rstrip().split("\n"))
+    new = src[:m.start()] + indent + "<style>\n" + body + "\n" + indent + "</style>" + src[m.end():]
+    io.open(path, "w", encoding="utf-8", newline="").write(new)
+    return io.open(path, encoding="utf-8").read()
+
+
+css = io.open(CSS, encoding="utf-8").read()
+bad = 0
+for rel, note in TARGETS:
+    path = os.path.join(HERE, rel)
+    if not os.path.isfile(path):
+        print("SKIP 不存在：%s" % rel)
+        continue
+    print("--- %s（%s）---" % (rel, note))
+    out = splice(path, css)
+    for token, why in MUST:
+        if token in out:
+            print("  OK   含 %s（%s）" % (why, token))
+        else:
+            print("  FAIL 缺 %s（%s）" % (why, token)); bad += 1
+    for token in GONE:
+        if token in out:
+            print("  WARN 仍残留旧色值 %s" % token); bad += 1
+    # 结构完整性：style 块必须成对且唯一
+    n = len(re.findall(r"<style>", out)) + len(re.findall(r"</style>", out))
+    if n != 2:
+        print("  FAIL <style> 标签数量异常：%d" % n); bad += 1
+    else:
+        print("  OK   <style> 区块成对且唯一")
+
+print()
+print("RESULT:", "OK 样式已统一替换" if bad == 0 else "FAIL 有 %d 项问题" % bad)
+sys.exit(1 if bad else 0)

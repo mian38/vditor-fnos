@@ -1,0 +1,46 @@
+#!/bin/bash
+# cmd/install_callback —— 安装后：读取向导端口与文档目录，写入配置并同步桌面图标端口
+set -u
+
+PORT="${wizard_app_port:-9000}"
+
+# 端口合法性校验
+if ! echo "$PORT" | grep -Eq '^[0-9]+$' || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+  PORT=9000
+fi
+
+# 持久化端口（供 cmd/main 启动使用）
+echo "$PORT" > "${TRIM_PKGETC}/port"
+
+# 文档存储目录（可留空；留空则用应用私有目录）
+DOC_DIR="${wizard_doc_dir:-}"
+if [ -n "$DOC_DIR" ]; then
+  echo "$DOC_DIR" > "${TRIM_PKGETC}/doc_dir"
+fi
+
+# 同步桌面图标访问端口（ui/config 中的 "port" 字段）
+CFG="${TRIM_APPDEST}/ui/config"
+if [ -f "$CFG" ]; then
+  sed -i "s/\"port\"[[:space:]]*:[[:space:]]*\"[0-9]*\"/\"port\": \"$PORT\"/" "$CFG"
+fi
+
+# 建立终端命令 vditor：
+# 主机制：fnOS 的 usr-local-linker 资源会把 app/bin/vditor 软链到 /usr/local/bin/vditor（系统托管，可靠）。
+# 兜底机制：这里再尝试把同一个脚本软链到 /usr/bin、/bin（部分环境 /usr/local/bin 可能不在 PATH），
+# 并修正执行权限。软链目标指向安装包内持久化的 app/bin/vditor，避免回指临时目录。
+TARGET="${TRIM_APPDEST}/bin/vditor"
+if [ -f "$TARGET" ]; then
+  chmod +x "$TARGET" 2>/dev/null || true
+  for BIN_DIR in /usr/bin /usr/local/bin /bin; do
+    [ -d "$BIN_DIR" ] || continue
+    if ln -sf "$TARGET" "${BIN_DIR}/vditor" 2>/dev/null; then
+      echo "已建立软链：${BIN_DIR}/vditor -> $TARGET"
+    else
+      echo "警告：无法写入 $BIN_DIR，未建立软链（可手动：ln -sf \"$TARGET\" ${BIN_DIR}/vditor）" >&2
+    fi
+  done
+else
+  echo "警告：未找到 $TARGET，终端命令 vditor 未建立；可后续通过 usr-local-linker 自动软链到 /usr/local/bin。" >&2
+fi
+
+exit 0
