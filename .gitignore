@@ -8,3 +8,20 @@ __pycache__/
 .audit_backup/
 .verify_pkg/
 .audit_full.txt
+
+# Android 构建产物（由 android/build_apk.sh 生成，体积大且可复现）
+*.apk
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+android/app/release/
+# 签名密钥绝不入库（当前用环境变量注入，此处双保险）
+*.jks
+*.keystore
+keystore.properties
+
+# 端到端测试的临时文档目录
+_e2e_docs/

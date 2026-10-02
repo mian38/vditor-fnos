@@ -5,11 +5,85 @@
 > **后续发布任何新版本时，需同时更新这两份更新记录。**
 
 - **应用标识**：`com.mian38.vditor`
-- **当前版本**：**1.1.4**
-- **形态**：飞牛 fnOS 官方 `.fpk` 安装包（非 Docker：系统进程直接运行 Python 标准库后端，前端静态托管）
+- **当前版本**：**1.2.0**
+- **形态**：飞牛 fnOS 官方 `.fpk` 安装包（非 Docker：系统进程直接运行 Python 标准库后端，前端静态托管）＋ 原生 Android 客户端
 - **版本体系**：`4.0.x` 为早期 β 迭代线（产物文件名统一带 `-beta` 标识）；自 **1.0** 起进入正式版序列。
 
-> 说明：本文按时间倒序排列，覆盖自首个 `.fpk`（4.0.0）到 1.1.4 的全部版本。
+> 说明：本文按时间倒序排列，覆盖自首个 `.fpk`（4.0.0）到 1.2.0 的全部版本。
+
+---
+
+## 1.2.0
+
+> 本版本含**移动端 API 实装**与**原生 Android 客户端**两块新增内容，
+> 1.1.4 的 Web 端功能与配置**完全不变**，升级无破坏性变更。
+
+### 新增 · 移动端 API（15 接口全部实装）
+
+**背景**：1.1.3 只在 `docs/MOBILE_API.md` 预留了接口规范，**服务端没有任何 `/api/m/` 路由**（调用得404）。本版本逐个落地。
+
+- 新增 `mobile_api.py`（纯逻辑模块，遵循项目既有「纯函数拆 `vd_util.py`」约定）：
+  - 统一响应包 `ok()` / `fail()`，以 `_` 前缀内部字段（`_http`）携带状态码，输出前经 `strip_internal()` 剥离。
+  - `ERROR_HTTP` 错误码→ HTTP 映射（10 码）；**未登记码降级为 `SERVER_ERROR`+500**，避免端上无映射可依。
+  - `take_str` / `take_int` / `take_paging` 参数校验：非字符串即非法、整数夹到 `[lo,hi]`、分页非法值回落默认。
+- `server.py` 新增约 20 个方法 + `do_PUT` / `do_DELETE`（Web 端原本无这两个方法）。
+- **鉴权与会话隔离**：新增 `MTOKENS` 字典与 Bearer Token 鉴权，与 Web Cookie 会话**物理隔离**，便于按客户端维度限流与吊销。空闲 30 分钟 / 绝对 8 小时，**不做 IP 绑定**（手机常在蜂窝与Wi-Fi 间切换，绑定会造成误失效）。硬上限 2000 条，`_sweep_sessions()` 一并清理。
+- **乐观锁**：`PUT /api/m/file` 支持 `if_version`，服务端当前版本 = 历史版本条数 + 1，不一致回 `FORBIDDEN`。
+- **路径安全全部复用现有函数**，不另写一套：`safe_join` / `_safe_doc` / `_m_resolve_doc` / `_doc_asset_dir` / `_folder_note_path` / `_version_dir`。
+- **上传复用** `is_denied_upload`（黑名单）与 `upload_headers`（强制下载 + CSP sandbox），大小上限读 `SETTINGS["upload_max_mb"]` 不写死。
+- 15 个接口：health / auth login·logout·session / roots / files / file(GET·POST·PUT·DELETE) / file versions·restore / upload / settings upload / file assets，另有 `/api/m/asset/<name>` 供取回附件二进制。
+- `docs/MOBILE_API.md` 由「预留规范」重写为「已实现」：标注真实字段、每接口补 curl 示例、补两处易踩空约定（同名文件夹不暴露为目录、无 `word_count` 的原因）、补`is_denied_upload` 收完整文件名的坑。
+
+**修复 · 登出幂等**（联调发现）
+- `POST /api/m/auth/logout` 原先对已失效/伪造 token 回 401，与文档承诺的「幂等」语义矛盾。端上「token 刚过期就点退出」「重复点退出」是常态，回 401 只会弹出用户看不懂的报错。改为：**无论 token 状态一律回 `ok: true`**（「当前无有效会话」就是「已登出」）。
+
+### 新增 · 原生 Android 客户端
+
+- **技术栈**：Kotlin + AndroidX View 体系 + Material Components，**刻意不用 Compose**（体积大）。
+- **零第三方网络库**：`HttpURLConnection` + `org.json`（系统自带），避免依赖冲突并减小包体。依赖共 8 个（appcompat / material / constraintlayout / recyclerview / swiperefreshlayout / lifecycle-runtime-ktx / kotlinx-coroutines-android / core-ktx）。
+- **两种地址形式**（用户需求）：局域网「IP:端口」自动补 `http://`、无端口补默认 9000；公网域名自动补 `https://`。
+- **记住地址**：勾选后记住地址并写入历史（最多 5 条，Chip 形式快速选择）；**不保存密码**（安全优先，取舍已写入README 与代码注释）。
+- **响应式**：`values/`（手机 16dp gutter / 16sp 正文）与 `values-sw600dp/`（平板 40dp gutter / 18sp 正文）两档断点。
+- **深色模式**：`values-night/`色板 + `DayNight` 主题，状态栏图标自动反色。
+- **无障碍**：装饰图标标 `importantForAccessibility="no"`；状态提示用 `accessibilityLiveRegion="polite"`；「更多」按钮 `contentDescription` 带文件名；版本项把「时间 + 操作」合成完整描述。
+- **状态机**：loading / content / empty / error 四态互斥；下拉刷新与重试同一条加载路径。
+- **断线重连**：网络类瞬时故障指数退避重试 3 次（600ms → 1.2s）；**4xx 确定性失败不重试**；**上传不自动重试**（服务端每次生成新 uuid，重复提交会产生重复文件）。
+- **乐观锁接入**：加载时记 `version`，保存时回传；冲突弹窗让用户选「重新加载」或「放弃修改」，**绝不在用户不知情时覆盖**。
+- **自动保存**：停止输入 1.2 秒后静默保存，顶栏「保存」可强制触发。
+- 附件上传先取 `settings/upload` 做黑名单与体积预校验，再上传，成功后把服务端下发的 `insert_text` 直接插入光标。
+- 全部图标用**矢量 drawable**（含 adaptive icon + API 24/25 兜底），无位图。
+
+**构建**
+- JDK 17.0.13 + Android SDK 34（build-tools 34.0.0 / platforms;android-34）+ Gradle 8.7。
+- release 启用 R8 `minifyEnabled` + `shrinkResources`。
+- 签名经环境变量（`VDITOR_KEYSTORE` / `VDITOR_STORE_PASS` / `VDITOR_KEY_ALIAS` / `VDITOR_KEY_PASS`）注入，**keystore 不入库**；未配置时仍可产出 unsigned 包。
+- 新增 `build_apk.sh` 一键构建 + 拷贝产物到 `releases/`。
+
+**产物**
+| 文件 | 大小 |
+| --- | --- |
+| `releases/com.mian38.vditor_1.2.0.fpk` | 4,525,079 字节 |
+| `releases/vditor-nas-1.2.0.tar.gz` | 4,505,084 字节 |
+| `releases/Vditor-1.2.0-release.apk`（签名，R8 已开） | **1,385,604 字节** |
+| `releases/Vditor-1.2.0-debug.apk` | 5,476,770 字节 |
+
+### 修复 · `make_nas.py` 漏登记模块
+
+- 新增 `SHARED_FILES` 漏了 `mobile_api.py`，生成的 nas 版 `import mobile_api` 会 **ModuleNotFoundError 起不来**。
+- 根因：第 4 步的 `filecmp` 自检**只比对「已在列表里」的文件**，对「本该在却没在」的文件是盲的。
+- 修复：把 `mobile_api.py` 加入 `SHARED_FILES`，并新增 `check_imports_covered()` —— 扫源码里的 `import` 语句，凡解析到同目录 `.py` 的都必须已登记，否则报错退出（退出码非 0）。已实测能捕获该场景。
+
+### 测试
+
+- **`test_mobile_api.py` 66/66**（9 段：A 健康检查与鉴权 / B 登录会话 / C 分区与列表 / D 文档 CRUD / E 历史版本 / F 上传限制与附件 / G 异常边界 / H 登出 / I Web 端兼容性）。较上轮 65 项 +1：H3 语义随登出幂等修复而改写，并补 H3b 重复登出。
+- **`test_android_e2e.py` 48/48**（新建，9 段端到端）：模拟 App 真实调用序跑通「登录 → 分区 → 列表 → 新建 → 读取 → 保存+乐观锁 → 附件 → 版本回滚 → 删除 → 登出」，**逐字校验 App `data/Models.kt` 依赖的每个字段名**——任一端改字段而另一端没跟上会立刻红。
+- `test_smoke_pkg.py` **53/53**（含「server 版本 == manifest 版本(1.2.0)」）。
+- `test_v114.py` / `test_v113.py` / `test_v112.py` 未受本轮改动影响，未重跑。
+
+> **测试脚本自伤修复（记录备查）**：`test_android_e2e.py` 最初把文档根目录环境变量写成 `VDITOR_DOC_ROOT`，
+> 而实际是 `VDITOR_DOC_DIR` ——服务端**静默回落到`vditor-fpk/app/docs/`**，
+> 测试数据写进了真实文档区（已清理）。现已改对，并加两道守护：
+> ① 断言分区路径落在临时目录；② 收尾后校验工作区 docs 目录无残留文件。
 
 ---
 

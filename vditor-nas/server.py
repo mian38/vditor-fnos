@@ -43,7 +43,7 @@ import shutil
 import ipaddress
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs, quote
+from urllib.parse import urlparse, parse_qs, quote, unquote
 
 # 自举：把本文件所在目录放进 sys.path，保证同目录的 vd_util.py 一定可被 import。
 # 正常以 `python3 server.py` 启动时解释器会自动加入脚本目录，但被 `python3 -c "import server"`、
@@ -64,9 +64,13 @@ from vd_util import (
     _folder_note_path, _doc_asset_dir, _in_doc_folder,
 )
 
+# 移动端 API（/api/m/）的响应包/错误码/参数校验等纯逻辑，同样独立成模块，
+# 避免把与 Web 端无关的响应格式代码混进 Handler。
+import mobile_api as M
+
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.1.4"
+APP_VERSION = "1.2.0"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -408,13 +412,70 @@ def _sweep_sessions():
         s = FAIL_LOG.get(ip) or {}
         if s.get("locked_until", 0) <= now and (now - s.get("first", 0)) > LOCK_WINDOW:
             FAIL_LOG.pop(ip, None)
+    for t in list(MTOKENS.keys()):
+        s = MTOKENS.get(t)
+        if not s or (now - s.get("last", 0)) > IDLE_TIMEOUT or (now - s.get("created", 0)) > ABS_TIMEOUT:
+            MTOKENS.pop(t, None)
     # 兜底硬上限：异常情况（大量不同 IP / 会话）下也不让字典无限膨胀
     if len(SESSIONS) > 5000:
         for t in sorted(SESSIONS, key=lambda k: SESSIONS[k].get("last", 0), reverse=True)[2000:]:
             SESSIONS.pop(t, None)
+    if len(MTOKENS) > 2000:
+        for t in sorted(MTOKENS, key=lambda k: MTOKENS[k].get("last", 0), reverse=True)[800:]:
+            MTOKENS.pop(t, None)
     if len(FAIL_LOG) > 10000:
         for ip in sorted(FAIL_LOG, key=lambda k: FAIL_LOG[k].get("first", 0), reverse=True)[5000:]:
             FAIL_LOG.pop(ip, None)
+
+# ---------------- 移动端 Token 会话（/api/m/，与 Web Cookie 会话物理隔离）----------------
+# 单独签发而非复用 Cookie 会话：便于按客户端维度限流与吊销（MOBILE_API.md §6 第 1 项）。
+# 超时口径与 Web 端保持一致（空闲 30 分钟 / 绝对 8 小时）。
+MTOKENS = {}       # token -> {ip, created, last, agent}
+
+
+def get_mtoken(handler):
+    """从 Authorization: Bearer <token> 取移动端 token；无效/过期返回 None。
+
+    同时刷新 `last`（滑动空闲计时）。不做 IP 绑定之外的额外限制——
+    手机端常在蜂窝/Wi-Fi 间切换，绑定 IP 会造成大量误失效。
+    """
+    _sweep_sessions()
+    raw = handler.headers.get("Authorization", "") or ""
+    m = re.match(r"^\s*Bearer\s+(\S+)\s*$", raw)
+    if not m:
+        return None
+    token = m.group(1)
+    s = MTOKENS.get(token)
+    if not s:
+        return None
+    now = time.time()
+    if (now - s["last"]) > IDLE_TIMEOUT or (now - s["created"]) > ABS_TIMEOUT:
+        MTOKENS.pop(token, None)
+        return None
+    s["last"] = now
+    return token
+
+
+def start_mtoken(handler):
+    token = secrets.token_urlsafe(32)
+    MTOKENS[token] = {
+        "ip": client_ip(handler),
+        "created": time.time(),
+        "last": time.time(),
+        "agent": (handler.headers.get("User-Agent", "") or "")[:120],
+    }
+    return token
+
+
+def mtoken_left(token):
+    """返回该 token 的剩余有效期 (空闲, 绝对)，单位秒；供客户端提前判断何时续期。"""
+    s = MTOKENS.get(token) or {}
+    if not s:
+        return 0, 0
+    now = time.time()
+    idle = max(0, int(IDLE_TIMEOUT - (now - s["last"])))
+    absolute = max(0, int(ABS_TIMEOUT - (now - s["created"])))
+    return idle, absolute
 
 # ---------------- 文档分区 ----------------
 FOLDERS_FILE = os.path.join(CONFIG_DIR, "folders.json")
@@ -783,12 +844,597 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    # ---------------- 移动端 API 公共设施（/api/m/）----------------
+
+    def _m_send(self, resp):
+        """把 mobile_api 构造的响应包发出去（自动剥掉内部字段并取对应 HTTP 状态码）。"""
+        self._send_json(M.strip_internal(resp), M.http_status(resp))
+
+    def _m_require(self):
+        """移动端鉴权：无有效 Bearer Token 时回 INVALID_TOKEN 并返回 False。"""
+        tok = get_mtoken(self)
+        if not tok:
+            if NEEDS_SETUP:
+                self._m_send(M.fail("NEED_SETUP"))
+            else:
+                self._m_send(M.fail("INVALID_TOKEN"))
+            return None
+        return tok
+
+    def _m_file_item(self, root_id, root_path, name, fp, has_versions=None):
+        """构造单个文档的列表项（规范 §4.2 items 元素）。
+
+        `word_count` 不在服务端计算——Web 端顶栏是按**预览渲染后的可见字数**统计的
+        （见 index.html 的 countReaderWords），服务端无法复现该口径，
+        故列表接口不下发该字段，由端上在需要时另行取值或留空（避免给出虚高数值）。
+        """
+        try:
+            st = os.stat(fp)
+            size, mtime = st.st_size, int(st.st_mtime)
+        except OSError:
+            size, mtime = 0, 0
+        rel = os.path.relpath(fp, root_path).replace(os.sep, "/")
+        if has_versions is None:
+            has_versions = bool(list_file_versions(root_path, rel))
+        return {
+            "id": M.doc_id(rel),
+            "name": name,
+            "path": rel,
+            "root": root_id,
+            "size": size,
+            "updated_at": M.iso(mtime),
+            "is_dir": False,
+            "has_versions": has_versions,
+        }
+
+    def _m_doc_detail(self, root_id, root, fp):
+        """构造文档详情（规范 §4.3 data），含附件列表。"""
+        rel = self._rel(root["path"], fp)
+        try:
+            st = os.stat(fp)
+            size, mtime = size_ = st.st_size, int(st.st_mtime)
+        except OSError:
+            size, mtime = 0, 0
+        content = ""
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError:
+            pass
+        created = mtime
+        # 版本号 = 历史版本条数 + 1（与 Web 端「版本」语义一致：当前内容算第 N 版）
+        versions = list_file_versions(root["path"], rel)
+        # 附件：与文档同名的那个文件夹里除 .md 以外的文件
+        assets = []
+        adir = _doc_asset_dir(root["path"], rel)
+        if adir and os.path.isdir(adir):
+            for n in sorted(os.listdir(adir)):
+                full = os.path.join(adir, n)
+                if not os.path.isfile(full) or n.lower().endswith(".md"):
+                    continue
+                ext = n.rsplit(".", 1)[-1].lower() if "." in n else ""
+                try:
+                    asz = os.stat(full).st_size
+                except OSError:
+                    asz = 0
+                assets.append({"name": n, "url": quote(n), "size": asz, "ext": ext})
+        return {
+            "id": M.doc_id(rel),
+            "name": os.path.basename(fp),
+            "path": rel,
+            "root": root_id,
+            "content": content,
+            "size": size,
+            "created_at": M.iso(created),
+            "updated_at": M.iso(mtime),
+            "version": len(versions) + 1,
+            "assets": assets,
+        }
+
+    def _m_asset(self, name):
+        """读取移动端上传的附件（规范 §4.9 返回的 url 对应此路由）。
+
+        复用 Web 端的 `_find_uploaded`（按 uuid 文件名在各文档文件夹回退查找）与
+        `upload_headers`（强制下载 + CSP sandbox）——**不另写一套定位或安全头逻辑**。
+        """
+        tok = self._m_require()
+        if not tok:
+            return
+        nm = unquote(name or "")
+        fp = _find_uploaded(nm)
+        if not fp:
+            self._m_send(M.fail("NOT_FOUND", "附件不存在"))
+            return
+        try:
+            st = os.stat(fp)
+        except OSError:
+            self._m_send(M.fail("NOT_FOUND", "附件不存在"))
+            return
+        with open(fp, "rb") as f:
+            body = f.read()
+        h = dict(upload_headers(fp))
+        h["Content-Length"] = str(st.st_size)
+        self._send(200, body, h)
+
+    def _m_resolve_doc(self, root_id, rel):
+        """把 (root, path) 解析为 (root_dict, 绝对路径, 归一化相对路径)。非法返回 None。"""
+        root = self._find_root(root_id)
+        if not root or not rel:
+            return None
+        fp = self._safe_doc(root_id, rel)
+        if not fp:
+            return None
+        return root, fp, self._rel(root["path"], fp)
+
+    # ---------------- GET /api/m/* ----------------
+
+    def _m_get(self, path, qs):
+        """移动端 GET 路由分发。返回 True 表示已处理。"""
+        if path == "/api/m/health":
+            self._m_send(M.ok({
+                "status": "ok",
+                "app": M.APP_ID,
+                "version": APP_VERSION,
+                "api_version": M.API_VERSION,
+                "time": M.iso(time.time()),
+                "setup_completed": not NEEDS_SETUP,
+            }))
+            return True
+
+        if path == "/api/m/auth/session":
+            tok = self._m_require()
+            if not tok:
+                return True
+            idle_left, abs_left = mtoken_left(tok)
+            self._m_send(M.ok({
+                "authenticated": True,
+                "idle_expires_in": idle_left,
+                "abs_expires_in": abs_left,
+                "setup_completed": not NEEDS_SETUP,
+            }))
+            return True
+
+        if path == "/api/m/roots":
+            tok = self._m_require()
+            if not tok:
+                return True
+            self._m_send(M.ok({"roots": [
+                {"id": r["id"], "name": r["name"], "path": r["path"],
+                 "hidden": False, "exists": os.path.isdir(r["path"])}
+                for r in DOC_ROOTS]}))
+            return True
+
+        if path == "/api/m/files":
+            tok = self._m_require()
+            if not tok:
+                return True
+            self._m_get_files(qs)
+            return True
+
+        if path == "/api/m/file":
+            tok = self._m_require()
+            if not tok:
+                return True
+            self._m_get_file(qs)
+            return True
+
+        if path == "/api/m/file/versions":
+            tok = self._m_require()
+            if not tok:
+                return True
+            self._m_get_versions(qs)
+            return True
+
+        if path == "/api/m/settings/upload":
+            tok = self._m_require()
+            if not tok:
+                return True
+            deny = normalize_ext_list(SETTINGS.get("upload_deny", DEFAULT_UPLOAD_DENY))
+            self._m_send(M.ok({
+                "max_mb": M.take_int(SETTINGS, "upload_max_mb", 256, 1, 512),
+                "min_mb": 1,
+                "max_mb_limit": 512,
+                "deny_exts": deny,
+                "default_deny_exts": list(DEFAULT_UPLOAD_DENY),
+            }))
+            return True
+
+        return False
+
+    def _m_get_files(self, qs):
+        root_id = (qs.get("root") or [""])[0]
+        sub = (qs.get("path") or [""])[0].strip("/")
+        root = self._find_root(root_id)
+        if not root:
+            self._m_send(M.fail("BAD_REQUEST", "root 无效，请先调用 /api/m/roots 获取分区列表"))
+            return
+        limit, offset = M.take_paging(qs)
+        base = os.path.join(root["path"], sub) if sub else root["path"]
+        if not os.path.isdir(base):
+            self._m_send(M.ok({"items": [], "total": 0, "limit": limit, "offset": offset}))
+            return
+        items = []
+        for n in sorted(os.listdir(base)):
+            full = os.path.join(base, n)
+            if os.path.isdir(full):
+                if n == VERSIONS_DIRNAME or _in_doc_folder(root["path"],
+                                                            self._rel(root["path"], full)):
+                    continue    # 文档同名文件夹不作为独立条目暴露
+                items.append({
+                    "id": M.doc_id(self._rel(root["path"], full)),
+                    "name": n, "path": self._rel(root["path"], full),
+                    "root": root_id, "size": 0, "updated_at": M.iso(os.path.getmtime(full)),
+                    "is_dir": True, "has_versions": False,
+                })
+            elif n.lower().endswith(".md"):
+                items.append(self._m_file_item(root_id, root["path"], n, full))
+        items.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+        self._m_send(M.ok({
+            "items": items[offset:offset + limit],
+            "total": len(items), "limit": limit, "offset": offset,
+        }))
+
+    def _m_get_file(self, qs):
+        root_id = (qs.get("root") or [""])[0]
+        rel = (qs.get("path") or [""])[0]
+        got = self._m_resolve_doc(root_id, rel)
+        if not got:
+            self._m_send(M.fail("BAD_REQUEST", "root 或 path 无效"))
+            return
+        root, fp, _ = got
+        if not os.path.isfile(fp):
+            # 允许只给 stem（不带 .md），与 Web 端一致
+            alt = fp + ".md"
+            if os.path.isfile(alt):
+                fp = alt
+            else:
+                self._m_send(M.fail("NOT_FOUND", "文档不存在"))
+                return
+        # 旧式扁平文档：打开即迁移为同名文件夹结构（与 Web 端一致）
+        fp = os.path.join(root["path"], _migrate_to_folder_note(root["path"],
+                                                                self._rel(root["path"], fp)))
+        if not os.path.isfile(fp):
+            self._m_send(M.fail("NOT_FOUND", "文档不存在"))
+            return
+        self._m_send(M.ok(self._m_doc_detail(root_id, root, fp)))
+
+    def _m_get_versions(self, qs):
+        root_id = (qs.get("root") or [""])[0]
+        rel = (qs.get("path") or [""])[0]
+        got = self._m_resolve_doc(root_id, rel)
+        if not got:
+            self._m_send(M.fail("BAD_REQUEST", "root 或 path 无效"))
+            return
+        root, _fp, rel_stored = got
+        items = []
+        for v in list_file_versions(root["path"], rel_stored):
+            items.append({
+                "version": v["ts"],
+                "created_at": M.iso(v["ts"] / 1000.0),
+                "size": v["size"],
+                "source": "auto",
+                "comment": "",
+            })
+        self._m_send(M.ok({"items": items}))
+
+    # ---------------- 移动端 POST/PUT/DELETE ----------------
+
+    def _m_post(self, path):
+        """移动端 POST 路由分发。返回 True 表示已处理。"""
+        if path == "/api/m/auth/login":
+            self._m_login()
+            return True
+        if path == "/api/m/auth/logout":
+            # 登出必须**幂等**：token 已失效（含重复登出、超时后登出）同样回 ok，
+            # 客户端语义上「没有有效会话」就是「已登出」，不该当成错误。
+            # 因此这里不用 _m_require()（它会先回 401），改为自行判断。
+            tok = get_mtoken(self)
+            if tok:
+                MTOKENS.pop(tok, None)
+            self._m_send(M.ok({"logged_out": True}))
+            return True
+        tok = self._m_require()
+        if not tok:
+            return True
+        if path == "/api/m/file":
+            self._m_new_file()
+            return True
+        if path == "/api/m/file/versions/restore":
+            self._m_restore_version()
+            return True
+        if path == "/api/m/upload":
+            self._m_upload()
+            return True
+        if path == "/api/m/file/assets":
+            self._m_list_assets()
+            return True
+        return False
+
+    def _m_put(self, path):
+        if path != "/api/m/file":
+            return False
+        tok = self._m_require()
+        if not tok:
+            return True
+        self._m_save_file()
+        return True
+
+    def _m_delete(self, path):
+        if path != "/api/m/file":
+            return False
+        tok = self._m_require()
+        if not tok:
+            return True
+        self._m_delete_file()
+        return True
+
+    def _m_login(self):
+        if NEEDS_SETUP:
+            self._m_send(M.fail("NEED_SETUP"))
+            return
+        ip = client_ip(self)
+        if is_locked(ip):
+            self._m_send(M.fail("RATE_LIMITED", "登录失败次数过多，请稍后再试"))
+            return
+        data = self._json_body("密码格式不正确")
+        if data is None:
+            return
+        pwd = M.take_str(data, "password", required=False, default="", maxlen=256)
+        if pwd is None:
+            self._m_send(M.fail("BAD_REQUEST", "密码格式不正确"))
+            return
+        https_err = self._https_required_error()
+        if https_err:
+            self._m_send(M.fail("FORBIDDEN", https_err))
+            return
+        time.sleep(FAIL_DELAY)      # 失败延迟：削弱暴力破解的时间差
+        if not verify_pwhash(PWHASH, pwd):
+            record_failure(ip)
+            self._m_send(M.fail("FORBIDDEN", "密码错误"))
+            return
+        record_success(ip)
+        tok = start_mtoken(self)
+        idle_left, abs_left = mtoken_left(tok)
+        self._m_send(M.ok({
+            "token": tok,
+            "expires_in": abs_left,
+            "idle_expires_in": idle_left,
+        }))
+
+    def _m_new_file(self):
+        data = self._json_body()
+        if data is None:
+            return
+        root_id = M.take_str(data, "root", maxlen=128) or ""
+        rel = M.take_str(data, "path", maxlen=1024) or ""
+        content = M.take_str(data, "content", required=False, default="", maxlen=MAX_BODY_BYTES)
+        if content is None:
+            self._m_send(M.fail("BAD_REQUEST", "path 或 content 非法"))
+            return
+        got = self._m_resolve_doc(root_id, rel)
+        if not got:
+            self._m_send(M.fail("FORBIDDEN", "父路径非法"))
+            return
+        root, fp, _ = got
+        fp = _folder_note_path(fp)
+        if os.path.exists(fp):
+            self._m_send(M.fail("CONFLICT", "同名文档已存在"))
+            return
+        try:
+            if os.path.dirname(fp):
+                os.makedirs(os.path.dirname(fp), exist_ok=True)
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(content)
+            invalidate_files_cache()
+        except OSError as e:
+            self._m_send(M.fail("SERVER_ERROR", "写入失败：%s" % e))
+            return
+        self._m_send(M.ok(self._m_doc_detail(root_id, root, fp)))
+
+    def _m_save_file(self):
+        data = self._json_body()
+        if data is None:
+            return
+        root_id = M.take_str(data, "root", maxlen=128) or ""
+        rel = M.take_str(data, "path", maxlen=1024) or ""
+        content = M.take_str(data, "content", required=False, default="", maxlen=MAX_BODY_BYTES)
+        if content is None:
+            self._m_send(M.fail("BAD_REQUEST", "path 或 content 非法"))
+            return
+        got = self._m_resolve_doc(root_id, rel)
+        if not got:
+            self._m_send(M.fail("FORBIDDEN", "路径非法"))
+            return
+        root, fp, rel_stored = got
+        # 乐观锁：if_version 与服务端当前版本不一致则拒写，避免多端互相覆盖
+        if "if_version" in data:
+            want = data.get("if_version")
+            cur = len(list_file_versions(root["path"], rel_stored)) + 1
+            try:
+                want_i = int(want)
+            except (TypeError, ValueError):
+                self._m_send(M.fail("BAD_REQUEST", "if_version 必须为整数"))
+                return
+            if want_i != cur:
+                self._m_send(M.fail("FORBIDDEN", "文档已被其他端修改（版本 %d，本地 %d）" % (cur, want_i)))
+                return
+        try:
+            if os.path.dirname(fp):
+                os.makedirs(os.path.dirname(fp), exist_ok=True)
+            if os.path.isfile(fp):
+                try:
+                    with open(fp, "rb") as f:
+                        prev = f.read()
+                    if prev and prev != content.encode("utf-8"):
+                        save_file_version(root["path"], rel_stored, prev)
+                except OSError:
+                    pass
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(content)
+            invalidate_files_cache()
+        except OSError as e:
+            self._m_send(M.fail("SERVER_ERROR", "保存失败：%s" % e))
+            return
+        self._m_send(M.ok(self._m_doc_detail(root_id, root, fp)))
+
+    def _m_delete_file(self):
+        data = self._json_body()
+        if data is None:
+            return
+        root_id = M.take_str(data, "root", maxlen=128) or ""
+        rel = M.take_str(data, "path", maxlen=1024) or ""
+        got = self._m_resolve_doc(root_id, rel)
+        if not got:
+            self._m_send(M.fail("FORBIDDEN", "路径非法"))
+            return
+        root, fp, rel_stored = got
+        if not os.path.isfile(fp):
+            self._m_send(M.fail("NOT_FOUND", "文档不存在"))
+            return
+        try:
+            os.remove(fp)
+            # 同名文件夹（含全部上传物与历史版本）一并清理
+            adir = _doc_asset_dir(root["path"], rel_stored)
+            if adir and os.path.isdir(adir):
+                shutil.rmtree(adir, ignore_errors=True)
+            vdir = _version_dir(root["path"], rel_stored)
+            if os.path.isdir(vdir):
+                shutil.rmtree(vdir, ignore_errors=True)
+            invalidate_files_cache()
+            invalidate_upload_index()
+        except OSError as e:
+            self._m_send(M.fail("SERVER_ERROR", "删除失败：%s" % e))
+            return
+        self._m_send(M.ok({"deleted": True, "root": root_id, "path": rel_stored}))
+
+    def _m_restore_version(self):
+        data = self._json_body()
+        if data is None:
+            return
+        root_id = M.take_str(data, "root", maxlen=128) or ""
+        rel = M.take_str(data, "path", maxlen=1024) or ""
+        got = self._m_resolve_doc(root_id, rel)
+        if not got:
+            self._m_send(M.fail("FORBIDDEN", "路径非法"))
+            return
+        root, fp, rel_stored = got
+        try:
+            want = int(data.get("version"))
+        except (TypeError, ValueError):
+            self._m_send(M.fail("BAD_REQUEST", "version 必须为整数"))
+            return
+        content = read_version(root["path"], rel_stored, want)
+        if content is None:
+            self._m_send(M.fail("NOT_FOUND", "该版本不存在"))
+            return
+        try:
+            if os.path.isfile(fp):
+                with open(fp, "rb") as f:
+                    prev = f.read()
+                if prev and prev != content:
+                    save_file_version(root["path"], rel_stored, prev)
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(content.decode("utf-8"))
+            invalidate_files_cache()
+        except OSError as e:
+            self._m_send(M.fail("SERVER_ERROR", "回滚失败：%s" % e))
+            return
+        self._m_send(M.ok(self._m_doc_detail(root_id, root, fp)))
+
+    def _m_list_assets(self):
+        data = self._json_body()
+        if data is None:
+            return
+        root_id = M.take_str(data, "root", maxlen=128) or ""
+        rel = M.take_str(data, "path", maxlen=1024) or ""
+        got = self._m_resolve_doc(root_id, rel)
+        if not got:
+            self._m_send(M.fail("BAD_REQUEST", "root 或 path 无效"))
+            return
+        root, _fp, rel_stored = got
+        detail = self._m_doc_detail(root_id, root, os.path.join(root["path"], rel_stored))
+        self._m_send(M.ok({"assets": detail["assets"]}))
+
+    def _m_upload(self):
+        """附件上传。与 Web 端共用黑名单判定、大小上限与安全响应头（不另写一套校验）。"""
+        limit_mb = M.take_int(SETTINGS, "upload_max_mb", 256, 1, 512)
+        body = _read_body(self, min(MAX_UPLOAD_BYTES, limit_mb * 1024 * 1024))
+        if not body:
+            self._m_send(M.fail("BAD_REQUEST", "请求体为空或超过大小上限"))
+            return
+        ctype = self.headers.get("Content-Type", "")
+        bm = re.search(r"boundary=([^;]+)", ctype)
+        if "multipart/form-data" not in ctype.lower() or not bm:
+            self._m_send(M.fail("BAD_REQUEST", "需 multipart/form-data 且须带 boundary"))
+            return
+        boundary = bm.group(1).strip().strip('"').encode("utf-8")
+        files, fields = parse_multipart(body, boundary)
+        if not files:
+            self._m_send(M.fail("BAD_REQUEST", "缺少文件字段 file"))
+            return
+        # 单文件接口：取第一个（field 名为 file）
+        _field, fname, fdata = files[0]
+        root_id = (fields.get("root") or "")[:128]
+        doc_rel = (fields.get("path") or "")[:1024]
+        base_name = os.path.basename(fname or "")
+        ext = base_name.rsplit(".", 1)[-1].lower() if "." in base_name else ""
+        if not base_name or not ext:
+            self._m_send(M.fail("BAD_REQUEST", "文件名或扩展名非法"))
+            return
+        deny = normalize_ext_list(SETTINGS.get("upload_deny", DEFAULT_UPLOAD_DENY))
+        # is_denied_upload 收的是**文件名**（内部做 splitext 取扩展名），
+        # 传裸扩展名会因splitext("exe") 得到空扩展名而漏判放行——必须传完整文件名。
+        if is_denied_upload(base_name, deny):
+            self._m_send(M.fail("DENIED_EXT", "「.%s」在不允许上传的文件格式列表中" % ext))
+            return
+        # 落盘位置：有 path 则进该文档的同名文件夹，否则进全局 uploads
+        if root_id and doc_rel:
+            got = self._m_resolve_doc(root_id, doc_rel)
+            if not got:
+                self._m_send(M.fail("BAD_REQUEST", "root 或 path 无效"))
+                return
+            root, _fp, rel_stored = got
+            adir = _doc_asset_dir(root["path"], rel_stored)
+            target_dir = adir if adir else os.path.join(root["path"], os.path.dirname(rel_stored))
+        else:
+            target_dir = UPLOAD_DIR
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except OSError as e:
+            self._m_send(M.fail("SERVER_ERROR", "创建目录失败：%s" % e))
+            return
+        stored = "%s.%s" % (uuid.uuid4().hex, ext)
+        fp = os.path.join(target_dir, stored)
+        try:
+            with open(fp, "wb") as f:
+                f.write(fdata)
+        except OSError as e:
+            self._m_send(M.fail("SERVER_ERROR", "写入失败：%s" % e))
+            return
+        invalidate_upload_index()
+        self._m_send(M.ok({
+            "name": stored,
+            "url": "/api/m/asset/" + stored,
+            "ext": ext,
+            "size": len(fdata),
+            "insert_text": "![](" + stored + ")",
+        }))
+
     # ---------------- GET ----------------
     def do_GET(self):
         self._pending_cookie = None
         parsed = urlparse(self.path)
         path = parsed.path
         qs = parse_qs(parsed.query)
+        if path.startswith("/api/m/"):
+            # 附件读取：与上传接口对称，需鉴权（附件可能含私密内容）
+            if path.startswith("/api/m/asset/"):
+                self._m_asset(path[len("/api/m/asset/"):])
+                return
+            if self._m_get(path, qs):
+                return
+            self._m_send(M.fail("NOT_FOUND", "接口不存在"))
+            return
 
         # 公开：鉴权状态 / 首次设置状态
         if path == "/api/auth/check":
@@ -910,11 +1556,54 @@ class Handler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.do_GET()
 
+    def do_PUT(self):
+        """移动端保存文档（规范 §4.5，PUT /api/m/file）。Web 端无PUT，此方法仅服务移动端。"""
+        self._pending_cookie = None
+        parsed = urlparse(self.path)
+        p = parsed.path
+        if not p.startswith("/api/m/"):
+            self._send_json({"ok": False, "error": "not found"}, 404)
+            return
+        if _content_length(self) > MAX_BODY_BYTES:
+            self.close_connection = True
+            self._m_send(M.fail("TOO_LARGE", "请求体过大"))
+            return
+        if not self._m_put(p):
+            self._m_send(M.fail("NOT_FOUND", "接口不存在"))
+
+    def do_DELETE(self):
+        """移动端删除文档（规范 §4.6）。"""
+        self._pending_cookie = None
+        parsed = urlparse(self.path)
+        p = parsed.path
+        if not p.startswith("/api/m/"):
+            self._send_json({"ok": False, "error": "not found"}, 404)
+            return
+        if _content_length(self) > MAX_BODY_BYTES:
+            self.close_connection = True
+            self._m_send(M.fail("TOO_LARGE", "请求体过大"))
+            return
+        if not self._m_delete(p):
+            self._m_send(M.fail("NOT_FOUND", "接口不存在"))
+
     # ---------------- POST ----------------
     def do_POST(self):
         self._pending_cookie = None
         parsed = urlparse(self.path)
         p = parsed.path
+
+        # 移动端 API：独立前缀，独立鉴权与响应包（在统一体积上限判断之内先行分流）
+        if p.startswith("/api/m/"):
+            limit = min(MAX_UPLOAD_BYTES, int(SETTINGS.get("upload_max_mb", 256)) * 1024 * 1024) \
+                if p == "/api/m/upload" else MAX_BODY_BYTES
+            if _content_length(self) > limit:
+                self.close_connection = True
+                self._m_send(M.fail("TOO_LARGE", "请求体过大（上限 %d MB）" % (limit // (1024 * 1024))))
+                return
+            if self._m_post(p):
+                return
+            self._m_send(M.fail("NOT_FOUND", "接口不存在"))
+            return
 
         # 统一的请求体上限：先于任何处理判断，超大请求直接 413（避免读入内存造成 DoS）
         clen = _content_length(self)

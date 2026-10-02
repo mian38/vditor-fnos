@@ -1,8 +1,12 @@
-# 移动端 App API 预留接口规范（v1.1.3）
+# 移动端 API（v1.2.0 · 已实现）
 
-> **状态：仅接口定义预留，尚未实现。** 本文用于给手机端（iOS / Android）先行约定接口形态，
-> 待确认后再落地实现。**当前 1.1.3 版本不含任何 `/api/m/` 路由**，调用会得到 404。
-> 现有 Web 端接口（`/api/login`、`/api/files` 等）保持不变、不受本文影响。
+> **状态：v1.2.0 起 15 个接口全部实装并通过回归测试**（`test_mobile_api.py`，65 项全过）。
+> 1.1.3 时期本文只是「预留规范」，当时服务端**没有任何 `/api/m/` 路由**，调用会得到 404；
+> 1.2.0 已按本文逐个落地，字段以本文为准。
+> 现有 Web 端接口（`/api/login`、`/api/files` 等）保持不变、不受本文影响，
+> 且与移动端会话**物理隔离**（独立 `MTOKENS` 字典，不共用 Cookie）。
+
+配套客户端：`android/`（Kotlin 原生，零第三方网络库）。
 
 ---
 
@@ -13,7 +17,7 @@
 | 基础路径 | 所有移动端接口统一挂在 `/api/m/` 前缀下，与现有 Web 接口物理隔离，便于并行演进 |
 | 传输 | HTTPS（公网访问必须；与现有 `secure_cookie` 安全策略一致） |
 | 编码 | 请求与响应均为 `application/json; charset=utf-8`（文件上传除外，用 `multipart/form-data`） |
-| 时间 | 一律 ISO 8601 UTC，如 `2026-10-02T10:23:45Z` |
+| 时间 | 一律 ISO 8601 UTC，如 `2026-10-02T10:23:45Z`；**历史版本例外**，用毫秒时间戳（见 §4.7） |
 | 字段命名 | `snake_case`（与现有服务端保持一致，便于复用解析逻辑） |
 
 ### 1.1 统一响应包
@@ -21,7 +25,7 @@
 成功：
 
 ```json
-{ "ok": true, "data": { }, "error": "" }
+{ "ok": true, "data": { }, "error": "", "message": "" }
 ```
 
 失败：
@@ -33,6 +37,10 @@
 - `ok`：布尔值，客户端据此判断成功与否，**不要**依赖 HTTP 状态码单独判断。
 - `error`：机器可读的错误码（见 §5），用于客户端做分支处理。
 - `message`：人类可读的中文提示，可直接展示给用户。
+- `data` 在失败时为 `null`（不是 `{}`），客户端取值前先判空。
+
+实现位置：`mobile_api.py` 的 `ok()` / `fail()` / `strip_internal()`。
+内部约定：以 `_` 开头的键（如 `_http`）为传输用内部字段，输出前由 `strip_internal()` 剥离。
 
 ### 1.2 鉴权方式
 
@@ -43,11 +51,12 @@ Authorization: Bearer <token>
 ```
 
 - 除 `POST /api/m/auth/login` 与 `GET /api/m/health` 外，**所有接口都必须带该头**。
-- Token 由登录接口下发，有效期与现有 Web 会话一致（空闲 30 分钟 / 绝对 8 小时）。
-- 登录失败次数限制沿用现有策略：同一 IP 连续 5 次失败锁定 15 分钟。
+- Token 有效期与 Web 会话一致口径：空闲 30 分钟 / 绝对 8 小时。
+- 登录失败次数限制沿用现有策略：同一 IP 连续 5 次失败锁定 15 分钟，失败额外延迟 150ms。
+- **Token 不做 IP 绑定**：手机常在蜂窝与 Wi-Fi 间切换，绑定会造成误失效。
 
-> **待确认项**：是否需要为移动端单独签发 token（而非复用 Web 会话 cookie）。
-> 建议单独签发，便于服务端按客户端维度限流与吊销。此项在实现前需与项目维护者确认。
+Token 存储在服务端的 `MTOKENS` 字典，**与 Web Cookie 会话完全独立**，
+便于按客户端维度限流与吊销。硬上限 2000 条，`_sweep_sessions()` 每 5 分钟清理过期项。
 
 ### 1.3 通用错误码
 
@@ -55,12 +64,17 @@ Authorization: Bearer <token>
 | --- | --- | --- | --- |
 | `INVALID_TOKEN` | 401 | token 缺失 / 无效 / 过期 | 清除本地 token，跳转登录 |
 | `NEED_SETUP` | 428 | 应用尚未完成首次设置密码 | 引导用户先在 Web 端完成初始设置 |
-| `FORBIDDEN` | 403 | 无权限（如非安全上下文下尝试录音类操作） | 提示用户 |
-| `NOT_FOUND` | 404 | 文档 / 分区 / 版本不存在 | 刷新列表 |
-| `DENIED_EXT` | 400 | 文件扩展名命中上传黑名单 | 提示用户该类型不允许上传，并可在设置中放开 |
-| `TOO_LARGE` | 413 | 文件超过大小上限 | 提示用户调小文件或调整「上传设置」 |
-| `RATE_LIMITED` | 429 | 请求过于频繁 | 退避后重试 |
-| `SERVER_ERROR` | 500 | 服务端异常 | 上报日志并提示重试 |
+| `FORBIDDEN` | 403 | 密码错误 / 乐观锁冲突 / 非安全上下文 | 按 message 区分处理 |
+| `NOT_FOUND` | 404 | 文档 / 附件不存在 | 刷新列表 |
+| `DENIED_EXT` | 400 | 文件扩展名命中上传黑名单 | 提示该类型不允许上传，可在 Web 设置中放开 |
+| `TOO_LARGE` | 413 | 文件超过大小上限 | 提示调小文件或调整「上传设置」 |
+| `RATE_LIMITED` | 429 | 登录失败次数过多被锁定 | 退避后重试 |
+| `BAD_REQUEST` | 400 | 参数缺失 / 类型错误 / 长度超限 | 属端上 bug，需上报 |
+| `CONFLICT` | 409 | 同名文档已存在 | 提示换名 |
+| `SERVER_ERROR` | 500 | 服务端异常（磁盘满、权限不足等） | 提示重试并上报日志 |
+
+> 映射表见 `mobile_api.py` 的 `ERROR_HTTP`。未登记的错误码会**降级为 `SERVER_ERROR` + 500**，
+> 避免端上遇到未知码时无映射可依。
 
 ---
 
@@ -69,23 +83,24 @@ Authorization: Bearer <token>
 | # | 方法 | 路径 | 说明 | 鉴权 |
 | --- | --- | --- | --- | --- |
 | 1 | GET | `/api/m/health` | 健康检查（探活 / 版本） | 否 |
-| 2 | POST | `/api/m/auth/login` | 账号密码登录，下发 token | 否 |
+| 2 | POST | `/api/m/auth/login` | 密码登录，下发 token | 否 |
 | 3 | POST | `/api/m/auth/logout` | 注销并作废当前 token | 是 |
 | 4 | GET | `/api/m/auth/session` | 查询当前会话状态 | 是 |
 | 5 | GET | `/api/m/roots` | 列出文档分区（根目录） | 是 |
 | 6 | GET | `/api/m/files` | 列出一个分区下的文档列表 | 是 |
 | 7 | GET | `/api/m/file` | 获取单个文档详情（内容 + 元信息） | 是 |
 | 8 | POST | `/api/m/file` | 新建文档 | 是 |
-| 9 | PUT | `/api/m/file` | 保存文档内容（新建/更新二选一，`id` 为空即新建） | 是 |
+| 9 | PUT | `/api/m/file` | 保存文档内容（支持乐观锁） | 是 |
 | 10 | DELETE | `/api/m/file` | 删除文档（含全部历史版本） | 是 |
 | 11 | GET | `/api/m/file/versions` | 列出某文档的历史版本 | 是 |
 | 12 | POST | `/api/m/file/versions/restore` | 回滚到指定历史版本 | 是 |
-| 13 | POST | `/api/m/upload` | 上传附件（图片 / 音频等），返回可引用链接 | 是 |
-| 14 | GET | `/api/m/settings/upload` | 读取上传限制（大小上限 + 格式黑名单），供客户端预校验 | 是 |
+| 13 | POST | `/api/m/upload` | 上传附件，返回可引用链接 | 是 |
+| 14 | GET | `/api/m/settings/upload` | 读取上传限制，供客户端预校验 | 是 |
 | 15 | POST | `/api/m/file/assets` | 列出某文档关联的附件 | 是 |
+| 附 | GET | `/api/m/asset/<name>` | 读取附件二进制（§4.9 下发 url 的落点） | 是 |
 
-> 上表中 `PUT /api/m/file` 采用「有 `id` 则更新、无 `id` 则新建」的合并语义，
-> 与 8/9 分开的设计二选一即可，**实现时只保留其中一种**（推荐合并式，减少端上分支）。
+> 新建与保存是**两个独立接口**（8 / 9），不做「有 id 更新、无 id 新建」的合并语义——
+> 端上分支更少，且新建可以明确拿到 `CONFLICT` 而不必依赖服务端猜测意图。
 
 ---
 
@@ -93,18 +108,24 @@ Authorization: Bearer <token>
 
 ### 3.1 `GET /api/m/health`
 
-无需鉴权，供客户端启动时探活。
-
-**响应 `data`：**
+无需鉴权，供客户端启动时探活。响应 `data`：
 
 ```json
 {
   "status": "ok",
   "app": "com.mian38.vditor",
-  "version": "1.1.3",
+  "version": "1.2.0",
   "api_version": "m1",
-  "time": "2026-10-02T10:23:45Z"
+  "time": "2026-10-02T10:23:45Z",
+  "setup_completed": true
 }
+```
+
+`setup_completed=false` 时应引导用户先在浏览器完成首次设置（等价于登录会返回 `NEED_SETUP`）。
+Android 客户端正是靠它区分「服务器没配好」与「地址填错」。
+
+```bash
+curl http://192.168.1.10:9000/api/m/health
 ```
 
 ### 3.2 `POST /api/m/auth/login`
@@ -118,30 +139,43 @@ Authorization: Bearer <token>
 **响应 `data`：**
 
 ```json
-{
-  "token": "3f9a…（不透明字符串）",
-  "expires_in": 28800,
-  "abs_expires_in": 86400
-}
+{ "token": "3f9a…（不透明字符串）", "expires_in": 28800, "idle_expires_in": 1800 }
 ```
 
-**错误：** 密码错误 / 已锁定 → `FORBIDDEN`；未完成初始设置 → `NEED_SETUP`。
+**错误：** 密码错误 → `FORBIDDEN`；被锁定 → `RATE_LIMITED`；未完成初始设置 → `NEED_SETUP`；
+非安全上下文的 HTTP 登录 → `FORBIDDEN`（message 说明需 HTTPS）。
+
+```bash
+curl -X POST http://192.168.1.10:9000/api/m/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"password":"your-password"}'
+```
 
 ### 3.3 `POST /api/m/auth/logout`
 
-无请求体。作废当前 token，重复调用应幂等返回 `ok: true`。
+无请求体。作废当前 token。
+
+**语义：幂等。** 无论 token 有效、已失效、还是伪造的，都返回 `ok: true`
+（响应 `data` 为 `{"logged_out": true}`）。因为「当前无有效会话」在语义上
+就等于「已登出」，不是错误——端上「token 刚过期就点退出」或「重复点退出」
+是常态，回 401 只会弹出一个用户看不懂的报错。
+
+> 早期实现曾对无效 token 回 401，与本文档承诺的幂等语义不符，
+> 已在 1.2.0 修正（`MOBILE_API.md` 随实现同步更新）。
+
+客户端仍应**无条件清掉本地 token**，不要依赖服务端返回值判断。
+
+```bash
+curl -X POST http://192.168.1.10:9000/api/m/auth/logout \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ### 3.4 `GET /api/m/auth/session`
 
 **响应 `data`：**
 
 ```json
-{
-  "authenticated": true,
-  "idle_expires_in": 1500,
-  "abs_expires_in": 21600,
-  "setup_completed": true
-}
+{ "authenticated": true, "idle_expires_in": 1500, "abs_expires_in": 21600, "setup_completed": true }
 ```
 
 客户端据此在 App 回到前台时判断是否需要重新登录。
@@ -152,22 +186,22 @@ Authorization: Bearer <token>
 
 ### 4.1 `GET /api/m/roots`
 
-列出用户有权限的文档分区。
-
 **响应 `data`：**
 
 ```json
 {
   "roots": [
-    { "id": "r1", "name": "默认文档", "path": "/vol1/1000/Documents", "hidden": false },
-    { "id": "r2", "name": "我的分区", "path": "/vol1/1000/Notes",   "hidden": false }
+    { "id": "r1", "name": "默认文档", "path": "/vol1/1000/Documents", "hidden": false, "exists": true },
+    { "id": "r2", "name": "我的分区", "path": "/vol1/1000/Notes",   "hidden": false, "exists": true }
   ]
 }
 ```
 
+`exists=false` 表示分区目录在磁盘上不存在（常见于外接盘未挂载），端上应灰显并给出说明而非直接报错。
+
 ### 4.2 `GET /api/m/files`
 
-列出一个分区下的文档（不含子目录递归）。
+列出一个分区下的**单层**条目（文档 + 子目录，不递归）。
 
 **查询参数：**
 
@@ -175,7 +209,7 @@ Authorization: Bearer <token>
 | --- | --- | --- |
 | `root` | 是 | 分区 id |
 | `path` | 否 | 子目录相对路径，缺省为分区根目录 |
-| `limit` | 否 | 分页条数，默认 200，上限 1000 |
+| `limit` | 否 | 分页条数，默认 200，上限 1000；非法值回落默认 |
 | `offset` | 否 | 分页偏移，默认 0 |
 
 **响应 `data`：**
@@ -189,10 +223,19 @@ Authorization: Bearer <token>
       "path": "读书笔记/读书笔记.md",
       "root": "r1",
       "size": 20480,
-      "word_count": 5120,
       "updated_at": "2026-10-02T09:10:00Z",
       "is_dir": false,
       "has_versions": true
+    },
+    {
+      "id": "b7d0e512",
+      "name": "子目录",
+      "path": "子目录",
+      "root": "r1",
+      "size": 0,
+      "updated_at": "2026-10-02T09:00:00Z",
+      "is_dir": true,
+      "has_versions": false
     }
   ],
   "total": 128,
@@ -201,12 +244,22 @@ Authorization: Bearer <token>
 }
 ```
 
-> `word_count` 口径与 Web 端顶栏一致：按**预览渲染后的可见字数**统计，
-> 不含 Markdown 语法，避免端上自行解析得出虚高数值。
+**排序规则：** 目录在前，同类按 `name` 小写升序。
+
+**两处容易踩空的约定：**
+
+1. **文档的同名文件夹不作为目录条目暴露。**
+   文档 `读书笔记/读书笔记.md` 的资源目录 `读书笔记/` 会被跳过（`_in_doc_folder` 判定），
+   否则用户点进去只会看到一个同名 `.md`，属于噪音。历史版本目录同理跳过。
+2. **无 `word_count` 字段。** Web 端顶栏是按「预览渲染后的可见字数」统计的
+   （`index.html` 的 `countReaderWords`），服务端无法复现该口径；
+   强行按字符数下发会得到虚高数值，故宁缺勿滥。
 
 ### 4.3 `GET /api/m/file` — 文档详情
 
 **查询参数：** `root`（必填）、`path`（必填，相对分区根，指向 `.md` 文件）。
+
+`path` 也接受**只给 stem**（不带 `.md`，如 `读书笔记/读书笔记`），服务端会补 `.md` 再判断。
 
 **响应 `data`：**
 
@@ -218,49 +271,68 @@ Authorization: Bearer <token>
   "root": "r1",
   "content": "# 读书笔记\n\n正文…",
   "size": 20480,
-  "word_count": 5120,
   "created_at": "2026-09-30T12:00:00Z",
   "updated_at": "2026-10-02T09:10:00Z",
   "version": 42,
   "assets": [
-    { "name": "封面.png", "url": "/api/m/asset/9f2c…", "size": 51200, "ext": "png" }
+    { "name": "封面.png", "url": "%E5%B0%81%E9%9D%A2.png", "size": 51200, "ext": "png" }
   ]
 }
 ```
+
+- `version` = 历史版本条数 + 1，即「当前内容算第 N 版」，与 Web 端语义一致。
+- `assets[].url` 是**已 URL 编码的相对文件名**（用于 Markdown 引用，不是完整路径）；
+  端上要取二进制请拼 `/api/m/asset/<url>`。
 
 ### 4.4 `POST /api/m/file` — 新建文档
 
 **请求：**
 
 ```json
-{ "root": "r1", "path": "读书笔记/读书笔记.md", "content": "# 标题\n" }
+{ "root": "r1", "path": "读书笔记/读书笔记", "content": "# 标题\n" }
 ```
 
-文档采用「每文档一个同名文件夹」结构：服务端会把 `A/A.md` 与其附件统一放入 `A/` 文件夹。
+文档采用「每文档一个同名文件夹」结构：服务端把 `A/A.md` 与其附件统一放入 `A/` 文件夹。
+`path` 传 stem 即可（`A`），服务端经 `_folder_note_path` 规范化；重复调用幂等，不会叠套 `A/A/A.md`。
 
 **响应 `data`：** 同 §4.3。
 
-**错误：** 父路径非法 → `FORBIDDEN`；同名文档已存在 → `SERVER_ERROR`（待细化错误码）。
+**错误：** 父路径非法 → `FORBIDDEN`；`root` / `path` 类型或长度非法 → `BAD_REQUEST`；
+同名文档已存在 → `CONFLICT`。
+
+```bash
+curl -X POST http://192.168.1.10:9000/api/m/file \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"root":"r1","path":"读书笔记/读书笔记","content":"# 标题\n"}'
+```
 
 ### 4.5 `PUT /api/m/file` — 保存文档
 
 **请求：**
 
 ```json
-{ "root": "r1", "path": "读书笔记/读书笔记.md", "content": "# 新内容\n", "if_version": 42 }
+{ "root": "r1", "path": "读书笔记/读书笔记", "content": "# 新内容\n", "if_version": 42 }
 ```
 
-- 开启历史版本时自动生成一次可回溯快照。
-- `if_version` 为**乐观锁**（可选）：与服务端当前版本不一致则拒绝写入，
-  返回 `FORBIDDEN`，避免多端同时编辑互相覆盖。
+- 保存时自动生成一次可回溯快照。
+- `if_version` 为**乐观锁**（可选）：与服务端当前版本（`version` 字段）不一致则拒绝写入，
+  返回 `FORBIDDEN`。**端上务必在加载时记下 `version`，保存时原样回传**，
+  这是多端并发编辑下唯一不丢内容的保障。
+- 不传 `if_version` 则为「强制覆盖」，仅适合单端独占场景。
 
 **响应 `data`：** 同 §4.3（含更新后的 `version` 与 `updated_at`）。
 
+```bash
+curl -X PUT http://192.168.1.10:9000/api/m/file \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"root":"r1","path":"读书笔记/读书笔记","content":"# 新内容\n","if_version":42}'
+```
+
 ### 4.6 `DELETE /api/m/file` — 删除文档
 
-**请求：** `{"root": "r1", "path": "读书笔记/读书笔记.md"}`
+**请求：** `{"root": "r1", "path": "读书笔记/读书笔记"}`
 
-删除该文档**及其全部历史版本**。建议端上先弹二次确认。
+删除该文档**及其全部历史版本与同名文件夹内的附件**。**不可恢复**，端上必须二次确认。
 
 ### 4.7 `GET /api/m/file/versions` — 历史版本列表
 
@@ -269,24 +341,29 @@ Authorization: Bearer <token>
 ```json
 {
   "items": [
-    {
-      "version": 42,
-      "created_at": "2026-10-02T09:10:00Z",
-      "size": 20480,
-      "source": "manual",
-      "comment": ""
-    }
+    { "version": 1757380800000, "created_at": "2026-10-02T09:20:00Z", "size": 20480, "source": "auto", "comment": "" }
   ]
 }
 ```
 
-`source` 取值：`manual`（手动保存）/ `auto`（自动保存）。
+> ⚠️ **`version` 是毫秒时间戳，不是递增序号。** 服务端以保存时刻作为版本标识
+> （`v["ts"]`），这样即便跨设备、跨时区也能唯一定位一份快照。
+> `created_at` 是同一时刻的 ISO 8601 表示，仅供展示；**回滚时必须回传毫秒时间戳**。
+> 端上不要对 `version` 做 `+1` 递增推断——它只用于 `PUT /api/m/file` 的乐观锁。
+
+`source` 固定为 `auto`（每次保存自动生成快照），`comment` 保留字段、当前恒为空串。
 
 ### 4.8 `POST /api/m/file/versions/restore` — 回滚
 
-**请求：** `{"root": "r1", "path": "…", "version": 40}`
+**请求：** `{"root": "r1", "path": "…", "version": 1757380800000}`（毫秒时间戳）
 
-回滚会把该版本内容写为当前内容（**并生成一次新的版本快照**，不破坏历史链）。
+回滚会把该版本内容写为当前内容，**并生成一次新的版本快照**，历史链不被破坏。
+
+```bash
+curl -X POST http://192.168.1.10:9000/api/m/file/versions/restore \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"root":"r1","path":"读书笔记/读书笔记","version":1757380800000}'
+```
 
 ### 4.9 `POST /api/m/upload` — 上传附件
 
@@ -294,27 +371,41 @@ Authorization: Bearer <token>
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `file` | 是 | 文件二进制（单文件） |
+| `file` | 是 | 文件二进制（单请求单文件） |
 | `root` | 是 | 分区 id |
-| `path` | 否 | 所属文档相对路径，用于定位到同名文件夹 |
+| `path` | 否 | 所属文档相对路径；缺省则落到全局 uploads 目录 |
 
 **响应 `data`：**
 
 ```json
 {
   "name": "9f2c8a1b….png",
-  "url": "/api/m/asset/9f2c8a1b…",
+  "url": "/api/m/asset/9f2c8a1b….png",
   "ext": "png",
-  "size": 51200
+  "size": 51200,
+  "insert_text": "![](9f2c8a1b….png)"
 }
 ```
 
+**`insert_text` 是给端上最省事的字段**：直接把它插入光标处即得到可用的 Markdown 图片引用
+（Web 端 Vditor 用的也是相对文件名，与文档同目录）。
+
 **校验规则（服务端为唯一判定方）：**
 
-1. **大小**：不超过「设置 → 上传设置」中的上限（默认 256MB，可设 1–512MB），超限 → `TOO_LARGE`。
+1. **大小**：不超过「设置 → 上传设置」中的上限（默认 256MB，可设 1–512MB），
+   超出请求体上限直接 `TOO_LARGE` + 断连。
 2. **格式**：命中「不允许上传的文件格式」黑名单 → `DENIED_EXT`。
    端上**应先调 §4.10 取回黑名单做预校验以改善体验，但服务端的判定为准**。
-3. 返回的 `url` 为可直接插入 Markdown 的引用（相对路径，导出后可离线打开）。
+3. **Content-Type 必须带 boundary**，否则 `BAD_REQUEST`。
+4. 落盘文件名是 `uuid4().hex + "." + ext`，不保留原始文件名（避免路径注入与重名）。
+5. 返回的 `url` 可直接 GET 取回二进制（需带 token）；响应头复用 `upload_headers`，
+   非内联类型强制 `attachment` + `CSP: sandbox`，防存储型 XSS。
+
+```bash
+curl -X POST http://192.168.1.10:9000/api/m/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "root=r1" -F "path=读书笔记/读书笔记" -F "file=@cover.png"
+```
 
 ### 4.10 `GET /api/m/settings/upload` — 上传限制
 
@@ -332,44 +423,65 @@ Authorization: Bearer <token>
 }
 ```
 
-- `deny_exts`：当前生效的黑名单（用户在 Web 设置页可增删）。
+- `deny_exts`：当前生效的黑名单（用户在 Web 设置页可增删，**空列表表示不限制**）。
 - `default_deny_exts`：内置默认清单，供端上提供「恢复默认」。
 
-> 本接口为**只读**。1.1.3 的上传限制**仅在 Web 设置页可修改**，
-> 移动端暂不提供修改入口（待确认是否放开，见 §6）。
+> 本接口为**只读**。上传限制目前**仅在 Web 设置页可修改**，移动端不提供修改入口。
+> 端上要用黑名单做预校验时，**判「空 = 不限制」**，别把空列表当成「用默认清单」——
+> 否则用户清空黑名单后端上仍会拦。
 
 ---
 
 ## 5. 客户端接入注意事项
 
 1. **不要复用 Web 的 Cookie 登录流程**。移动端走 Bearer Token，避免把密码 Cookie 放进系统 WebView。
-2. **401 要统一拦截**。收到 `INVALID_TOKEN` 应清 token 并跳登录页，不要在每个页面各自处理。
-3. **上传走分片断点续传**待确认（见 §6），当前设计为单请求直传。
-4. **大文档编辑建议本地暂存 + 显式保存**，与 Web 端「自动保存」策略解耦，避免端上频繁触网。
-5. **`word_count` 以服务端返回为准**，不要在端上自行统计（含语法会导致虚高）。
+2. **401 要统一拦截**。收到 `INVALID_TOKEN` 应清token 并跳登录页，不要在每个页面各自处理。
+   Android 客户端在 `ApiClient.parse()` 里统一处理，各页面无需重复。
+3. **重试策略要区分故障类型**。网络类瞬时故障（超时、连接重置）可指数退避重试；
+   4xx 这类确定性失败重试只会放大无效请求并拖慢反馈。
+   **上传不自动重试**（服务端每次都会生成新 uuid，重复提交会产生重复文件）。
+4. **`version` 必须参与乐观锁**。加载时存下 `version`，保存时回传；
+   收到 `FORBIDDEN` 时**不要覆盖**，应提示用户重新加载对比。
+5. **端上不自行统计字数**。服务端不下发 `word_count`（原因见 §4.2），
+   端上若要展示应明确标注为「字符数」而非「字数」。
+6. **大文档建议本地暂存 + 显式保存**，与 Web 端自动保存策略解耦，避免频繁触网。
+   Android 客户端用「停止输入 1.2 秒后静默保存」+ 顶栏手动保存兜底。
 
 ---
 
-## 6. 待确认事项（实现前需与维护者对齐）
+## 6. 尚未实现（v1.2.0 已知边界）
 
-| # | 议题 | 备选方案 | 建议 |
+| # | 议题 | 当前状态 | 后续方案 |
 | --- | --- | --- | --- |
-| 1 | Token 签发方式 | 复用 Web 会话 / 单独签发 | 单独签发，便于按客户端限流与吊销 |
-| 2 | 上传是否分片 | 单请求直传 / 分片断点续传 | 文档场景附件通常较小，先直传；超过阈值再引入分片 |
-| 3 | 上传限制是否允许端上修改 | 只读 / 允许增删黑名单 | 先只读；确有需求再放开写接口 |
-| 4 | 是否支持离线编辑队列 | 否 / 是 | 待端上需求明确后再定 |
-| 5 | 接口版本化策略 | 路径前缀 / `api_version` 字段 | 采用 `api_version` 字段（已在 §1.1 预留） |
-| 6 | 是否需要设备级推送 | 否 / 接入 fnOS 通知 | 待定 |
+| 1 | 上传分片断点续传 | 未做，单请求直传 | 文档场景附件通常较小；超过阈值再引入 |
+| 2 | 上传限制端上可改 | 只读 | 确有需求再放开写接口 |
+| 3 | 离线编辑队列 | 未做 | 待端上需求明确后再定 |
+| 4 | 设备级推送 | 未做 | 可考虑接 fnOS 通知 |
+| 5 | 重命名 / 移动文档 | 未开放 | 服务端暂无该能力，端上不给死按钮 |
+| 6 | 附件单独删除 | 未开放 | 目前只能随文档一并删除 |
 
 ---
 
-## 7. 实现时的注意事项（给后续开发者）
+## 7. 实现说明（给后续开发者）
 
+- **纯逻辑集中在 `mobile_api.py`**：错误码映射、响应包构造、参数校验、分页解析、时间格式化
+  都在这里，`server.py` 只做路由与 I/O。这与项目既有的「纯函数拆 `vd_util.py`」约定一致。
 - 新增路由**统一挂在 `/api/m/` 前缀**下，不要与现有 `/api/` 路由混用，便于灰度与回滚。
-- 复用现有工具函数：`safe_join`（路径穿越防护）、`_doc_asset_dir`（同名文件夹结构）、
-  `is_denied_upload`（黑名单判定）、`upload_headers`（响应头与沙箱），
-  **不要另写一套**上传校验或路径处理逻辑。
-- 上传大小上限沿用 `SETTINGS["upload_max_mb"]`，不要写死常量。
-- 新接口需补回归测试；现有定向测试见 `test_v113.py`（79 项）。
+- `do_GET` / `do_POST` 开头做 `/api/m/` 前缀分流；`do_PUT` / `do_DELETE` 是 1.2.0 新增的
+  （Web 端原本没有这两个方法）。
+- 路径安全**复用现有函数，不要另写一套**：`safe_join`（路径穿越防护）、
+  `_safe_doc` / `_m_resolve_doc`（文档定位）、`_doc_asset_dir`（同名文件夹结构）、
+  `_folder_note_path`（幂等规范化）、`_version_dir`（版本目录与自动迁移）。
+- 上传校验复用 `is_denied_upload`（黑名单）与 `upload_headers`（响应头与沙箱），
+  大小上限读 `SETTINGS["upload_max_mb"]` 而非写死常量。
+- `_sweep_sessions()` 同时清理 `MTOKENS`，硬上限 2000 条。
+
+> ⚠️ **一个易踩的坑**：`is_denied_upload(filename, deny)` 收的是**完整文件名**
+> （内部做 `os.path.splitext` 取扩展名）。传裸扩展名 `"exe"` 会因 `splitext("exe")`
+> 得到空扩展名而**漏判放行**，黑名单形同虚设。
+
+- 回归测试：`test_mobile_api.py`（65 项，9 段：A 健康检查与鉴权 / B 登录会话 / C 分区与列表 /
+  D 文档 CRUD / E 历史版本 / F 上传限制与附件 / G 异常边界 / H 登出 / I Web 端兼容性）。
+  改动移动端接口后必须跑：`python test_mobile_api.py`。
 - 静态资源白名单为**白名单放行**机制（仅 `/index.html`、`/vditor/`、`/ui/` 可公开访问），
-  新增需公开访问的路径时必须同步 `vd_util.PUBLIC_STATIC_EXACT` / `PUBLIC_STATIC_PREFIX`，否则 404。
+  新增可公开资源须同步 `PUBLIC_STATIC_EXACT` / `PUBLIC_STATIC_PREFIX`。

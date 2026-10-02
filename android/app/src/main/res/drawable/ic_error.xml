@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 加载失败提示图形（警告三角） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <path
+        android:fillColor="@color/divider"
+        android:pathData="M36,8 L68,62 A4,4 0 0 1 64.6,68 L7.4,68 A4,4 0 0 1 4,62 L36,8 Z" />
+    <path
+        android:fillColor="@color/danger"
+        android:pathData="M32.5,28 L39.5,28 L39.5,46 L32.5,46 Z" />
+    <path
+        android:fillColor="@color/danger"
+        android:pathData="M36,51 m-3.5,0 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z" />
+</vector>
