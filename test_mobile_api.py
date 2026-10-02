@@ -417,8 +417,8 @@ def run(c, port, docs):
     check("I1", "Web 鉴权检查仍正常", code == 200 and "authenticated" in d, (code, d))
     code, _, d = c.j("GET", "/api/m/health")
     check("I2", "登出后 health 仍公开", code == 200, (code, d))
-    check("I3", "版本已升为 1.2.0",
-          c.j("GET", "/api/m/health")[2].get("data", {}).get("version") == "1.2.0",
+    check("I3", "版本已升为 1.2.0beta",
+          c.j("GET", "/api/m/health")[2].get("data", {}).get("version") == "1.2.0beta",
           c.j("GET", "/api/m/health")[2].get("data", {}).get("version"))
 
 
