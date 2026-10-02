@@ -9,6 +9,7 @@
 | `v1.1.3_20261002_1945/` | 1.1.3 | 2026-10-02 19:45 | 1.1.4 动手前的完整状态。含「上传全线失效」的根因修复与上传格式黑名单反转。本快照存在两个已知问题（黑名单行按钮错位、`appref-ms` 导致「恢复默认」无法保存），已在 1.1.4 修复。 |
 | `v1.1.4_pre_audit_20261002_2030/` | 1.1.4 审计前 | 2026-10-02 20:30 | 1.1.4 首轮（两项功能修复完成）后、**全量审计精简前**的 3 个核心文件。本快照存在 1 个 High 级缺陷（4 处`Content-Length` 解析未保护）。 |
 | `v1.1.4_20261002_2056/` | **1.1.4** | 2026-10-02 20:56 | **1.1.x 系列最终版本**（功能修复 + 审计精简）。1.2 动手前的完整状态。 |
+| `v1.2.0_20261002_2200/` | **1.2.0** | 2026-10-02 22:00 | **移动端API 实装 + 原生Android 客户端**。新增 `mobile_api.py`；含 `MOBILE_API.md`（已实现版）。未含 `vditor/` 静态资源（15MB，太大），需从 `v1.2.0` 标签取。 |
 
 ## 命名约定
 
@@ -35,18 +36,32 @@ git branch -a             # 查看分支
 # 回滚 1.2 → 1.1.4：切分支，零风险（推荐）
 git checkout v1.1.x
 
-# 彻底丢弃 1.2 改动（破坏性，先确认 git status 干净）
-git branch backup-before-rollback && git reset --hard v1.1.4
-
 # 取回 1.1.4 的单个文件
 git checkout v1.1.4 -- vditor-fpk/app/server.py
+
+# 取回 1.1.4 的 app 源码（不含 vditor/ 静态资源，体积大）
+git checkout v1.1.4 -- vditor-fpk/app/server.py vditor-fpk/app/vd_util.py vditor-fpk/manifest
 ```
 
 详见根目录 `ARCHIVE.md`。
 
 ## 发布产物
 
-`.fpk` 未纳入 Git 跟踪，放`releases/`：
+`.fpk` / `.apk` / `.tar.gz` 均**未纳入 Git 跟踪**（见根目录 `.gitignore`），放`releases/`：
+
+### 1.2.0（当前版本）
+
+| 文件 | 字节 | md5 |
+| --- | --- | --- |
+| `com.mian38.vditor_1.2.0.fpk` | 4,525,079 | `bcc2937941aeeb395b30dc86ef7500e5` |
+| `vditor-nas-1.2.0.tar.gz` | 4,505,084 | `7d20a7f00357d999b99886836731067f` |
+| `Vditor-1.2.0-release.apk` | 1,385,604 | `795e3d5a125c8d62cc330744d009336d` |
+
+> APK 已用发布 keystore 签名（RSA 2048，APK Signature Scheme v2）。
+> **keystore 不入库**，需自行备份到 `C:\android-toolchain\keys\vditor-release.jks` 之外的地方；
+> 丢失则无法再发布可覆盖升级的版本。
+
+### 1.1.4（1.1.x 最终版）
 
 | 文件 | 字节 | md5 |
 | --- | --- | --- |
