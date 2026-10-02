@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 平板：加大留白与字号，保证大屏下的可读性 -->
-    <dimen name="gutter">40dp</dimen>
-    <dimen name="list_item_pad">18dp</dimen>
-    <dimen name="editor_pad">40dp</dimen>
-    <dimen name="editor_text_size">18sp</dimen>
-    <dimen name="fab_margin">32dp</dimen>
-</resources>

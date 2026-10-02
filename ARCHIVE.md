@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `main` | 分支 | 稳定版指针（当前停在 1.1.4） |
 | `v1.1.x` | 分支 | 1.1.x 维护分支（已冻结，仅接受 bug 修复） |
-| `dev/v1.2` | 分支 | **1.2 开发分支（当前分支）**：移动端 API + Android 客户端 |
+| `dev/v1.2` | 分支 | **1.2 开发分支（当前分支）**：移动端 API + API 输出开关 + 审计精简（原 Android 客户端已移除） |
 | `v1.1.4` | **标签** | 1.1.4 完整快照，不可变 |
 | `v1.2.0` | **标签** | 1.2.0 完整快照，不可变 |
 
@@ -51,8 +51,12 @@ git checkout v1.1.x
 rm -rf vditor-fpk/app/__pycache__   # 打包前必须清
 ./fnpack.exe build -d vditor-fpk
 
-# apk（需先备好 JDK 17 + Android SDK 34 + Gradle 8.7，见 android/README.md）
-cd android && ./build_apk.sh release
+# nas 通用版（由 vditor-fpk/app 派生，不手工维护）
+python3 make_nas.py
+tar -czf releases/vditor-nas-<版本>.tar.gz vditor-nas
+
+# 【已移除】apk：1.2.0 的 android/ 客户端在正式发布前已彻底删除，
+# 源码 / 构建脚本 / 签名凭据 / 构建环境（C:\android-toolchain）均已清理，不再有此构建步骤。
 ```
 
 详见 `archive/README.md`。

@@ -11,9 +11,10 @@
 * **错误码**：见 `ERROR_HTTP` 映射，机器可读码 + 中文提示成对出现。
 
 本模块只提供**纯逻辑**（响应包构造、参数校验、错误码映射）；
-真正的路由分发与 IO 调用由 `server.py` 的 `Handler._dispatch_m_*` 完成。
+真正的路由分发与 IO 调用由 `server.py` 的 `Handler._m_get/_m_post/_m_put/_m_delete` 完成。
 """
 
+import hashlib
 import time
 
 API_VERSION = "m1"
@@ -31,6 +32,9 @@ ERROR_HTTP = {
     "BAD_REQUEST": 400,
     "CONFLICT": 409,
     "SERVER_ERROR": 500,
+    # API 数据输出开关关闭时的专用码（403：鉴权已过，但策略不允许输出数据）。
+    # 与 FORBIDDEN 区分开，便于客户端判断「是权限不足」还是「开关没开」。
+    "API_OUTPUT_DISABLED": 403,
 }
 
 # 错误码 → 面向用户的中文提示。客户端可直接展示 message。
@@ -45,6 +49,7 @@ ERROR_MESSAGE = {
     "BAD_REQUEST": "请求参数有误",
     "CONFLICT": "内容已存在",
     "SERVER_ERROR": "服务端异常，请稍后重试",
+    "API_OUTPUT_DISABLED": "API 数据输出已关闭：请在「设置 → 开发者选项」中开启「API 接口对外输出数据」后再试（该开关仅用于开发调试）",
 }
 
 
@@ -135,5 +140,4 @@ def doc_id(rel):
 
     只用于客户端做乐观锁/去重，不承担安全职责（安全校验一律走服务端 safe_join）。
     """
-    import hashlib
     return hashlib.sha1((rel or "").encode("utf-8")).hexdigest()[:8]

@@ -151,6 +151,10 @@ def main():
         "VDITOR_PASSWORD": PASSWORD,
         "VDITOR_SECURE_COOKIE": "0",
         "VDITOR_TRUST_PROXY": "0",
+        # 1.2.0 起「API 数据输出」默认关闭；本套测试验的是**接口契约**，
+        # 需在开启态下跑，否则所有数据接口都会回 API_OUTPUT_DISABLED。
+        # 开关自身的开/关行为由 test_api_output_switch.py 单独覆盖。
+        "VDITOR_API_OUTPUT": "1",
         "PYTHONIOENCODING": "utf-8",
     })
     proc = subprocess.Popen([sys.executable, "server.py"], cwd=APP, env=env,

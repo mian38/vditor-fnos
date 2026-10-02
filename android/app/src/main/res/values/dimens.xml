@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 间距按屏幕宽度分档：手机 / 大屏手机·小平板 / 平板 -->
-    <dimen name="gutter">16dp</dimen>
-    <dimen name="list_item_pad">14dp</dimen>
-    <dimen name="editor_pad">16dp</dimen>
-    <dimen name="editor_text_size">16sp</dimen>
-    <dimen name="fab_margin">16dp</dimen>
-</resources>

@@ -122,6 +122,15 @@ DEFAULT_SETTINGS = {
     "upload_max_mb": 256,      # 单个上传文件大小上限（MB）
     "upload_deny": DEFAULT_UPLOAD_DENY,  # 不允许上传的文件扩展名黑名单（逗号分隔；默认放行其余全部）
     "upload_accept": "",       # 【已废弃·仅降级兼容】1.1.2 的白名单字段，1.1.3 起不再参与校验
+    # ------------------------------------------------------------------
+    # API 接口对外输出数据（/api/m/* 数据接口）。**默认关闭**。
+    # 这是给「后续开发本应用移动版」用的调试开关：开启后移动端数据接口才会真正
+    # 返回文档内容；关闭时只回元信息、不给数据（详见 docs/MOBILE_API.md §7）。
+    # 仅用于开发调试，日常使用请保持关闭——文档正文属于私密数据。
+    # 环境变量 VDITOR_API_OUTPUT=1 可覆盖默认值（便于无人值守调试）；
+    # 一旦在设置页保存过，以 settings.json 为准。
+    # ------------------------------------------------------------------
+    "api_output": (os.environ.get("VDITOR_API_OUTPUT", "").strip().lower() in ("1", "true", "yes")),
 }
 
 def load_settings():
@@ -152,6 +161,9 @@ def load_settings():
     s["secure_cookie"] = bool(s.get("secure_cookie"))
     s["versioning"] = bool(s.get("versioning", True))
     s["clear_on_uninstall"] = bool(s.get("clear_on_uninstall"))
+    # 【默认关闭】未显式配置时务必为 False——避免"配置项缺失"被当成开启。
+    # 用 `is True` 而非 bool() 兜底：即便上层误传字符串 "0"/"false"，也判为关闭。
+    s["api_output"] = (s.get("api_output") is True)
     try:
         s["upload_max_mb"] = min(512, max(1, int(float(s.get("upload_max_mb") or 256))))
     except Exception:
@@ -693,9 +705,23 @@ def list_file_versions(root_path, rel):
     out.sort(key=lambda x: x["ts"], reverse=True)
     return out
 
+def _version_path(root_path, rel, ts):
+    """历史版本文件路径；`ts` 非法时返回 None（调用方按「版本不存在」处理）。
+
+    【为何不能裸写 int(ts)】ts 来自客户端 JSON / URL 参数，可能是 "abc"、None、[1]、NaN 等。
+    裸 int() 抛出的 ValueError / TypeError 会一路冒泡到 socketserver，
+    结果是**连接被直接断开、客户端收不到任何响应**，stderr 还打整段 traceback。
+    与 `_content_length` / `_read_body` 同一思路：非法输入在唯一入口归一掉。
+    """
+    try:
+        n = int(ts)
+    except (TypeError, ValueError):
+        return None
+    return os.path.join(_version_dir(root_path, rel), "%d.md" % n)
+
 def read_version(root_path, rel, ts):
-    vfp = os.path.join(_version_dir(root_path, rel), "%d.md" % int(ts))
-    if not os.path.isfile(vfp):
+    vfp = _version_path(root_path, rel, ts)
+    if not vfp or not os.path.isfile(vfp):
         return None
     try:
         with open(vfp, "rb") as f:
@@ -704,14 +730,14 @@ def read_version(root_path, rel, ts):
         return None
 
 def delete_version(root_path, rel, ts):
-    vfp = os.path.join(_version_dir(root_path, rel), "%d.md" % int(ts))
-    if os.path.isfile(vfp):
-        try:
-            os.remove(vfp)
-            return True
-        except OSError:
-            return False
-    return False
+    vfp = _version_path(root_path, rel, ts)
+    if not vfp or not os.path.isfile(vfp):
+        return False
+    try:
+        os.remove(vfp)
+        return True
+    except OSError:
+        return False
 
 # ---------------- 响应安全头 / 缓存策略 ----------------
 SEC_HEADERS = {
@@ -824,6 +850,27 @@ class Handler(BaseHTTPRequestHandler):
                     "请通过 HTTPS（如反向代理 / 域名）访问本应用后再登录。")
         return None
 
+    def _transport_warning(self):
+        """当前传输是否处于明文 HTTP。返回警告文案，**不阻断**请求。
+
+        【为何移动端不能用 _https_required_error 拦截】
+        那条策略是为了让 **Cookie** 带上 `Secure` 标记——HTTP 下浏览器会拒发该Cookie，
+        属于「浏览器会话」的问题。而 `/api/m/` 走 `Authorization: Bearer <token>`，
+        **完全不使用 Cookie**，该策略在这里不适用。
+
+        更关键的是它会误伤反向代理 / 内网穿透：Cloudflare 隧道等由代理终止 TLS、
+        回源走本机 HTTP，若代理未透传 `X-Forwarded-Proto`（或隧道部署在非本机网络命名空间），
+        `trusted_forwarded_proto` 拿不到 https，就会把**实际已加密**的公网访问判成明文并拒绝登录——
+        表现为 App 端「持续转圈 / 无法登录」。
+
+        故此处只做提示：客户端可在界面上提醒用户，公网访问建议用 HTTPS。
+        """
+        if trusted_forwarded_proto(self) == "https":
+            return ""
+        if is_private_ip(client_ip(self)):
+            return ""      # 局域网直连明文，属预期用法
+        return "当前连接为明文 HTTP，密码与令牌在传输中未加密。建议通过 HTTPS 域名访问。"
+
     def _send_cookie(self, token):
         parts = ["vditor_sid=%s" % token, "HttpOnly", "SameSite=Lax", "Path=/", "Max-Age=%d" % ABS_TIMEOUT]
         # Secure 仅当「强制 Cookie Secure 标记」开启且非局域网时附加。
@@ -846,12 +893,49 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------------- 移动端 API 公共设施（/api/m/）----------------
 
+    # 受「API 数据输出」开关控制的接口（这些会返回文档/分区/附件等实际数据）。
+    # **不受控**的接口：health（探活）、auth/*（登录/登出/会话）——
+    # 把它们也关掉的话，调试者连「服务是否在线、能否登录」都无法确认，
+    # 开关就失去了调试价值。见 docs/MOBILE_API.md §7。
+    _M_DATA_PATHS = frozenset((
+        "/api/m/roots", "/api/m/files", "/api/m/file",
+        "/api/m/file/versions", "/api/m/file/version",
+        "/api/m/file/versions/restore", "/api/m/file/assets",
+        "/api/m/upload", "/api/m/settings/upload",
+    ))
+    # 附件读取按名字动态拼接，无法进 frozenset，单独用前缀判定。
+    # （此前 do_GET 里另写了一遍等价判定，两处容易漂移，现统一收敛到本函数。）
+    _M_DATA_PREFIX = "/api/m/asset/"
+
+    def _m_output_off(self, path):
+        """判断当前请求是否因「API 数据输出」开关关闭而应被拦截。
+
+        **鉴权优先于开关**：未登录时照常回 INVALID_TOKEN，
+        只有"已登录但开关关闭"才回 API_OUTPUT_DISABLED——
+        否则任何人都能探测出「这台机器有没有开 API 输出」，属于信息泄露。
+
+        返回 True 时**已发送响应**，调用方须立即 return。
+        """
+        if path not in self._M_DATA_PATHS and not path.startswith(self._M_DATA_PREFIX):
+            return False
+        if SETTINGS.get("api_output") is True:
+            return False
+        # 未鉴权：交给后续 _m_require 处理，这里不抢答
+        if not get_mtoken(self):
+            return False
+        self._m_send(M.fail("API_OUTPUT_DISABLED"))
+        return True
+
     def _m_send(self, resp):
         """把 mobile_api 构造的响应包发出去（自动剥掉内部字段并取对应 HTTP 状态码）。"""
         self._send_json(M.strip_internal(resp), M.http_status(resp))
 
     def _m_require(self):
-        """移动端鉴权：无有效 Bearer Token 时回 INVALID_TOKEN 并返回 False。"""
+        """移动端鉴权：无有效 Bearer Token 时回 INVALID_TOKEN 并返回 None。
+
+        只认 `Authorization: Bearer` 头——移动端数据接口一律走该方式，
+        不接受 `?token=`（URL 会被日志/历史记录留存，不安全）。
+        """
         tok = get_mtoken(self)
         if not tok:
             if NEEDS_SETUP:
@@ -892,7 +976,7 @@ class Handler(BaseHTTPRequestHandler):
         rel = self._rel(root["path"], fp)
         try:
             st = os.stat(fp)
-            size, mtime = size_ = st.st_size, int(st.st_mtime)
+            size, mtime = st.st_size, int(st.st_mtime)
         except OSError:
             size, mtime = 0, 0
         content = ""
@@ -937,24 +1021,17 @@ class Handler(BaseHTTPRequestHandler):
         复用 Web 端的 `_find_uploaded`（按 uuid 文件名在各文档文件夹回退查找）与
         `upload_headers`（强制下载 + CSP sandbox）——**不另写一套定位或安全头逻辑**。
         """
-        tok = self._m_require()
-        if not tok:
+        if not self._m_require():
             return
         nm = unquote(name or "")
         fp = _find_uploaded(nm)
         if not fp:
             self._m_send(M.fail("NOT_FOUND", "附件不存在"))
             return
-        try:
-            st = os.stat(fp)
-        except OSError:
-            self._m_send(M.fail("NOT_FOUND", "附件不存在"))
-            return
-        with open(fp, "rb") as f:
-            body = f.read()
-        h = dict(upload_headers(fp))
-        h["Content-Length"] = str(st.st_size)
-        self._send(200, body, h)
+        # 走 _send_file 而非「读全量再 _send」：附件上限可达 512MB，
+        # 整体读入内存会瞬间打满 RSS（Web 端 /uploads/ 走的也是这条流式路径）。
+        # upload_headers 不带 ETag，故不会触发 304 分支，行为与原先一致。
+        self._send_file(fp, upload_headers(fp))
 
     def _m_resolve_doc(self, root_id, rel):
         """把 (root, path) 解析为 (root_dict, 绝对路径, 归一化相对路径)。非法返回 None。"""
@@ -966,10 +1043,29 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return root, fp, self._rel(root["path"], fp)
 
+    def _m_doc_target(self, data, code="FORBIDDEN", msg="root 或 path 无效"):
+        """从请求体取出 root / path 并解析成文档目标，失败时**已发出响应**并返回 None。
+
+        新建 / 保存 / 删除 / 回滚 / 附件列表五个接口都要走这段样板，此前各写一遍共 5 份。
+        `code` 保留由调用方指定，是因为这些接口历史上返回的错误码并不统一
+        （多数是 FORBIDDEN，`_m_list_assets` 是 BAD_REQUEST）——
+        统一码会改变对外行为、破坏既有客户端，故此处只收敛**重复代码**、不动错误码。
+        """
+        root_id = M.take_str(data, "root", maxlen=128) or ""
+        rel = M.take_str(data, "path", maxlen=1024) or ""
+        got = self._m_resolve_doc(root_id, rel)
+        if not got:
+            self._m_send(M.fail(code, msg))
+            return None
+        return (root_id,) + got
+
     # ---------------- GET /api/m/* ----------------
 
     def _m_get(self, path, qs):
         """移动端 GET 路由分发。返回 True 表示已处理。"""
+        # 数据输出开关（默认关闭）：在路由分发前统一拦截，避免逐个接口漏判
+        if self._m_output_off(path):
+            return True
         if path == "/api/m/health":
             self._m_send(M.ok({
                 "status": "ok",
@@ -980,6 +1076,10 @@ class Handler(BaseHTTPRequestHandler):
                 "setup_completed": not NEEDS_SETUP,
             }))
             return True
+
+        # 【已移除】/api/m/editor —— 它只为已废弃的 Android 端 WebView 编辑器页
+        # （m.html）提供页面下发，不是数据接口。App 下线后页面与路由一并删除；
+        # `/api/m/*` 的**数据接口全部保留**（见 docs/MOBILE_API.md）。
 
         if path == "/api/m/auth/session":
             tok = self._m_require()
@@ -995,8 +1095,7 @@ class Handler(BaseHTTPRequestHandler):
             return True
 
         if path == "/api/m/roots":
-            tok = self._m_require()
-            if not tok:
+            if not self._m_require():
                 return True
             self._m_send(M.ok({"roots": [
                 {"id": r["id"], "name": r["name"], "path": r["path"],
@@ -1005,29 +1104,31 @@ class Handler(BaseHTTPRequestHandler):
             return True
 
         if path == "/api/m/files":
-            tok = self._m_require()
-            if not tok:
+            if not self._m_require():
                 return True
             self._m_get_files(qs)
             return True
 
         if path == "/api/m/file":
-            tok = self._m_require()
-            if not tok:
+            if not self._m_require():
                 return True
             self._m_get_file(qs)
             return True
 
         if path == "/api/m/file/versions":
-            tok = self._m_require()
-            if not tok:
+            if not self._m_require():
                 return True
             self._m_get_versions(qs)
             return True
 
+        if path == "/api/m/file/version":
+            if not self._m_require():
+                return True
+            self._m_get_version_content(qs)
+            return True
+
         if path == "/api/m/settings/upload":
-            tok = self._m_require()
-            if not tok:
+            if not self._m_require():
                 return True
             deny = normalize_ext_list(SETTINGS.get("upload_deny", DEFAULT_UPLOAD_DENY))
             self._m_send(M.ok({
@@ -1115,7 +1216,48 @@ class Handler(BaseHTTPRequestHandler):
                 "source": "auto",
                 "comment": "",
             })
-        self._m_send(M.ok({"items": items}))
+        # 按时间**倒序**（最新在前）——与 Web 端历史面板的阅读顺序一致。
+        # list_file_versions 返回的是目录内的原始顺序，不保证新→旧。
+        items.sort(key=lambda x: x["version"], reverse=True)
+        # 【双键下发】`items` 与 `versions` 同时给出。
+        # 起因：1.2.0 端上读`versions`、本接口回 `items`，字段名不一致导致
+        # 移动端历史版本列表**永远为空**（而浏览器端正常，因为它走 /api/version/*）。
+        # 保留 `items` 兼容既有调用与测试，同时给出 `versions` 让端上直接可用。
+        self._m_send(M.ok({"items": items, "versions": items, "total": len(items)}))
+
+    def _m_get_version_content(self, qs):
+        """取某个历史版本的内容，供移动端做「与当前对比」（1.2.0 新增）。
+
+        权限校验与 `_m_get_versions` 完全一致：必须先经 `_m_resolve_doc`，
+        该函数内部用 `_safe_doc` 把路径限制在所属分区内，越界/不存在一律拒绝。
+        """
+        root_id = (qs.get("root") or [""])[0]
+        rel = (qs.get("path") or [""])[0]
+        got = self._m_resolve_doc(root_id, rel)
+        if not got:
+            self._m_send(M.fail("FORBIDDEN", "root 或 path 无效"))
+            return
+        root, _fp, rel_stored = got
+        raw_ts = (qs.get("version") or [""])[0]
+        try:
+            ts = int(raw_ts)
+        except (TypeError, ValueError):
+            self._m_send(M.fail("BAD_REQUEST", "version 必须为整数（毫秒时间戳）"))
+            return
+        data = read_version(root["path"], rel_stored, ts)
+        if data is None:
+            self._m_send(M.fail("NOT_FOUND", "该历史版本不存在"))
+            return
+        try:
+            content = data.decode("utf-8")
+        except UnicodeDecodeError:
+            content = data.decode("utf-8", "replace")
+        self._m_send(M.ok({
+            "version": ts,
+            "created_at": M.iso(ts / 1000.0),
+            "size": len(data),
+            "content": content,
+        }))
 
     # ---------------- 移动端 POST/PUT/DELETE ----------------
 
@@ -1133,8 +1275,11 @@ class Handler(BaseHTTPRequestHandler):
                 MTOKENS.pop(tok, None)
             self._m_send(M.ok({"logged_out": True}))
             return True
-        tok = self._m_require()
-        if not tok:
+        if not self._m_require():
+            return True
+        # 数据输出开关（默认关闭）。置于鉴权之后：login/logout 不受影响，
+        # 且未登录请求仍按 INVALID_TOKEN 处理。
+        if self._m_output_off(path):
             return True
         if path == "/api/m/file":
             self._m_new_file()
@@ -1153,8 +1298,9 @@ class Handler(BaseHTTPRequestHandler):
     def _m_put(self, path):
         if path != "/api/m/file":
             return False
-        tok = self._m_require()
-        if not tok:
+        if not self._m_require():
+            return True
+        if self._m_output_off(path):
             return True
         self._m_save_file()
         return True
@@ -1162,8 +1308,9 @@ class Handler(BaseHTTPRequestHandler):
     def _m_delete(self, path):
         if path != "/api/m/file":
             return False
-        tok = self._m_require()
-        if not tok:
+        if not self._m_require():
+            return True
+        if self._m_output_off(path):
             return True
         self._m_delete_file()
         return True
@@ -1183,10 +1330,10 @@ class Handler(BaseHTTPRequestHandler):
         if pwd is None:
             self._m_send(M.fail("BAD_REQUEST", "密码格式不正确"))
             return
-        https_err = self._https_required_error()
-        if https_err:
-            self._m_send(M.fail("FORBIDDEN", https_err))
-            return
+        # 【勿改回 _https_required_error()】移动端用 Bearer Token 而非 Cookie，
+        # 该策略只对浏览器会话成立；且会误伤 Cloudflare 隧道等「代理终止 TLS、回源 HTTP」
+        # 的部署，把已加密的公网访问判成明文而拒登。详见 _transport_warning 注释。
+        warn = self._transport_warning()
         time.sleep(FAIL_DELAY)      # 失败延迟：削弱暴力破解的时间差
         if not verify_pwhash(PWHASH, pwd):
             record_failure(ip)
@@ -1195,11 +1342,14 @@ class Handler(BaseHTTPRequestHandler):
         record_success(ip)
         tok = start_mtoken(self)
         idle_left, abs_left = mtoken_left(tok)
-        self._m_send(M.ok({
+        payload = {
             "token": tok,
             "expires_in": abs_left,
             "idle_expires_in": idle_left,
-        }))
+        }
+        if warn:
+            payload["warning"] = warn
+        self._m_send(M.ok(payload))
 
     def _m_new_file(self):
         data = self._json_body()
@@ -1211,11 +1361,10 @@ class Handler(BaseHTTPRequestHandler):
         if content is None:
             self._m_send(M.fail("BAD_REQUEST", "path 或 content 非法"))
             return
-        got = self._m_resolve_doc(root_id, rel)
+        got = self._m_doc_target(data, "FORBIDDEN", "父路径非法")
         if not got:
-            self._m_send(M.fail("FORBIDDEN", "父路径非法"))
             return
-        root, fp, _ = got
+        root_id, root, fp, _rel_stored = got
         fp = _folder_note_path(fp)
         if os.path.exists(fp):
             self._m_send(M.fail("CONFLICT", "同名文档已存在"))
@@ -1235,17 +1384,14 @@ class Handler(BaseHTTPRequestHandler):
         data = self._json_body()
         if data is None:
             return
-        root_id = M.take_str(data, "root", maxlen=128) or ""
-        rel = M.take_str(data, "path", maxlen=1024) or ""
         content = M.take_str(data, "content", required=False, default="", maxlen=MAX_BODY_BYTES)
         if content is None:
             self._m_send(M.fail("BAD_REQUEST", "path 或 content 非法"))
             return
-        got = self._m_resolve_doc(root_id, rel)
+        got = self._m_doc_target(data, "FORBIDDEN", "路径非法")
         if not got:
-            self._m_send(M.fail("FORBIDDEN", "路径非法"))
             return
-        root, fp, rel_stored = got
+        root_id, root, fp, rel_stored = got
         # 乐观锁：if_version 与服务端当前版本不一致则拒写，避免多端互相覆盖
         if "if_version" in data:
             want = data.get("if_version")
@@ -1281,13 +1427,10 @@ class Handler(BaseHTTPRequestHandler):
         data = self._json_body()
         if data is None:
             return
-        root_id = M.take_str(data, "root", maxlen=128) or ""
-        rel = M.take_str(data, "path", maxlen=1024) or ""
-        got = self._m_resolve_doc(root_id, rel)
+        got = self._m_doc_target(data, "FORBIDDEN", "路径非法")
         if not got:
-            self._m_send(M.fail("FORBIDDEN", "路径非法"))
             return
-        root, fp, rel_stored = got
+        root_id, root, fp, rel_stored = got
         if not os.path.isfile(fp):
             self._m_send(M.fail("NOT_FOUND", "文档不存在"))
             return
@@ -1311,13 +1454,10 @@ class Handler(BaseHTTPRequestHandler):
         data = self._json_body()
         if data is None:
             return
-        root_id = M.take_str(data, "root", maxlen=128) or ""
-        rel = M.take_str(data, "path", maxlen=1024) or ""
-        got = self._m_resolve_doc(root_id, rel)
+        got = self._m_doc_target(data, "FORBIDDEN", "路径非法")
         if not got:
-            self._m_send(M.fail("FORBIDDEN", "路径非法"))
             return
-        root, fp, rel_stored = got
+        root_id, root, fp, rel_stored = got
         try:
             want = int(data.get("version"))
         except (TypeError, ValueError):
@@ -1345,13 +1485,10 @@ class Handler(BaseHTTPRequestHandler):
         data = self._json_body()
         if data is None:
             return
-        root_id = M.take_str(data, "root", maxlen=128) or ""
-        rel = M.take_str(data, "path", maxlen=1024) or ""
-        got = self._m_resolve_doc(root_id, rel)
+        got = self._m_doc_target(data, "BAD_REQUEST", "root 或 path 无效")
         if not got:
-            self._m_send(M.fail("BAD_REQUEST", "root 或 path 无效"))
             return
-        root, _fp, rel_stored = got
+        root_id, root, _fp, rel_stored = got
         detail = self._m_doc_detail(root_id, root, os.path.join(root["path"], rel_stored))
         self._m_send(M.ok({"assets": detail["assets"]}))
 
@@ -1427,9 +1564,12 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         qs = parse_qs(parsed.query)
         if path.startswith("/api/m/"):
-            # 附件读取：与上传接口对称，需鉴权（附件可能含私密内容）
+            # 附件读取：与上传接口对称，需鉴权（附件可能含私密内容）。
+            # 同样受「API 数据输出」开关约束——附件正文本身就是文档数据。
             if path.startswith("/api/m/asset/"):
-                self._m_asset(path[len("/api/m/asset/"):])
+                if self._m_output_off(path):
+                    return
+                self._m_asset(path[len(self._M_DATA_PREFIX):])
                 return
             if self._m_get(path, qs):
                 return
@@ -1792,8 +1932,21 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------------- 文档管理（多分区）----------------
     def _read_json(self):
+        """读取并解析 JSON 请求体，**保证返回 dict**（非法则抛异常，由 `_json_body` 统一回 400）。
+
+        【为何必须在这里卡一道】调用方（20 处 `_json_body`）一律按 dict 使用（`data.get(...)`），
+        而 `json.loads` 对 `[1,2]`、`"str"`、`123`、`null` 这类**合法 JSON 但顶层非对象**
+        的输入同样解析成功，返回 list / str / int / None，随后 `data.get()` 抛
+        AttributeError 并冒泡到 socketserver——连接被直接断开，客户端收不到任何响应。
+        与该模块既有的 `_content_length` / `_read_body` 同一思路：非法输入在唯一入口归一。
+        """
         raw = _read_body(self, MAX_BODY_BYTES)
-        return json.loads(raw.decode("utf-8")) if raw else {}
+        if not raw:
+            return {}
+        obj = json.loads(raw.decode("utf-8"))
+        if not isinstance(obj, dict):
+            raise ValueError("JSON 顶层必须是对象")
+        return obj
 
     def _json_body(self, err="bad json"):
         """读取 JSON 请求体；解析失败时就地回 400 并返回 None。
@@ -2048,7 +2201,11 @@ class Handler(BaseHTTPRequestHandler):
         errs = []
         if not isinstance(data, dict):
             return changed, ["配置格式无效"]
-        for k in ("trust_proxy", "secure_cookie", "versioning", "clear_on_uninstall"):
+        # api_output：**仅用于开发调试**的 API 数据输出开关（默认关闭）。
+        # 与 trust_proxy/secure_cookie 等同走布尔校验与同一条持久化路径，
+        # 保证「前端配置项 / 后端校验 / 持久化」三者行为一致。
+        for k in ("trust_proxy", "secure_cookie", "versioning", "clear_on_uninstall",
+                  "api_output"):
             if k in data:
                 if isinstance(data[k], bool):
                     if SETTINGS.get(k) != data[k]:
@@ -2092,20 +2249,36 @@ class Handler(BaseHTTPRequestHandler):
                 SETTINGS["upload_accept"] = v; changed = True
         return changed, errs
 
-    def _api_settings_update(self):
-        data = self._json_body()
-        if data is None:
-            return
+    def _apply_and_reply(self, data, changed_key=None):
+        """校验 → 持久化 → 回包。设置页保存与配置导入走的是同一条链路，
+        差别只在回包里是否附带变更标记，故收敛到这里，避免两处各写一遍。
+
+        `changed_key` 非空时，回包里额外带上 `{changed_key: changed}`
+        （导入接口历史上一直接 `imported`，保留以免破坏既有调用方）。
+        """
         changed, errs = self._apply_settings(data)
         if errs:
             self._send_json({"ok": False, "error": "; ".join(errs)})
             return
         if changed:
             save_settings()
-        self._send_json({"ok": True, "settings": dict(SETTINGS)})
+        body = {"ok": True, "settings": dict(SETTINGS)}
+        if changed_key:
+            body[changed_key] = changed
+        self._send_json(body)
+
+    def _api_settings_update(self):
+        data = self._json_body()
+        if data is None:
+            return
+        self._apply_and_reply(data)
 
     def _api_settings_export(self):
-        keys = ("trust_proxy", "secure_cookie", "versioning", "max_versions", "autosave_interval", "page_title", "favicon", "clear_on_uninstall", "upload_max_mb", "upload_deny", "upload_accept")
+        keys = (
+            "trust_proxy", "secure_cookie", "versioning", "max_versions",
+            "autosave_interval", "page_title", "favicon", "clear_on_uninstall",
+            "upload_max_mb", "upload_deny", "upload_accept", "api_output",
+        )
         payload = {
             "app": "vditor-nas",
             "version": APP_VERSION,
@@ -2124,13 +2297,7 @@ class Handler(BaseHTTPRequestHandler):
         # 兼容两种入参：直接传 settings 对象，或 {"settings": {...}}
         if isinstance(data, dict) and isinstance(data.get("settings"), dict):
             data = data["settings"]
-        changed, errs = self._apply_settings(data)
-        if errs:
-            self._send_json({"ok": False, "error": "; ".join(errs)})
-            return
-        if changed:
-            save_settings()
-        self._send_json({"ok": True, "imported": changed, "settings": dict(SETTINGS)})
+        self._apply_and_reply(data, "imported")
 
     def _api_change_password(self):
         global PWHASH
@@ -2379,15 +2546,23 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": str(e)}, 500)
 
     def _send_favicon(self):
+        """/favicon.ico 是**未鉴权**即可访问的公开路径，必须自己兜住所有 IO 异常——
+        否则图标文件被删 / 权限异常时 OSError 会冒泡到 socketserver，连接被直接断开。"""
         import glob
-        matches = sorted(glob.glob(os.path.join(CONFIG_DIR, "favicon.*")))
-        if matches:
-            fp = matches[0]
-            with open(fp, "rb") as f:
-                data = f.read()
-            self._send(200, data, {"Content-Type": guess_mime(fp)})
-        else:
+        try:
+            matches = sorted(glob.glob(os.path.join(CONFIG_DIR, "favicon.*")))
+        except OSError:
+            matches = []
+        if not matches:
             self._send(204, b"")
+            return
+        try:
+            with open(matches[0], "rb") as f:
+                data = f.read()
+        except OSError:
+            self._send(204, b"")
+            return
+        self._send(200, data, {"Content-Type": guess_mime(matches[0])})
 
     def _handle_favicon_upload(self):
         ctype = self.headers.get("Content-Type", "")
@@ -2422,6 +2597,18 @@ class Handler(BaseHTTPRequestHandler):
         import tempfile
         fd, tmp = tempfile.mkstemp(prefix="vditor-backup-", suffix=".tar.gz")
         os.close(fd)
+        # try/finally：打包或发送途中一旦抛异常，临时文件也必须删掉，
+        # 否则每次失败都在系统临时目录留一份几百 MB 的 .tar.gz。
+        try:
+            self._build_backup(tmp, _tarfile)
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+    def _build_backup(self, tmp, _tarfile):
+        """把配置与文档打包进临时文件并流式返回（拆分出来以便用 try/finally 兜住清理）。"""
         with _tarfile.open(tmp, mode="w:gz") as tar:
             # ① 应用配置：配置目录下全部文件（Web 设置 / 文件夹列表 / 密码哈希 / 登录日志 / 图标等）
             if os.path.isdir(CONFIG_DIR):
@@ -2450,16 +2637,12 @@ class Handler(BaseHTTPRequestHandler):
                             tar.add(full, arcname="docs/%s/%s" % (r["id"], rel))
                         except OSError:
                             continue
-        # 流式返回（不把整个备份包读入内存），返回后删除临时文件
+        # 流式返回（不把整个备份包读入内存）
         self._send_file(tmp, {
             "Content-Type": "application/gzip",
             "Content-Disposition": "attachment; filename=vditor-backup-%s.tar.gz" % time.strftime("%Y%m%d-%H%M%S"),
             "Cache-Control": "no-store",
         })
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
 
     def _api_backup_restore(self):
         """从上传的 .tar.gz 备份一键恢复：应用配置 + 文档 + 历史版本 + 上传物（覆盖同名文件）。"""
@@ -2510,6 +2693,27 @@ class Handler(BaseHTTPRequestHandler):
                 except OSError:
                     pass
                 self._send_json({"ok": False, "error": "不是有效的 .tar.gz 备份：%s" % e}, 400); return
+        # try/finally：解包循环里出现任何异常（含 tarfile 自身的 ReadError）
+        # 都要删掉临时文件，否则每次失败都在系统临时目录留一份几百 MB 的包。
+        try:
+            n_cfg, n_doc = self._extract_backup(tar)
+        finally:
+            if tmp:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+        # 恢复后热重载配置与分区
+        SETTINGS = load_settings()
+        PWHASH, NEEDS_SETUP = load_pwhash()
+        EXCLUDED_PATHS = load_excluded()
+        reload_doc_roots()
+        invalidate_files_cache()
+        invalidate_upload_index()
+        self._send_json({"ok": True, "config": n_cfg, "docs": n_doc})
+
+    def _extract_backup(self, tar):
+        """把备份包内的 config/ 与 docs/ 解回原位置，返回 (配置数, 文档数)。"""
         n_cfg = n_doc = 0
         with tar:
             for m2 in tar.getmembers():
@@ -2547,19 +2751,7 @@ class Handler(BaseHTTPRequestHandler):
                     n_doc += 0 if is_cfg else 1
                 except OSError:
                     continue
-        # 恢复后热重载配置与分区
-        SETTINGS = load_settings()
-        PWHASH, NEEDS_SETUP = load_pwhash()
-        EXCLUDED_PATHS = load_excluded()
-        reload_doc_roots()
-        invalidate_files_cache()
-        invalidate_upload_index()
-        if tmp:
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-        self._send_json({"ok": True, "config": n_cfg, "docs": n_doc})
+        return n_cfg, n_doc
 
     def log_message(self, fmt, *args):
         sys.stderr.write("[vditor-nas] %s - %s\n" % (self.address_string(), fmt % args))

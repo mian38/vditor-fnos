@@ -6,7 +6,7 @@
 
 - **应用标识**：`com.mian38.vditor`
 - **当前版本**：**1.2.0**
-- **形态**：飞牛 fnOS 官方 `.fpk` 安装包（非 Docker：系统进程直接运行 Python 标准库后端，前端静态托管）＋ 原生 Android 客户端
+- **形态**：飞牛 fnOS 官方 `.fpk` 安装包（非 Docker：系统进程直接运行 Python 标准库后端，前端静态托管）＋ 通用 Linux NAS 版（`.tar.gz`）
 - **版本体系**：`4.0.x` 为早期 β 迭代线（产物文件名统一带 `-beta` 标识）；自 **1.0** 起进入正式版序列。
 
 > 说明：本文按时间倒序排列，覆盖自首个 `.fpk`（4.0.0）到 1.2.0 的全部版本。
@@ -15,8 +15,12 @@
 
 ## 1.2.0
 
-> 本版本含**移动端 API 实装**与**原生 Android 客户端**两块新增内容，
+> 本版本含**移动端 API 实装**、**API 数据输出开关**与**稳定性审计修复**三块内容，
 > 1.1.4 的 Web 端功能与配置**完全不变**，升级无破坏性变更。
+>
+> ⚠️ **开发中曾附带的 `android/` 原生客户端已在正式发布前彻底移除**（源码 / 构建脚本 /
+> 签名凭据 / 构建环境 / APK 产物全部删除）。`/api/m/*` 服务端能力**完整保留**，
+> 供后续自行开发移动版时对接，详见 `docs/MOBILE_API.md`。
 
 ### 新增 · 移动端 API（15 接口全部实装）
 
@@ -37,35 +41,62 @@
 **修复 · 登出幂等**（联调发现）
 - `POST /api/m/auth/logout` 原先对已失效/伪造 token 回 401，与文档承诺的「幂等」语义矛盾。端上「token 刚过期就点退出」「重复点退出」是常态，回 401 只会弹出用户看不懂的报错。改为：**无论 token 状态一律回 `ok: true`**（「当前无有效会话」就是「已登出」）。
 
-### 新增 · 原生 Android 客户端
+### 移除 · 原生 Android 客户端（正式发布前）
 
-- **技术栈**：Kotlin + AndroidX View 体系 + Material Components，**刻意不用 Compose**（体积大）。
-- **零第三方网络库**：`HttpURLConnection` + `org.json`（系统自带），避免依赖冲突并减小包体。依赖共 8 个（appcompat / material / constraintlayout / recyclerview / swiperefreshlayout / lifecycle-runtime-ktx / kotlinx-coroutines-android / core-ktx）。
-- **两种地址形式**（用户需求）：局域网「IP:端口」自动补 `http://`、无端口补默认 9000；公网域名自动补 `https://`。
-- **记住地址**：勾选后记住地址并写入历史（最多 5 条，Chip 形式快速选择）；**不保存密码**（安全优先，取舍已写入README 与代码注释）。
-- **响应式**：`values/`（手机 16dp gutter / 16sp 正文）与 `values-sw600dp/`（平板 40dp gutter / 18sp 正文）两档断点。
-- **深色模式**：`values-night/`色板 + `DayNight` 主题，状态栏图标自动反色。
-- **无障碍**：装饰图标标 `importantForAccessibility="no"`；状态提示用 `accessibilityLiveRegion="polite"`；「更多」按钮 `contentDescription` 带文件名；版本项把「时间 + 操作」合成完整描述。
-- **状态机**：loading / content / empty / error 四态互斥；下拉刷新与重试同一条加载路径。
-- **断线重连**：网络类瞬时故障指数退避重试 3 次（600ms → 1.2s）；**4xx 确定性失败不重试**；**上传不自动重试**（服务端每次生成新 uuid，重复提交会产生重复文件）。
-- **乐观锁接入**：加载时记 `version`，保存时回传；冲突弹窗让用户选「重新加载」或「放弃修改」，**绝不在用户不知情时覆盖**。
-- **自动保存**：停止输入 1.2 秒后静默保存，顶栏「保存」可强制触发。
-- 附件上传先取 `settings/upload` 做黑名单与体积预校验，再上传，成功后把服务端下发的 `insert_text` 直接插入光标。
-- 全部图标用**矢量 drawable**（含 adaptive icon + API 24/25 兜底），无位图。
+> 开发中曾实装 `android/` Kotlin 原生客户端，现**彻底移除**，原因与范围记录备查。
 
-**构建**
-- JDK 17.0.13 + Android SDK 34（build-tools 34.0.0 / platforms;android-34）+ Gradle 8.7。
-- release 启用 R8 `minifyEnabled` + `shrinkResources`。
-- 签名经环境变量（`VDITOR_KEYSTORE` / `VDITOR_STORE_PASS` / `VDITOR_KEY_ALIAS` / `VDITOR_KEY_PASS`）注入，**keystore 不入库**；未配置时仍可产出 unsigned 包。
-- 新增 `build_apk.sh` 一键构建 + 拷贝产物到 `releases/`。
+- **删除**：`android/` 全部源码与资源（11 个 `.kt`、布局 / 菜单 / drawable / mipmap / values / xml）、
+  `build.gradle` / `settings.gradle` / `gradle.properties` / `build_apk.sh` / `android/README.md`；
+  根目录残留的 `build.gradle` / `gradle.properties` / `local.properties`；
+  `releases/Vditor-1.2.0-*.apk`；`vditor-fpk/app/m.html`（WebView 专用编辑器页）与 `/api/m/editor` 路由。
+- **清理构建环境**：`C:\android-toolchain`（JDK 17 + SDK 34 + Gradle 8.7 + keystore，1.0 GB）、
+  `~/.gradle`（603 MB）、`~/.android`（3.4 MB）——**合计释放约 1.6 GB**。
+- **`/api/m/*` 服务端能力完整保留**，未删除或降级任何接口 / 路由 / 数据结构，供后续自行开发移动版对接。
+- **失效引用已全量检索**：`com.mian38.vditor` 是飞牛 fpk 包名，属正确保留项，非 Android 残留。
+
+### 新增 · 「API 接口对外输出数据」开关
+
+- 设置项 `api_output`，**默认关闭**，标注「仅用于开发调试」。
+- 关闭时受控的 12 个数据接口一律回 `API_OUTPUT_DISABLED`（HTTP 403）且不输出任何数据；
+  `health` 与 `auth/*` 不受控（否则调试者连服务是否在线都无法确认）。
+- **鉴权优先于开关**：未登录时照常回 `INVALID_TOKEN`，只有「已登录 + 开关关闭」才回 `API_OUTPUT_DISABLED`，
+  避免未授权者据此探测「这台机器有没有开 API 输出」。
+- 前端配置项 / 后端校验 / 持久化三者口径统一用 `is True` / `=== true` 严格布尔判定，
+  防止字符串 `"false"` 被当成真值导致「界面显示关闭、接口照常输出」。
+- 环境变量 `VDITOR_API_OUTPUT=1` 可在首次生成配置时覆盖默认值。
+- 详见 `docs/MOBILE_API.md` §2.1。
+
+### 修复 · 完整审计与精简（同版本内三次修订，版本号不变）
+
+> 详见 `CODE_REVIEW.md`。不改变对外功能与接口行为，仅加固与去重。
+
+**High（未捕获异常导致连接直接断开）**
+- `_read_json`（server.py）：`json.loads` 对 `[1,2]` / `"str"` / `123` / `null` 这类**合法 JSON 但顶层非对象**
+  的输入同样解析成功，随后 20 处 `_json_body` 调用方按 dict 使用而抛 AttributeError，
+  冒泡到 socketserver 后连接被直接断开、客户端收不到任何响应。已在唯一入口校验 `isinstance(obj, dict)`。
+- `read_version` / `delete_version`（server.py）：内部裸写 `int(ts)`，而 `_api_restore_version` /
+  `_api_delete_version` 直接把客户端可控的 `data.get("ts")` 传入，`"abc"` / `None` / `[1]` 均抛异常。
+  已抽出 `_version_path()`，非法 ts 归一为 None（调用方按「版本不存在」处理）。
+
+**Medium**
+- `_m_asset`：附件整文件读入内存（上限可达 512MB）→ 改为复用 `_send_file` 流式返回。
+- `/api/m/asset/` 的开关判定原先在 `do_GET` 里另写一遍 → 收敛到 `_m_output_off`（新增 `_M_DATA_PREFIX`）。
+- `_api_backup` / `_api_backup_restore`：临时文件清理改为 `try/finally`，异常路径不再泄漏几百 MB 的临时包。
+- `_send_favicon`：`/favicon.ico` 是未鉴权即可访问的公开路径，原先无异常处理，图标文件异常时连接断开。
+
+**精简（行为不变）**
+- 抽出 `_m_doc_target()`，收敛 5 处「取 root/path + `_m_resolve_doc`」样板（各自错误码按要求保留）。
+- 抽出 `_apply_and_reply()`，合并设置保存与导入的重复回包逻辑。
+- 拆分 `_build_backup()` / `_extract_backup()`，使临时文件清理能用 `try/finally` 兜住。
+- `_m_get`/`_m_put`/`_m_delete` 中 9 处 `tok = self._m_require()` 的 `tok` 有 8 处未使用 → 去掉赋值。
+- 删死代码：`_m_doc_detail` 的 `size_ =` 死赋值、`vd_util.MOBILE_API_PREFIX` 常量（无任何引用）。
+- `mobile_api.py`：`import hashlib` 提到模块顶部；模块 docstring 里过时的方法名 `_dispatch_m_*` 更正为实际名称。
 
 **产物**
-| 文件 | 大小 |
-| --- | --- |
-| `releases/com.mian38.vditor_1.2.0.fpk` | 4,525,079 字节 |
-| `releases/vditor-nas-1.2.0.tar.gz` | 4,505,084 字节 |
-| `releases/Vditor-1.2.0-release.apk`（签名，R8 已开） | **1,385,604 字节** |
-| `releases/Vditor-1.2.0-debug.apk` | 5,476,770 字节 |
+| 文件 | 大小 | md5 |
+| --- | --- | --- |
+| `releases/com.mian38.vditor_1.2.0.fpk` | 4,526,487 字节 | `530e8e643815d441bcdabe76225a34a4` |
+| `releases/vditor-nas-1.2.0.tar.gz` | 4,488,801 字节 | `0f879d44e615a7ba6edc6f4c13fcfcf6` |
 
 ### 修复 · `make_nas.py` 漏登记模块
 
@@ -76,9 +107,22 @@
 ### 测试
 
 - **`test_mobile_api.py` 66/66**（9 段：A 健康检查与鉴权 / B 登录会话 / C 分区与列表 / D 文档 CRUD / E 历史版本 / F 上传限制与附件 / G 异常边界 / H 登出 / I Web 端兼容性）。较上轮 65 项 +1：H3 语义随登出幂等修复而改写，并补 H3b 重复登出。
-- **`test_android_e2e.py` 48/48**（新建，9 段端到端）：模拟 App 真实调用序跑通「登录 → 分区 → 列表 → 新建 → 读取 → 保存+乐观锁 → 附件 → 版本回滚 → 删除 → 登出」，**逐字校验 App `data/Models.kt` 依赖的每个字段名**——任一端改字段而另一端没跟上会立刻红。
+- **`test_android_e2e.py` 48/48**（9 段端到端）：模拟客户端真实调用序跑通「登录 → 分区 → 列表 → 新建 → 读取 → 保存+乐观锁 → 附件 → 版本回滚 → 删除 → 登出」，**逐字校验 `/api/m/` 各接口依赖的每个字段名**——服务端改字段而文档没跟上会立刻红。
+- **`test_api_output_switch.py` 26/26**（新建，5 段）：默认关闭 / 经设置开启立即生效 / 持久化 / 落盘内容 / 环境变量覆盖。
+- **`test_audit_v120.py` 66/66**（新建）：把本轮审计修复的两条崩溃路径与 4 条中危项逐条钉死（非对象 JSON、非法 ts、附件流式读取、开关判定收敛、备份临时文件、favicon 异常）。
 - `test_smoke_pkg.py` **53/53**（含「server 版本 == manifest 版本(1.2.0)」）。
-- `test_v114.py` / `test_v113.py` / `test_v112.py` 未受本轮改动影响，未重跑。
+- `test_audit114.py` 186/189；`test_v113.py` / `test_v114.py` 各 2 项、`test_v406~v411` 共 5 项失败，
+  均为**版本号硬编码断言**（断言 1.1.1 / 1.1.4，而当前是 1.2.0），已用 `git stash` 验证属改动前既有状态。
+
+> **测试脚本自伤修复（记录备查）**：`test_android_e2e.py` 最初把文档根目录环境变量写成 `VDITOR_DOC_ROOT`，
+> 而实际是 `VDITOR_DOC_DIR` ——服务端**静默回落到`vditor-fpk/app/docs/`**，
+> 测试数据写进了真实文档区（已清理）。现已改对，并加两道守护：
+> ① 断言分区路径落在临时目录；② 收尾后校验工作区 docs 目录无残留文件。
+
+> ⚠️ **`subprocess.PIPE` 接服务端输出会让服务「假死」（记录备查）**：测试用
+> `Popen(stdout=PIPE, stderr=STDOUT)` 且无人读取时，管道缓冲区（约 64KB）写满后服务端会
+> **阻塞在写日志上**，表现为「进程活着但不再应答任何请求」——症状与「未捕获异常导致服务卡死」几乎一样，
+> 极易误判为服务端 bug。新测试一律把服务端输出落到文件（`test_audit_v120.py` 已按此实现）。
 
 > **测试脚本自伤修复（记录备查）**：`test_android_e2e.py` 最初把文档根目录环境变量写成 `VDITOR_DOC_ROOT`，
 > 而实际是 `VDITOR_DOC_DIR` ——服务端**静默回落到`vditor-fpk/app/docs/`**，

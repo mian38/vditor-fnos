@@ -614,6 +614,12 @@
                 </div>
             </section>
             <section class="set-sec">
+                <h3>开发者选项</h3>
+                <label class="set-toggle"><input type="checkbox" id="set-api-output"> API 接口对外输出数据（仅用于开发调试）</label>
+                <p class="sub"><b>默认关闭</b>，日常使用请保持关闭。开启后 <code>/api/m/*</code> 数据接口才会真正返回文档与分区内容（如开发本应用的移动版客户端）；关闭时这些数据接口一律返回 <code>API_OUTPUT_DISABLED</code>、不输出任何数据。登录与探活接口不受影响。<br>接口格式见 <code>docs/MOBILE_API.md</code>。</p>
+                <p class="sub" id="api-output-state"></p>
+            </section>
+            <section class="set-sec">
                 <h3>文件版本与自动保存</h3>
                 <label class="set-toggle"><input type="checkbox" id="set-versioning"> 启用文件历史版本（每次手动/自动保存均生成可回溯版本）</label>
                 <div class="set-num">
@@ -1789,6 +1795,18 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     function closeSettings() {
         document.getElementById('settings-mask').style.display = 'none';
     }
+    /** 把 API 输出开关的当前状态回显成一句人话，避免用户不知道自己处在哪种模式。 */
+    function renderApiOutputState() {
+        const el = document.getElementById('api-output-state');
+        if (!el) return;
+        const box = document.getElementById('set-api-output');
+        const on = box && box.checked === true;
+        el.textContent = on
+            ? '当前状态：已开启 —— /api/m/* 数据接口会返回文档内容。调试结束后请记得关掉。'
+            : '当前状态：已关闭 —— /api/m/* 数据接口不返回任何数据（仅登录与探活可用）。';
+        el.style.color = on ? 'var(--c-warn, #b26a00)' : '';
+    }
+
     function loadSettings() {
         fetch('/api/settings').then(r => r.json()).then(d => {
             SETTINGS_UI = d.settings || {};
@@ -1801,6 +1819,12 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             document.getElementById('set-page-title').value = SETTINGS_UI.page_title || '';
             document.getElementById('set-clear-on-uninstall').checked = !!SETTINGS_UI.clear_on_uninstall;
             document.getElementById('set-upload-max').value = SETTINGS_UI.upload_max_mb || 256;
+            // API 数据输出开关：**默认关闭**。
+            // 必须写成 "=== true"——用 `!!` 兜底会把「键缺失」当成 false 看似没问题，
+            // 但一旦服务端回传字符串 "false"，!!"false" 会得到 true，开关语义就反了。
+            // 与后端 load_settings() 的 `is True` 判定保持一致。
+            document.getElementById('set-api-output').checked = (SETTINGS_UI.api_output === true);
+            renderApiOutputState();
             // 以「服务端是否返回该键」判断，而非「值是否为空」——否则用户清空黑名单后，
             // 这里会再填回默认清单，下次保存又把它写回去，等于删不掉。
             UPLOAD_DENY_LIST = ('upload_deny' in SETTINGS_UI)
@@ -1825,6 +1849,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             clear_on_uninstall: document.getElementById('set-clear-on-uninstall').checked,
             upload_max_mb: parseInt(document.getElementById('set-upload-max').value, 10) || 256,
             upload_deny: UPLOAD_DENY_LIST.join(','),
+            // 必须是真正的布尔值：后端 _apply_settings 对布尔字段做 isinstance(v, bool)
+            // 校验，传 0/1 或字符串会被拒，导致整次设置保存失败。
+            api_output: document.getElementById('set-api-output').checked === true,
         };
         fetch('/api/settings', {
             method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
@@ -2433,6 +2460,21 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         }
         attachSecurityConfirm('set-trust-proxy', '信任反向代理');
         attachSecurityConfirm('set-secure-cookie', '强制 Cookie Secure 标记');
+        // API 输出开关**默认关闭**，这里是"打开"而非"关闭"，
+        // 所以提示文案与安全开关相反：提醒的是开启后的数据暴露风险。
+        const apiBox = document.getElementById('set-api-output');
+        if (apiBox) {
+            apiBox.addEventListener('change', function () {
+                if (this.checked) {
+                    if (!confirm('确定要开启「API 接口对外输出数据」吗？\n'
+                        + '该开关仅用于开发调试：开启后 /api/m/* 数据接口会返回文档正文，'
+                        + '任何拿到有效令牌的人都能读取。\n调试结束后请务必关掉。')) {
+                        this.checked = false; // 取消则回到关闭
+                    }
+                }
+                renderApiOutputState();
+            });
+        }
         bindDenyUI();
         document.getElementById('btn-doc-info').addEventListener('click', openDocInfo);
         document.getElementById('btn-theme').addEventListener('click', function () {

@@ -207,6 +207,9 @@ def main():
     env["VDITOR_PORT"] = str(PORT)
     env["VDITOR_TRUST_PROXY"] = "0"
     env["VDITOR_SECURE_COOKIE"] = "0"
+    # 1.2.0 起「API 数据输出」默认关闭；本套测试模拟的是客户端完整调用序，
+    # 需开启开关才能取到数据（开关自身的开/关语义由 test_api_output_switch.py 覆盖）。
+    env["VDITOR_API_OUTPUT"] = "1"
     proc = subprocess.Popen(
         [sys.executable, "-c",
          "import sys; sys.path.insert(0, r'%s'); "

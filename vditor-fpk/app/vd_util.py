@@ -334,12 +334,6 @@ def is_static_denied(fp):
 PUBLIC_STATIC_EXACT = ("/index.html",)
 PUBLIC_STATIC_PREFIX = ("/vditor/", "/ui/")
 
-# ---------- 移动端 App 接口预留（1.1.3） ----------
-# 仅占位：约定未来手机端接口统一挂在此前缀下，与现有 /api/ 路由物理隔离。
-# **当前没有任何路由挂在此前缀下**，调用一律404 —— 详见 docs/MOBILE_API.md（纯规范，未实现）。
-# 之所以先落常量，是为了让后续实现有明确归属，避免直接往现有 /api/ 里塞移动端专用接口。
-MOBILE_API_PREFIX = "/api/m/"
-
 
 def is_public_static(path):
     return path in PUBLIC_STATIC_EXACT or path.startswith(PUBLIC_STATIC_PREFIX)

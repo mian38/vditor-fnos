@@ -1,12 +1,16 @@
 # 移动端 API（v1.2.0 · 已实现）
 
-> **状态：v1.2.0 起 15 个接口全部实装并通过回归测试**（`test_mobile_api.py`，65 项全过）。
+> **状态：v1.2.0 起 15 个接口全部实装并通过回归测试**（`test_mobile_api.py`，66 项全过）。
 > 1.1.3 时期本文只是「预留规范」，当时服务端**没有任何 `/api/m/` 路由**，调用会得到 404；
 > 1.2.0 已按本文逐个落地，字段以本文为准。
 > 现有 Web 端接口（`/api/login`、`/api/files` 等）保持不变、不受本文影响，
 > 且与移动端会话**物理隔离**（独立 `MTOKENS` 字典，不共用 Cookie）。
 
-配套客户端：`android/`（Kotlin 原生，零第三方网络库）。
+> ⚠️ **客户端现状（v1.2.0 最终版）**：1.2.0 开发周期内曾附带一个 `android/` 原生客户端，
+> **现已彻底移除**（源码、构建脚本、签名凭据、构建环境与 APK 产物均已删除）。
+> 本文描述的 `/api/m/*` 服务端能力**全部保留、未做任何删减或降级**，
+> 供后续自行开发移动版（原生 App / 小程序 / 第三方客户端）时直接对接。
+> 也就是说：**当前版本没有官方移动端 App**，只有这套 API。
 
 ---
 
@@ -72,9 +76,14 @@ Token 存储在服务端的 `MTOKENS` 字典，**与 Web Cookie 会话完全独�
 | `BAD_REQUEST` | 400 | 参数缺失 / 类型错误 / 长度超限 | 属端上 bug，需上报 |
 | `CONFLICT` | 409 | 同名文档已存在 | 提示换名 |
 | `SERVER_ERROR` | 500 | 服务端异常（磁盘满、权限不足等） | 提示重试并上报日志 |
+| `API_OUTPUT_DISABLED` | 403 | 「API 数据输出」开关已关闭（见 §2.1） | 提示先在 Web 设置 → 开发者选项开启 |
 
 > 映射表见 `mobile_api.py` 的 `ERROR_HTTP`。未登记的错误码会**降级为 `SERVER_ERROR` + 500**，
 > 避免端上遇到未知码时无映射可依。
+
+> ⚠️ **鉴权优先于开关**：未登录（token 缺失/失效）时**一律回 `INVALID_TOKEN`**，
+> 即使「API 输出开关」是关闭的。只有「**已登录 + 开关关闭**」才回 `API_OUTPUT_DISABLED`。
+> 这样设计是为了避免任何人都能探测出「这台机器有没有开 API 输出」——那属于信息泄露。
 
 ---
 
@@ -93,14 +102,77 @@ Token 存储在服务端的 `MTOKENS` 字典，**与 Web Cookie 会话完全独�
 | 9 | PUT | `/api/m/file` | 保存文档内容（支持乐观锁） | 是 |
 | 10 | DELETE | `/api/m/file` | 删除文档（含全部历史版本） | 是 |
 | 11 | GET | `/api/m/file/versions` | 列出某文档的历史版本 | 是 |
+| 11b | GET | `/api/m/file/version` | 读取某个历史版本的内容（用于对比） | 是 |
 | 12 | POST | `/api/m/file/versions/restore` | 回滚到指定历史版本 | 是 |
 | 13 | POST | `/api/m/upload` | 上传附件，返回可引用链接 | 是 |
 | 14 | GET | `/api/m/settings/upload` | 读取上传限制，供客户端预校验 | 是 |
 | 15 | POST | `/api/m/file/assets` | 列出某文档关联的附件 | 是 |
 | 附 | GET | `/api/m/asset/<name>` | 读取附件二进制（§4.9 下发 url 的落点） | 是 |
 
+> 全表 16 个接口（15 + 附）；其中 `auth/*` 与 `health` 共 4 个不受「API 数据输出」开关限制，
+> 其余 12 个受控，详见 §2.1。
+
 > 新建与保存是**两个独立接口**（8 / 9），不做「有 id 更新、无 id 新建」的合并语义——
 > 端上分支更少，且新建可以明确拿到 `CONFLICT` 而不必依赖服务端猜测意图。
+
+### 2.1 「API 数据输出」开关（`api_output`）
+
+v1.2.0 新增一个总开关，控制**是否允许 `/api/m/*` 对外输出实际数据**。
+
+| 项目 | 说明 |
+| --- | --- |
+| 设置项 | `api_output`（布尔） |
+| **默认值** | **关闭（`false`）** |
+| 用途定位 | **仅用于开发调试**，日常使用请保持关闭 |
+| 配置入口 | Web 端「设置 → 开发者选项 → API 接口对外输出数据」 |
+| 持久化 | 写入 `settings.json`，重启后保持 |
+| 环境变量 | `VDITOR_API_OUTPUT=1`（或 `true` / `yes`）可在**首次生成配置**时把默认值改为开启 |
+| 校验 | 只接受真布尔值；字符串 `"false"` 会被判为无效并拒绝（`_apply_settings` 布尔组） |
+
+**生效范围（受控，开关关闭时返回 `API_OUTPUT_DISABLED` / HTTP 403）：**
+
+```
+GET    /api/m/roots                     GET    /api/m/files
+GET    /api/m/file                      POST   /api/m/file
+PUT    /api/m/file                      DELETE /api/m/file
+GET    /api/m/file/versions             GET    /api/m/file/version
+POST   /api/m/file/versions/restore     POST   /api/m/file/assets
+POST   /api/m/upload                    GET    /api/m/settings/upload
+GET    /api/m/asset/<name>
+```
+
+**不受控（开关关闭时依然可用）：**
+
+```
+GET    /api/m/health                    探活 / 版本号 / setup_completed
+POST   /api/m/auth/login                登录（否则调试者连服务是否在线都无法确认）
+POST   /api/m/auth/logout               登出
+GET    /api/m/auth/session              会话状态
+```
+
+**判定顺序（重要）：**
+
+1. 路径不在受控清单 → 放行
+2. 开关为 `true` → 放行
+3. **当前请求没有有效 token → 放行**（交给鉴权回 `INVALID_TOKEN`）
+4. 以上都不满足 → 回 `API_OUTPUT_DISABLED`
+
+第 3 条即「**鉴权优先于开关**」：未登录时一律回 `INVALID_TOKEN` 而不是 `API_OUTPUT_DISABLED`，
+避免未授权者据此探测出「这台机器有没有开 API 输出」。
+
+**前端与后端一致性约定**（三处必须同时满足，否则会出现「界面显示开启但接口仍拦截」）：
+
+| 环节 | 写法 | 位置 |
+| --- | --- | --- |
+| 默认值 | `os.environ.get("VDITOR_API_OUTPUT", "").strip().lower() in ("1","true","yes")` | `server.py` `DEFAULT_SETTINGS` |
+| 加载归一化 | `s["api_output"] = (s.get("api_output") is True)` | `server.py` `load_settings()` |
+| 应用校验 | 加入 `_apply_settings` 布尔组（`isinstance(v, bool)`） | `server.py` |
+| 读取 | `SETTINGS.get("api_output") is True` | `server.py` `_m_output_off()` |
+| 前端回显 | `SETTINGS_UI.api_output === true` | `index.html` `loadSettings()` |
+| 前端提交 | `checked === true` | `index.html` `saveSettings()` |
+
+> 归一化为 `is True` / `=== true` 而非 `!!` / `===` 布尔转换，是为了防止字符串 `"false"`
+> 被当成真值——那会导致「用户明明关了，接口却照常输出数据」。
 
 ---
 
@@ -122,7 +194,7 @@ Token 存储在服务端的 `MTOKENS` 字典，**与 Web Cookie 会话完全独�
 ```
 
 `setup_completed=false` 时应引导用户先在浏览器完成首次设置（等价于登录会返回 `NEED_SETUP`）。
-Android 客户端正是靠它区分「服务器没配好」与「地址填错」。
+客户端可据此区分「服务器没配好」与「地址填错」。
 
 ```bash
 curl http://192.168.1.10:9000/api/m/health
@@ -340,11 +412,21 @@ curl -X PUT http://192.168.1.10:9000/api/m/file \
 
 ```json
 {
+  "total": 2,
   "items": [
+    { "version": 1757380800000, "created_at": "2026-10-02T09:20:00Z", "size": 20480, "source": "auto", "comment": "" }
+  ],
+  "versions": [
     { "version": 1757380800000, "created_at": "2026-10-02T09:20:00Z", "size": 20480, "source": "auto", "comment": "" }
   ]
 }
 ```
+
+- 列表按 `version` **倒序**（最新在前），与 Web 端历史面板的阅读顺序一致。
+- `items` 与 `versions` **内容完全相同，是同一份数组的两个键**。
+  起因：早期端上读 `versions`、服务端只回 `items`，字段名不一致导致移动端列表永远为空。
+  现两者同时下发；**新客户端建议读 `versions`**，`items` 仅为兼容保留。
+- `total` 为版本条数。
 
 > ⚠️ **`version` 是毫秒时间戳，不是递增序号。** 服务端以保存时刻作为版本标识
 > （`v["ts"]`），这样即便跨设备、跨时区也能唯一定位一份快照。
@@ -352,6 +434,33 @@ curl -X PUT http://192.168.1.10:9000/api/m/file \
 > 端上不要对 `version` 做 `+1` 递增推断——它只用于 `PUT /api/m/file` 的乐观锁。
 
 `source` 固定为 `auto`（每次保存自动生成快照），`comment` 保留字段、当前恒为空串。
+
+### 4.7.1 `GET /api/m/file/version` — 读取某个历史版本内容
+
+供移动端做「历史版本与当前内容对比」（v1.2.0 新增）。
+
+**请求参数：** `root`、`path`（同 §4.7）、`version`（毫秒时间戳，必填，整数）
+
+**响应 `data`：**
+
+```json
+{
+  "version": 1757380800000,
+  "created_at": "2026-10-02T09:20:00Z",
+  "size": 20480,
+  "content": "# 旧版标题\n\n正文……"
+}
+```
+
+**错误：** `version` 非整数 → `BAD_REQUEST`；版本不存在 → `NOT_FOUND`；
+`root`/`path` 无效或越界 → `FORBIDDEN`（权限校验与 §4.7 一致，均先经 `_m_resolve_doc`）。
+
+```bash
+curl -G http://192.168.1.10:9000/api/m/file/version \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-urlencode "root=r1" --data-urlencode "path=读书笔记/读书笔记" \
+  --data-urlencode "version=1757380800000"
+```
 
 ### 4.8 `POST /api/m/file/versions/restore` — 回滚
 
@@ -435,8 +544,8 @@ curl -X POST http://192.168.1.10:9000/api/m/upload \
 ## 5. 客户端接入注意事项
 
 1. **不要复用 Web 的 Cookie 登录流程**。移动端走 Bearer Token，避免把密码 Cookie 放进系统 WebView。
-2. **401 要统一拦截**。收到 `INVALID_TOKEN` 应清token 并跳登录页，不要在每个页面各自处理。
-   Android 客户端在 `ApiClient.parse()` 里统一处理，各页面无需重复。
+2. **401 要统一拦截**。收到 `INVALID_TOKEN` 应清 token 并跳登录页，不要在每个页面各自处理
+   （建议在网络层统一拦截，各页面无需重复）。
 3. **重试策略要区分故障类型**。网络类瞬时故障（超时、连接重置）可指数退避重试；
    4xx 这类确定性失败重试只会放大无效请求并拖慢反馈。
    **上传不自动重试**（服务端每次都会生成新 uuid，重复提交会产生重复文件）。
@@ -444,8 +553,8 @@ curl -X POST http://192.168.1.10:9000/api/m/upload \
    收到 `FORBIDDEN` 时**不要覆盖**，应提示用户重新加载对比。
 5. **端上不自行统计字数**。服务端不下发 `word_count`（原因见 §4.2），
    端上若要展示应明确标注为「字符数」而非「字数」。
-6. **大文档建议本地暂存 + 显式保存**，与 Web 端自动保存策略解耦，避免频繁触网。
-   Android 客户端用「停止输入 1.2 秒后静默保存」+ 顶栏手动保存兜底。
+6. **大文档建议本地暂存 + 显式保存**，与 Web 端自动保存策略解耦，避免频繁触网
+   （参考做法：停止输入 1.2 秒后静默保存 + 顶栏手动保存兜底）。
 
 ---
 
@@ -469,6 +578,10 @@ curl -X POST http://192.168.1.10:9000/api/m/upload \
 - 新增路由**统一挂在 `/api/m/` 前缀**下，不要与现有 `/api/` 路由混用，便于灰度与回滚。
 - `do_GET` / `do_POST` 开头做 `/api/m/` 前缀分流；`do_PUT` / `do_DELETE` 是 1.2.0 新增的
   （Web 端原本没有这两个方法）。
+- **「API 数据输出」开关**（§2.1）的判定在 `Handler._m_output_off(path)`，
+  受控路径清单是 `Handler._M_DATA_PATHS`（`frozenset`）。
+  **新增会输出文档/分区/附件数据的接口时，必须把路径加进该集合**，否则会绕过开关——
+  这是本开关唯一可能失效的地方。反之，`health` / `auth/*` 不要加。
 - 路径安全**复用现有函数，不要另写一套**：`safe_join`（路径穿越防护）、
   `_safe_doc` / `_m_resolve_doc`（文档定位）、`_doc_asset_dir`（同名文件夹结构）、
   `_folder_note_path`（幂等规范化）、`_version_dir`（版本目录与自动迁移）。
@@ -480,7 +593,7 @@ curl -X POST http://192.168.1.10:9000/api/m/upload \
 > （内部做 `os.path.splitext` 取扩展名）。传裸扩展名 `"exe"` 会因 `splitext("exe")`
 > 得到空扩展名而**漏判放行**，黑名单形同虚设。
 
-- 回归测试：`test_mobile_api.py`（65 项，9 段：A 健康检查与鉴权 / B 登录会话 / C 分区与列表 /
+- 回归测试：`test_mobile_api.py`（66 项，9 段：A 健康检查与鉴权 / B 登录会话 / C 分区与列表 /
   D 文档 CRUD / E 历史版本 / F 上传限制与附件 / G 异常边界 / H 登出 / I Web 端兼容性）。
   改动移动端接口后必须跑：`python test_mobile_api.py`。
 - 静态资源白名单为**白名单放行**机制（仅 `/index.html`、`/vditor/`、`/ui/` 可公开访问），
