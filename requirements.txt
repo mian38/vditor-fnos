@@ -15,7 +15,7 @@
 #   tarfile, zipfile, tempfile, shutil, glob —— 备份、压缩与文件操作
 #   mimetypes, difflib, uuid, io —— 静态资源、文本对比与工具
 #
-# 构建期同样零依赖（bump_version.py / build_fpk.py 只用标准库；原 make_nas.py 已停用）。
+# 构建期同样零依赖（bump_version.py 只用标准库；打包由官方 fnpack.exe 完成）。
 # 打包 fnOS 安装包所需的 fnpack.exe 需从飞牛官方获取，不通过 pip 分发。
 #
 # 如未来引入第三方依赖，请在此声明并固定版本号，以保证部署可复现。

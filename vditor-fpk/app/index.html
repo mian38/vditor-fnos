@@ -936,8 +936,12 @@
                     </p>
                     <p class="about-p">
                         应用随包分发多个第三方渲染组件，<b>它们各自保留原始许可，不适用本应用的 MIT 许可</b>。
-                        其中 Apache ECharts 采用 <b>Apache-2.0</b>（含 NOTICE 保留义务），
-                        <b>KaTeX 的字体文件采用 SIL OFL 1.1</b>（并非 MIT）。
+                        其中非 MIT 许可的组件包括：<b>Apache ECharts</b> 采用 Apache-2.0（含 NOTICE 保留义务）、
+                        <b>KaTeX 字体文件</b>采用 SIL OFL 1.1、<b>Graphviz（Viz.js 内）</b>采用 EPL-1.0、
+                        <b>highlight.js</b> 采用 BSD-3-Clause、<b>d3（markmap 内）</b>采用 ISC。
+                        其余组件（Vditor 内核、KaTeX 库代码、Mermaid、markmap、abcjs、WaveDrom、
+                        flowchart.js、smiles-drawer、PlantUML Encoder、Lute 等）为 MIT。
+                        各组件的完整许可文本随包分发于对应目录。
                         完整的第三方组件清单、许可与版权归属见项目仓库中的
                         <code>THIRD_PARTY_NOTICES.md</code>。
                     </p>

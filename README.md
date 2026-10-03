@@ -179,8 +179,8 @@ fnpack.exe build -d vditor-fpk
 
 ### 升版本号
 
-版本号存于 fpk 两处（`manifest` + `vditor-fpk/app/server.py`）+ 测试脚本，
-`bump_version.py` 会一次性同步 fpk 相关位置：
+版本号存于 fpk 两处（`vditor-fpk/manifest` + `vditor-fpk/app/server.py`），
+`bump_version.py` 会一次性同步这两处；测试脚本动态读取版本，无硬编码：
 
 ```bash
 python bump_version.py 1.2.6 --dry-run   # 先预览
@@ -202,8 +202,8 @@ python bump_version.py 1.2.6             # 确认后执行
 │       ├── ui/                  # 前端资源
 │       └── vditor/              # Vditor 4.0.0 发行资源
 ├── docs/                    # 文档
-├── test_*.py                # 回归测试
-└── bump_version.py          # 版本号同步（仅 fpk）
+├── test_*.py                # 回归测试（5 个文件，见「开发与测试」）
+└── bump_version.py          # 版本号同步（仅 manifest + server.py 两处）
 ```
 
 ---
@@ -271,10 +271,28 @@ CSP 与 `X-Frame-Options: DENY` 等安全响应头、非内联扩展名强制下
 随包分发的第三方组件保留各自许可，**不在本项目 MIT 许可覆盖范围内**，
 完整清单见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
-其中需特别注意：
+其中非 MIT 许可的组件需特别注意（各组件目录内附有其许可全文）：
 
-- 编辑器内核 Vditor 4.0.0 —— MIT，© Vanessa219 / B3log
-- Apache ECharts —— Apache-2.0（含 NOTICE 义务，已保留）
-- KaTeX **字体文件** —— SIL OFL 1.1（**非 MIT**）
+| 组件 | 许可 |
+| --- | --- |
+| 编辑器内核 Vditor 4.0.0 | MIT，© B3log 开源 |
+| Apache ECharts 5.6.0 | Apache-2.0（含 NOTICE 义务，已保留） |
+| KaTeX **字体文件** | SIL OFL 1.1（**非 MIT**） |
+| Graphviz（Viz.js 内） | EPL-1.0（与 MIT 并存） |
+| highlight.js | BSD-3-Clause |
+| d3（markmap 内） | ISC |
+
+其余组件（KaTeX 库代码、Mermaid、markmap、abcjs、WaveDrom、flowchart.js、
+smiles-drawer、PlantUML Encoder、Lute 等）为 MIT。
 
 更新记录：[`CHANGELOG.md`](CHANGELOG.md)（开发者版）、[`CHANGELOG_USER.md`](CHANGELOG_USER.md)（用户版）。
+
+---
+
+## 开发方式说明
+
+本项目的代码、文档与测试由开发者借助 **AI 编码助手**编写与维护，最终代码经人工审阅、
+实机验证与逐版本回归测试后发布。所用 AI 工具不持有本项目代码的著作权，
+项目著作权归 [mian38](https://github.com/mian38) 所有，仍以 MIT 许可发布。
+
+欢迎提交 issue 与 PR；因 AI 生成导致的疏漏之处，若你发现问题，欢迎直接指正。

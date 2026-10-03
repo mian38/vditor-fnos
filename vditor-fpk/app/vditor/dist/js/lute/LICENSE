@@ -1,0 +1,8 @@
+Lute (https://github.com/b3log/Lute) —— Markdown 解析引擎，经 GopherJS 编译为 JavaScript，
+随 Vditor 一同分发。
+
+许可：MIT（与 Vditor 同源，二者均由 B3log 开源维护）。
+
+说明：Lute 上游仓库根目录未提供独立 LICENSE 文件（已核实）。Vditor 顶层的
+`vditor/LICENSE`（MIT, Copyright (c) 2019-present B3log 开源, b3log.org）已覆盖
+同源分发。完整 MIT 条款见 `../../LICENSE`。

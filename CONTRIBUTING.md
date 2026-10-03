@@ -246,3 +246,11 @@ python bump_version.py 1.2.6
 
 贡献代码中若复制了第三方代码片段，请**在PR 中说明来源与许可**，并在
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 中登记。
+
+## AI 辅助贡献
+
+本项目本身大量使用 AI 编码助手开发（见 [README「开发方式说明」](README.md)），欢迎你也这样做。使用 AI 辅助没有限制，但请注意：
+
+1. **你需为提交内容负责** —— AI 可能产生错误，请自行验证后再提交。
+2. **测试是硬要求** —— 改动 `vditor-fpk/app/` 后必须跑 `python test_pkg.py && python test_core.py`。
+3. **如实标注** —— 若提交内容大量由 AI 生成，建议在 PR 中说明，以便维护者安排更严格的审阅。

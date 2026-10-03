@@ -1,0 +1,43 @@
+# ===== 换行符规范 =====
+# 本项目含大量 bash 脚本（cmd/*、app/bin/vditor、preflight.sh），这些脚本在
+# 飞牛 fnOS（Linux）上直接执行，必须保持 LF，否则会出现「not found」或 shebang 失效。
+* text=auto eol=lf
+
+# 明确指定 LF 的脚本类
+*.sh text eol=lf
+*.bash text eol=lf
+vditor-fpk/cmd/* text eol=lf
+vditor-fpk/app/bin/* text eol=lf
+preflight.sh text eol=lf
+check text eol=lf
+apply_style_v414 text eol=lf
+
+# Windows 批处理须保持 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# ===== 二进制文件（禁止行尾转换与 diff）=====
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.mp3 binary
+*.mp4 binary
+*.zip binary
+*.gz binary
+*.fpk binary
+*.exe binary
+
+# ===== 语言统计归类（可选）=====
+*.md text diff=markdown
+*.py text diff=python
+*.html text diff=html
+*.css text
+*.js text
