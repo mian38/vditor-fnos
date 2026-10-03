@@ -16,6 +16,12 @@ fnpack.exe
 # ===== AI 协作私有记忆（含内部 commit hash 与工作记录，不应公开）=====
 .workbuddy/
 
+# ===== WorkBuddy 会话/草稿导出（含本机路径与内部推理，禁止提交）=====
+# 匹配 vditor_full_conversation_*.md、*_devstory_*.md 等由 AI 会话导出的文件。
+# 这些是本地工作产物，不应进入仓库或被推送。
+*_conversation*.md
+*_devstory*.md
+
 # ===== IDE / 编辑器 =====
 .idea/
 .vscode/
