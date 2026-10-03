@@ -564,7 +564,7 @@ check("F8 设置导出", st == 200, "st=%s" % st)
 check("F9 导出为附件", "attachment" in hd.get("Content-Disposition", ""), hd.get("Content-Disposition"))
 try:
     exp = json.loads(raw.decode("utf-8"))
-    check("F10 导出内容含 version 字段", exp.get("version") == "1.1.5", str(exp)[:100])
+    check("F10 导出内容含 version 字段", exp.get("version") == "1.2.0", str(exp)[:100])
 except Exception as e:
     check("F10 导出内容可解析", False, str(e))
 
@@ -831,7 +831,7 @@ html_src = open(os.path.join(APP, "index.html"), encoding="utf-8").read()
 
 check("L1 语法正确（server.py）", compile(server_src, "server.py", "exec") is not None)
 check("L2 语法正确（vd_util.py）", compile(util_src, "vd_util.py", "exec") is not None)
-check("L3 APP_VERSION = 1.1.5", 'APP_VERSION = "1.1.5"' in server_src)
+check("L3 APP_VERSION = 1.2.0", 'APP_VERSION = "1.2.0"' in server_src)
 
 check("L4 死代码 _env_bool 已删除", "def _env_bool" not in server_src)
 check("L5 统一入口 _content_length 存在", "def _content_length" in server_src)

@@ -91,7 +91,7 @@ check("versions dir removed", not os.path.isdir(os.path.join(docs, ".vditor_vers
 # 5) 导出配置含 page_title / favicon
 st, raw, hdr = req("GET", "/api/settings/export", cookie=cookie, raw=True)
 exp = json.loads(raw.decode())
-check("export version 1.1.1", exp.get("version") == "1.1.5", str(exp.get("version")))
+check("export version 1.1.1", exp.get("version") == "1.2.0", str(exp.get("version")))
 check("export has page_title", "page_title" in exp.get("settings", {}), str(exp.get("settings", {}).keys()))
 check("export has favicon", "favicon" in exp.get("settings", {}), str(exp.get("settings", {}).keys()))
 

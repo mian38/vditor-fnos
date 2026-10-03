@@ -54,7 +54,7 @@ try:
     print("--- /api/status ---")
     d = json.loads(get("/api/status").read().decode())
     check("含 app/network/security 三段", all(k in d for k in ("app","network","security")), str(list(d.keys())))
-    check("app.version == 1.1.5", d["app"]["version"] == "1.1.5", d["app"]["version"])
+    check("app.version == 1.2.0", d["app"]["version"] == "1.2.0", d["app"]["version"])
     check("app.port == %d" % PORT, d["app"]["port"] == PORT, str(d["app"]["port"]))
     check("uptime 存在且为数字", isinstance(d["app"]["uptime"], int))
     check("docRoots 为列表", isinstance(d["app"]["docRoots"], list) and len(d["app"]["docRoots"]) >= 1)

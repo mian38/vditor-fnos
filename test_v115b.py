@@ -261,8 +261,8 @@ for tag in ("div", "section", "dl", "table", "tbody", "thead", "button"):
 
 check("G8 无 console/debugger 残留",
       not re.search(r"\bconsole\.(log|debug)\b|\bdebugger\b", html))
-check("G9 版本号未变（1.1.5）", 'APP_VERSION = "1.1.5"' in srv)
-check("G10 manifest 版本号未变", re.search(r"(?m)^version\s*=\s*1\.1\.5", manifest) is not None)
+check("G9 APP_VERSION = 1.2.0", 'APP_VERSION = "1.2.0"' in srv)
+check("G10 manifest version=1.2.0", re.search(r"(?m)^version\s*=\s*1\.2\.0", manifest) is not None)
 
 print("\n=== H. 派生副本一致性 ===")
 nas_index = read(os.path.join(HERE, "vditor-nas", "index.html"))
@@ -270,7 +270,7 @@ check("H1 vditor-nas/index.html 已同步选项卡样式", ".set-page { display:
 check("H2 vditor-nas/index.html 已同步 log-box 样式", ".log-box {" in nas_index)
 check("H3 vditor-nas/index.html 已同步四按钮", 'id="btn-refresh-current"' in nas_index)
 nas_server = read(os.path.join(HERE, "vditor-nas", "server.py"))
-check("H4 vditor-nas/server.py 版本一致", 'APP_VERSION = "1.1.5"' in nas_server)
+check("H4 vditor-nas/server.py çæ¬ä¸è´", 'APP_VERSION = "1.2.0"' in nas_server)
 nas_cfg = read(os.path.join(HERE, "vditor-nas", "config.env"))
 check("H5 config.env 默认端口 3838", re.search(r"(?m)^PORT=3838\s*$", nas_cfg) is not None)
 

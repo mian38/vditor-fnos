@@ -562,17 +562,31 @@ html[data-theme="dark"] .log-box { background: var(--c-bg-fill); }
     background: var(--c-brand); color: #fff; border-color: var(--c-brand);
 }
 
-/* 快捷键表 */
-.kb-list { width: 100%; border-collapse: collapse; margin: 6px 0 0; font-size: var(--fs-sm); }
+/* 快捷键表（1.2.0 起用于「快捷键」弹窗） */
+.kb-list { width: 100%; border-collapse: collapse; margin: 6px 0 0; font-size: var(--fs-sm); table-layout: fixed; }
 .kb-list th, .kb-list td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--c-border-2); }
+/* 窄屏下按固定列宽分配：分类/按键两列不换行，作用列吃掉剩余宽度并允许在长单词处折行 */
+.kb-list th:nth-child(1), .kb-list td:nth-child(1) { width: 62px; }
+.kb-list th:nth-child(2), .kb-list td:nth-child(2) { width: 148px; }
+.kb-list th:nth-child(3), .kb-list td:nth-child(3) { width: auto; word-break: break-word; overflow-wrap: anywhere; }
 .kb-list th { color: var(--c-text-3); font-weight: 600; white-space: nowrap; }
 .kb-list td:first-child { white-space: nowrap; }
+.kb-list td:nth-child(2) { white-space: nowrap; overflow-x: auto; }
 .kb-list kbd {
     display: inline-block; padding: 1px 6px; margin: 0 1px;
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     font-size: var(--fs-sm); line-height: 1.6;
     background: var(--c-bg-fill); color: var(--c-text);
     border: 1px solid var(--c-border-2); border-radius: 4px;
+}
+/* 快捷键弹窗内的说明段落沿用 help-body 字号 */
+#kb-help-mask .help-body .sub { margin: 10px 0 0; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.6; }
+@media (max-width: 520px) {
+    /* 极窄屏：隐藏「分类」列（弹窗内每行仍保留分类语义由按键前缀体现），按键列收窄 */
+    #kb-help-mask .kb-list th:nth-child(1),
+    #kb-help-mask .kb-list td:nth-child(1) { display: none; }
+    #kb-help-mask .kb-list th:nth-child(2),
+    #kb-help-mask .kb-list td:nth-child(2) { width: 116px; }
 }
 
 /* 关于与帮助：简介段落 */

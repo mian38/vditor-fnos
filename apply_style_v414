@@ -45,6 +45,11 @@ MUST = [
     (".kb-list kbd", "快捷键表按键样式"),
     (".kv-list {", "应用状态键值表"),
     ("#session-mask .sess-actions", "会话超时提示弹窗"),
+    # ↓ 1.2.0 新增：快捷键弹窗内的表格列宽约束（缺任一条则窄屏下表格溢出或分类列错位）
+    (".kb-list { width: 100%; border-collapse: collapse; margin: 6px 0 0; font-size: var(--fs-sm); table-layout: fixed; }",
+     "快捷键表固定列宽布局（缺 table-layout 则窄屏下长说明列会把表格撑出弹窗）"),
+    ("#kb-help-mask .kb-list th:nth-child(1)", "快捷键弹窗极窄屏隐藏分类列"),
+    ("#kb-help-mask .help-body .sub", "快捷键弹窗内 macOS 提示段落样式"),
 ]
 GONE = ["#2f6bff", "#3a3f47", "#e54848", "#f0f2f5", "#f3f4f6", "#1f2329"]
 
