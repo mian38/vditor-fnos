@@ -29,7 +29,7 @@ MUST = [
     ('html[data-theme="dark"] .vditor', "暗色同步 Vditor 顶栏配色"),
     ("#topbar .word-counter {", "顶栏双口径字数统计容器"),
     (".vditor-counter { display: none !important; }", "隐藏内置右下角字数"),
-    ('.set-pw input:not([type="checkbox"])', "子选项卡内开关复选框不受整行输入框样式影响"),
+    ('.set-sub input:not([type="checkbox"])', "子选项块内开关复选框不受整行输入框样式影响"),
     # ↓ 1.1.3 新增：上传黑名单控件（样式须与同页其它输入控件完全一致）
     (".set-ext-row input:focus", "上传黑名单输入框聚焦态与其它输入框一致"),
     (".set-ext-chip", "上传黑名单条目（chip）样式"),
@@ -58,6 +58,11 @@ MUST = [
     ("#settings-card {", "设置卡片改为纵向 flex 布局（滚动行为修复入口）"),
     ("#settings-card .set-head,", "设置对话框标题栏固定不滚动"),
     ("#settings-card .set-body {", "设置对话框仅内容区滚动（对齐使用指南 help-body）"),
+    # ↓ 1.2.4 新增：移动端按钮行溢出 + 子选项块统一（缺任一条都会导致移动端横向滚动或标题层级错乱）
+    (".frow { display: flex; flex-wrap: wrap;", "按钮行允许换行（缺此项则窄屏下四个并排按钮撑出对话框）"),
+    ("overflow-x: hidden;", "内容区关闭横向滚动（overflow-y:auto 会隐式开启 overflow-x）"),
+    (".set-sub h3 {", "子选项标题用 h3（1.2.4 起子选项升级为第一层标题）"),
+    ('.set-sub:first-of-type { border-top: none;', "首个子选项无分隔线"),
 ]
 GONE = ["#2f6bff", "#3a3f47", "#e54848", "#f0f2f5", "#f3f4f6", "#1f2329"]
 

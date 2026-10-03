@@ -57,23 +57,24 @@ kb_block = _m.group(0) if _m else ""
 print("\n=== A. 入口并列性 ===")
 check("A1 存在 #btn-kb-help 按钮", 'id="btn-kb-help"' in html)
 # 提取帮助与快捷键子区块
-_sub = re.search(r'<div class="set-sub">\s*<h4>帮助与快捷键</h4>.*?</div>\s*</div>', html, re.S)
+_sub = re.search(r'<div class="set-sub">\s*<h[34]>帮助与快捷键</h[34]>.*?</div>\s*</div>', html, re.S)
+# 注：1.2.4 起子选项标题由 h4 升级为 h3（删除与选项卡同名的冗余首层），故兼容两种标签
 sub_block = _sub.group(0) if _sub else ""
 check("A2 「帮助与快捷键」子区块存在", bool(sub_block), sub_block[:120])
 check("A3 使用指南按钮仍在此区块内", 'id="btn-word-help"' in sub_block)
 check("A4 快捷键按钮与此区块内", 'id="btn-kb-help"' in sub_block)
 check("A5 两按钮同容器 .frow（并列，非上下堆叠）",
-      re.search(r'<div class="frow">\s*<button id="btn-word-help".*?\n\s*<button id="btn-kb-help".*?</div>', sub_block, re.S) is not None,
+      re.search(r'<div class="frow">(?:(?!</div>).)*?btn-word-help.*?(?:(?!</div>).)*?btn-kb-help.*?</div>', sub_block, re.S) is not None,
       sub_block[:200])
 check("A6 两按钮顺序：使用指南在前、快捷键在后",
       sub_block.find('btn-word-help') < sub_block.find('btn-kb-help') and sub_block.find('btn-word-help') != -1)
 # 视觉样式：同一套 .action 类（同容器同间距由 .frow 的 gap 提供）
-_btns = re.findall(r'<button id="btn-(?:word-help|kb-help)"[^>]*>', sub_block)
+_btns = [m.group(0) for m in re.finditer(r"<button[^>]*\bid=\"btn-(?:word-help|kb-help)\"[^>]*>", sub_block)]
 check("A7 两个入口按钮均带 action 样式类（视觉一致）",
       len(_btns) == 2 and all('class="action"' in b or 'class="ghost action"' in b for b in _btns), str(_btns))
 check("A8 快捷键按钮有 title 提示", 'id="btn-kb-help" class="ghost action" title="' in html)
 check("A9 旧的两个 set-sub 已合并（原「帮助（使用指南）」标题不再存在）",
-      "<h4>帮助（使用指南）</h4>" not in html)
+      "<h4>帮助（使用指南）</h4>" not in html and "<h3>帮助（使用指南）</h3>" not in html)
 _tbl_pos = html.find('<table class="kb-list"')
 check("A10 设置页内不再有快捷键表格（表格只存在于弹窗内）",
       html.count('<table class="kb-list"') == 1 and _tbl_pos > html.find('id="kb-help-mask"') > 0,
@@ -163,7 +164,7 @@ check("E5 ≤520px 隐藏分类列", "#kb-help-mask .kb-list td:nth-child(1) { d
 check("E6 ≤520px 按键列收窄至 116px", "width: 116px;" in css)
 check("E7 弹窗内提示段落有独立样式", "#kb-help-mask .help-body .sub" in css)
 check("E8 kbd 样式仍在（保留）", ".kb-list kbd {" in css)
-check("E9 .frow 提供按钮间距（gap: 8px）", re.search(r"\.frow \{ display: flex; gap: 8px;", css) is not None)
+check("E9 .frow 提供按钮间距（gap: 8px）", re.search(r"\.frow \{ display: flex; flex-wrap: wrap; gap: 8px;", css) is not None)
 check("E10 弹窗受 max-width: 92vw 约束（窄屏不出界）", "max-width: 92vw" in css)
 check("E11 help-body 有 max-height + overflow（长表格可滚动）", re.search(r"\.help-body \{[^}]*max-height: 70vh;[^}]*overflow: auto;", css) is not None)
 check("E12 暗色模式弹窗背景已覆盖（沿用 .modal-card 规则）", 'html[data-theme="dark"] .modal-card button.ghost' in css)

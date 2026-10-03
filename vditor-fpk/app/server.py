@@ -68,7 +68,7 @@ from vd_util import (
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.2.3"
+APP_VERSION = "1.2.4"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -841,7 +841,18 @@ class Handler(BaseHTTPRequestHandler):
         全部为**只读**信息，不含任何密钥、口令或哈希；供用户排查问题。
         """
         direct = self.client_address[0]
-        lan = is_private_ip(direct)
+        # 「访问来源」按**真实客户端 IP** 判定，而非 TCP 直连来源。
+        # 原因（1.2.4 修复）：经内网穿透 / 反向代理访问时，TCP 直连来源是本机的
+        # 内网 IP（fnOS 自身或局域网代理），用 direct 判定会把公网访问误报成
+        # 「局域网」——用户反馈的实际现象正是如此。
+        # client_ip() 在开启「信任反向代理」时会返回 X-Forwarded-For 第一段
+        # （已校验为合法 IP），即真实客户端；未开启时等同于 direct，行为不变。
+        # 严格模式（VDITOR_TRUST_PROXY_STRICT=1）下仅当 direct 为私有网段才采纳 XFF，
+        # 此时 client_ip 仍可能等于 direct，判定结果自然保守。
+        c_ip = client_ip(self)
+        lan = is_private_ip(c_ip)
+        # 保留「经代理」标记，供前端区分「直连」与「经代理」两种外部网络来源。
+        via_proxy = c_ip != direct
         proto = trusted_forwarded_proto(self)
         sess = get_session(self)
         roots = []
@@ -863,9 +874,11 @@ class Handler(BaseHTTPRequestHandler):
                 "docRoots": roots,
             },
             "network": {
-                "clientIp": client_ip(self),
+                "clientIp": c_ip,
                 "directIp": direct,
                 "isLan": lan,
+                # 本次请求是否经反向代理 / 内网穿透（XFF 首段与直连来源不同）
+                "viaProxy": via_proxy,
                 "proto": proto,
                 "isHttps": proto == "https",
                 "trustProxy": bool(SETTINGS.get("trust_proxy")),

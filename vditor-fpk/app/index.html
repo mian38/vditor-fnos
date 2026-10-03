@@ -178,7 +178,7 @@
         /* ---------------- 通用控件：输入框 ---------------- */
         #login-card input,
         .set-num input,
-        .set-pw input:not([type="checkbox"]),
+        .set-sub input:not([type="checkbox"]),
         .frow input,
         .set-ext-row input,
         #set-page-title,
@@ -194,13 +194,13 @@
         .set-ext-row input { flex: 1 1 auto; min-width: 0; }
         #login-card input:focus,
         .set-num input:focus,
-        .set-pw input:not([type="checkbox"]):focus,
+        .set-sub input:not([type="checkbox"]):focus,
         .frow input:focus,
         .set-ext-row input:focus,
         #set-page-title:focus { border-color: var(--c-brand); box-shadow: 0 0 0 3px var(--c-brand-soft); }
         #login-card input::placeholder,
         .set-num input::placeholder,
-        .set-pw input:not([type="checkbox"])::placeholder,
+        .set-sub input:not([type="checkbox"])::placeholder,
         .frow input::placeholder,
         .set-ext-row input::placeholder,
         #set-page-title::placeholder { color: var(--c-text-3); }
@@ -244,9 +244,18 @@
         #settings-card .set-body {
             flex: 1 1 auto; min-height: 0;
             max-height: 70vh; overflow-y: auto;
+            /* 1.2.4 修复：overflow-y:auto 会隐式把 overflow-x 置为 auto，
+               子元素（如并排按钮行）一旦超宽，对话框内容就出现横向滚动条。
+               显式关闭横向滚动，并把超宽内容约束在容器内换行显示。 */
+            overflow-x: hidden;
             /* 独立滚动容器：避免滚动条紧贴选项卡栏下边框，视觉上留一道呼吸位 */
             padding-right: 2px;
         }
+        /* 1.2.4：子选项块内的长内容（按钮行、说明段落、键值表）统一允许换行，不撑宽内容区 */
+        .set-sec .frow,
+        .set-sec .set-sub { min-width: 0; max-width: 100%; }
+        .set-sec .sub,
+        .set-sec .backup-doc p { overflow-wrap: anywhere; }
 
         /* ---------------- 设置面板：区块与控件统一 ---------------- */
         .set-sec { border-top: 1px solid var(--c-border-2); padding: 16px 0; }
@@ -254,10 +263,10 @@
         .set-sec h3 { margin: 0 0 8px; font-size: var(--fs-lg); color: var(--c-text); font-weight: 600; }
         .set-sec h4 { margin: 14px 0 6px; font-size: var(--fs-md); color: var(--c-text-2); font-weight: 600; }
         .set-sec .sub { margin: 0 0 10px; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.6; }
-        /* 统一所有字段标签（开关型 label 由 .set-toggle 自行定义，子选项卡 .set-pw 内的也须排除） */
+        /* 统一所有字段标签（开关型 label 由 .set-toggle 自行定义，子选项块内的也须排除） */
         .set-sec label:not(.set-toggle),
         .set-num label,
-        .set-pw label:not(.set-toggle),
+        .set-sub label:not(.set-toggle),
         #login-card label {
             display: block; font-size: var(--fs-sm); color: var(--c-text-2); margin: 10px 0 5px;
         }
@@ -290,9 +299,8 @@
         .set-ext-chip button:hover { color: var(--c-danger); }
         /* 条目较多时最多显示两行，超出部分可滚动，避免把设置面板撑得过长 */
         .set-ext-list { max-height: 108px; overflow-y: auto; }
-        .set-pw { margin-top: 12px; }
-        /* 子选项卡内的整行输入框；开关复选框（type=checkbox）交由 .set-toggle 控制，不受此影响 */
-        .set-pw input:not([type="checkbox"]) { width: 100%; }
+        /* 子选项块内的整行输入框；开关复选框（type=checkbox）交由 .set-toggle 控制，不受此影响 */
+        .set-sub input:not([type="checkbox"]) { width: 100%; }
         /* 设置面板内的操作按钮（含「修改密码」与「维护」各按钮）：统一上下 10px、左右 8px 间距，避免拥挤 */
         .set-sec button.action { margin: 10px 8px 0 0; }
         .set-foot {
@@ -321,9 +329,18 @@
         /* 「恢复」与「删除/隐藏」同为行内小按钮，仅配色不同 */
         #folders-list .fitem .fdel.restore { background: var(--c-brand); }
         #folders-list .fitem .fdel.restore:hover { background: var(--c-brand-hover); }
-        .frow { display: flex; gap: 8px; margin-top: 8px; }
+        /* 1.2.4 修复：原先 .frow 未设 flex-wrap，四个并排按钮（「应用状态 / 查看应用日志 /
+         * 查看登录日志 / 刷新」）在移动端窄屏下总宽度超出对话框，撑出横向滚动条，
+         * 导致整个设置对话框内容可横向滚动。改为允许换行，并让按钮在窄屏均分整行。 */
+        .frow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
         .frow input { flex: 1 1 auto; min-width: 0; }
-        .frow button { flex: 0 0 auto; padding: 8px 14px; }
+        /* 按钮不固定宽度（去掉 flex:0 0 auto 的强约束），配合 wrap 后窄屏可均分一行 */
+        .frow button { flex: 0 1 auto; min-width: 0; padding: 8px 14px; }
+        @media screen and (max-width: 560px) {
+            /* 窄屏：按钮独占一行等分，避免出现半行文字被截断 */
+            .frow button { flex: 1 1 100%; }
+        }
+
         /* 两列布局（分区显示名 / 绝对路径）：路径列更宽，窄屏自动堆叠以免占位文字被截断 */
         .frow.frow-2col {
             display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 8px;
@@ -550,10 +567,18 @@
         /* 选项卡面板：默认全部隐藏，仅显示当前选中项 */
         .set-page { display: none; }
         .set-page.on { display: block; }
-        /* 面板内子选项卡（帮助 / 快捷键 / 关于） */
-        .set-sub { border-top: 1px solid var(--c-border-2); margin-top: 14px; padding-top: 10px; }
+        /* ---------------- 1.2.4：设置面板子选项块 ----------------
+         * 1.2.3 及更早版本里，安全 / 维护 / 关于与帮助等选项卡下有两层标题：
+         *   第一层 h3「安全设置 / 维护 / 关于与帮助」（与选项卡名同名，冗余）
+         *   第二层 h4「网络访问安全 / 备份与恢复 / 帮助与快捷键」等
+         * 1.2.4 起删除冗余的第一层，第二层**升级为第一层**（改用 h3 标签与样式），
+         * 因此各选项卡下只保留一层子选项标题。
+         * 同时 .set-sub 统一了原 .set-pw（安全/维护块）与旧 .set-sub（关于页块）两套类名。 */
+        .set-sub { border-top: 1px solid var(--c-border-2); margin-top: 14px; padding-top: 12px; }
         .set-sub:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
-        .set-sub h4 { margin: 0 0 6px; font-size: var(--fs-md); color: var(--c-text-2); font-weight: 600; }
+        /* 子选项标题：沿用原第一层 h3 的字号权重，使其在视觉上仍是「一层」标题 */
+        .set-sub h3 { margin: 0 0 8px; font-size: var(--fs-lg); color: var(--c-text); font-weight: 600; }
+        .set-sub h4 { margin: 14px 0 6px; font-size: var(--fs-md); color: var(--c-text-2); font-weight: 600; }
 
         /* 状态与日志：键值表 */
         .kv-list { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 6px 0 0; }
@@ -589,7 +614,7 @@
         }
         html[data-theme="dark"] .log-box { background: var(--c-bg-fill); }
         /* 状态/日志按钮的选中态：与选项卡选中态保持同一套视觉语言 */
-        .set-pw button.action.on {
+        .set-sub button.action.on {
             background: var(--c-brand); color: #fff; border-color: var(--c-brand);
         }
 
@@ -640,7 +665,7 @@
             <span class="title">我的文档</span>
         </div>
         <div id="side-scroll"></div>
-        <div id="side-tip">Markdown 文件按分区存放于各 NAS 文件夹，可直接在 NAS 中访问。</div>
+        <div id="side-tip">Markdown 文件按分区存放于各 NAS 目录，可直接在 NAS 中访问。</div>
     </aside>
     <div id="main">
         <div id="topbar">
@@ -693,7 +718,7 @@
     </div>
 </div>
 
-<!-- 设置面板（选项卡：文件夹 / 安全 / 版本 / 上传 / 维护 / 外观 / 关于与帮助）-->
+<!-- 设置面板（选项卡：分区 / 文件 / 安全 / 外观 / 维护 / 关于与帮助）-->
 <div id="settings-mask" class="modal-mask">
     <div id="settings-card" class="modal-card">
         <div class="set-head">
@@ -701,92 +726,116 @@
             <button class="close" id="settings-close">×</button>
         </div>
         <div class="set-tabs" id="set-tabs">
-            <button type="button" class="on" data-page="pg-folders">文件夹</button>
+            <button type="button" class="on" data-page="pg-folders">分区</button>
+            <button type="button" data-page="pg-file">文件</button>
             <button type="button" data-page="pg-security">安全</button>
-            <button type="button" data-page="pg-version">版本与自动保存</button>
-            <button type="button" data-page="pg-upload">上传</button>
-            <button type="button" data-page="pg-maint">维护</button>
             <button type="button" data-page="pg-appearance">外观</button>
+            <button type="button" data-page="pg-maint">维护</button>
             <button type="button" data-page="pg-about">关于与帮助</button>
         </div>
         <div class="set-body">
 
-        <!-- ===== 选项卡：文件夹 ===== -->
+        <!-- ===== 选项卡：分区 ===== -->
         <div class="set-page on" id="pg-folders">
             <section class="set-sec">
-                <h3>文件夹设置</h3>
-                <div id="folders-list"></div>
-                <div class="frow frow-2col">
-                    <input id="folder-name" type="text" placeholder="分区显示名（可选）">
-                    <input id="folder-path" type="text" placeholder="绝对路径，如 /vol1/1000/Notes">
+                <div class="set-sub">
+                    <h3>现有分区管理</h3>
+                    <div id="folders-list"></div>
+                    <p class="sub">此处列出本应用当前可用的文档分区，含<b>系统默认分区路径</b>。可对系统默认分区执行「隐藏」（不删除对应目录文件，仅是本应用不再显示），隐藏后可执行「恢复」；对在应用内添加的分区可执行「删除」。</p>
                 </div>
-                <div class="frow">
-                    <button id="folder-add">添加文件夹</button>
+                <div class="set-sub">
+                    <h3>添加分区</h3>
+                    <div class="frow frow-2col">
+                        <input id="folder-name" type="text" placeholder="分区显示名（可选）">
+                        <input id="folder-path" type="text" placeholder="绝对路径，如 /vol1/1000/Notes">
+                    </div>
+                    <div class="frow">
+                        <button id="folder-add" class="ghost action">添加分区</button>
+                    </div>
+                    <div id="folders-err"></div>
+                    <p class="sub">在此添加 NAS 上已有的目录作为文档分区，各分区互相独立、互不混淆，可添加多个并为每个分区指定显示名。<br>若要自定义目录，需同时在 fnOS 系统「应用中心 → 已安装 → Vditor 编辑器 → 访问权限」中授权对应目录。</p>
                 </div>
-                <div id="folders-err"></div>
-                <p class="sub">在此添加 NAS 上已有的目录作为文档分区，各文件夹独立分区、互不混淆。<br>若要自定义目录，需同时在 fnOS 系统「应用中心 → 已安装 → Vditor 编辑器 → 访问权限」中授权对应目录。<br>同时列出<b>系统默认分区路径</b>：可对其执行「隐藏」（不删除对应目录文件，仅是本应用不再显示），隐藏后可执行「恢复」。</p>
+            </section>
+        </div>
+
+        <!-- ===== 选项卡：文件 ===== -->
+        <div class="set-page" id="pg-file">
+            <section class="set-sec">
+                <div class="set-sub">
+                    <h3>文件版本与自动保存</h3>
+                    <label class="set-toggle"><input type="checkbox" id="set-versioning"> 启用文件历史版本（每次手动/自动保存均生成可回溯版本）</label>
+                    <div class="set-num">
+                        <label>每个文件保留的最大版本数（1–200）</label>
+                        <input type="number" id="set-max-versions" min="1" max="200" value="50">
+                    </div>
+                    <div class="set-num">
+                        <label>自动保存间隔（秒，最小 10）</label>
+                        <input type="number" id="set-autosave" min="10" max="3600" value="60">
+                    </div>
+                </div>
+                <div class="set-sub">
+                    <h3>附件上传</h3>
+                    <div class="set-num">
+                        <label>单个上传文件大小上限（MB，1–512）</label>
+                        <input type="number" id="set-upload-max" min="1" max="512" value="256">
+                    </div>
+                    <div class="set-ext">
+                        <label>不允许上传的文件格式（黑名单，可自由增删）</label>
+                        <div class="set-ext-row">
+                            <input id="set-upload-deny" type="text" placeholder="输入扩展名，如 exe；多个用逗号分隔" maxlength="400" autocomplete="off" spellcheck="false">
+                            <button class="action" id="btn-deny-add" type="button">添加</button>
+                            <button class="ghost action" id="btn-deny-reset" type="button">恢复默认</button>
+                        </div>
+                        <div id="deny-list" class="set-ext-list"></div>
+                        <div id="upload-deny-err"></div>
+                        <p class="sub">上传时只有命中黑名单的文件格式会被拒绝，其余格式一律放行（默认已预置可执行文件、脚本等高风险类型，可在下方自由追加或删除）。被拒绝的文件可在下方列表中删除对应条目后重新上传。</p>
+                    </div>
+                </div>
             </section>
         </div>
 
         <!-- ===== 选项卡：安全 ===== -->
         <div class="set-page" id="pg-security">
             <section class="set-sec">
-                <h3>安全设置</h3>
-                <div class="set-pw">
-                    <h4>网络访问安全</h4>
+                <div class="set-sub">
+                    <h3>网络访问安全</h3>
                     <label class="set-toggle"><input type="checkbox" id="set-trust-proxy"> 信任反向代理</label>
                     <p class="sub">默认勾选。从 X-Forwarded-For 取真实客户端 IP，用于判断网络环境、登录日志显示、防爆破计数与会话绑定。需经反向代理和内网穿透访问时建议开启。</p>
                     <label class="set-toggle"><input type="checkbox" id="set-secure-cookie"> 强制 Cookie Secure 标记</label>
                     <p class="sub">默认勾选。强制通过 HTTPS 传输登录凭证，避免 HTTP 明文被抓包窃取。外网访问时建议保持开启，需自行解决 HTTPS 访问环境，局域网直连 HTTP 可正常访问，不受影响。关闭后，公网 HTTP 也可正常登录使用，但安全性降低。</p>
                 </div>
-                <div class="set-pw">
-                    <h4>修改登录密码</h4>
+                <div class="set-sub">
+                    <h3>修改登录密码</h3>
                     <label>原密码</label>
                     <input id="pw-old" type="password" placeholder="请输入原密码" autocomplete="current-password">
                     <label>新密码（至少 6 位）</label>
                     <input id="pw-new" type="password" placeholder="请输入新密码" autocomplete="new-password">
                     <label>确认新密码</label>
                     <input id="pw-confirm" type="password" placeholder="再次输入新密码" autocomplete="new-password">
-                    <button class="action" id="pw-change">修改密码</button>
+                    <div class="frow">
+                        <button class="ghost action" id="pw-change">修改密码</button>
+                    </div>
                     <div id="pw-err"></div>
                 </div>
             </section>
         </div>
 
-        <!-- ===== 选项卡：版本与自动保存 ===== -->
-        <div class="set-page" id="pg-version">
+        <!-- ===== 选项卡：外观 ===== -->
+        <div class="set-page" id="pg-appearance">
             <section class="set-sec">
-                <h3>文件版本与自动保存</h3>
-                <label class="set-toggle"><input type="checkbox" id="set-versioning"> 启用文件历史版本（每次手动/自动保存均生成可回溯版本）</label>
-                <div class="set-num">
-                    <label>每个文件保留的最大版本数（1–200）</label>
-                    <input type="number" id="set-max-versions" min="1" max="200" value="50">
-                </div>
-                <div class="set-num">
-                    <label>自动保存间隔（秒，最小 10）</label>
-                    <input type="number" id="set-autosave" min="10" max="3600" value="60">
-                </div>
-            </section>
-        </div>
-
-        <!-- ===== 选项卡：上传 ===== -->
-        <div class="set-page" id="pg-upload">
-            <section class="set-sec">
-                <h3>上传设置</h3>
-                <div class="set-num">
-                    <label>单个上传文件大小上限（MB，1–512）</label>
-                    <input type="number" id="set-upload-max" min="1" max="512" value="256">
-                </div>
-                <div class="set-ext">
-                    <label>不允许上传的文件格式（黑名单，可自由增删）</label>
-                    <div class="set-ext-row">
-                        <input id="set-upload-deny" type="text" placeholder="输入扩展名，如 exe；多个用逗号分隔" maxlength="400" autocomplete="off" spellcheck="false">
-                        <button class="action" id="btn-deny-add" type="button">添加</button>
-                        <button class="ghost action" id="btn-deny-reset" type="button">恢复默认</button>
+                <div class="set-sub">
+                    <h3>外观设置</h3>
+                    <label class="set-toggle"><input type="checkbox" id="set-dark-mode"> 深色模式</label>
+                    <p class="sub">深色模式选项更改即刻生效，无需保存设置；未手动设置时跟随系统和浏览器默认偏好；Vditor 编辑器主题同步更改为深色。</p>
+                    <label>网页标题（浏览器标签页显示的名称）</label>
+                    <input id="set-page-title" type="text" maxlength="60" placeholder="网页标题">
+                    <label>网页图标（上传图片，将作为浏览器标签页图标；支持 png / jpg / svg / ico 等）</label>
+                    <input id="set-favicon" type="file" accept="image/*">
+                    <div class="frow">
+                        <button class="ghost action" id="btn-upload-favicon">上传图标</button>
                     </div>
-                    <div id="deny-list" class="set-ext-list"></div>
-                    <div id="upload-deny-err"></div>
-                    <p class="sub">上传时只有命中黑名单的文件格式会被拒绝，其余格式一律放行（默认已预置可执行文件、脚本等高风险类型，可在下方自由追加或删除）。被拒绝的文件可在下方列表中删除对应条目后重新上传。</p>
+                    <div id="favicon-err" class="sub"></div>
+                    <p class="sub">此处仅控制前端网页标题与图标，fnOS 内显示的本应用名与图标不受此处影响。</p>
                 </div>
             </section>
         </div>
@@ -794,14 +843,15 @@
         <!-- ===== 选项卡：维护 ===== -->
         <div class="set-page" id="pg-maint">
             <section class="set-sec">
-                <h3>维护</h3>
-                <div class="set-pw">
-                    <h4>备份与恢复</h4>
-                    <button class="action" id="btn-backup">导出备份（配置 + 文档）</button>
-                    <button class="ghost action" id="btn-restore-backup">导入备份（配置 + 文档）</button>
+                <div class="set-sub">
+                    <h3>备份与恢复</h3>
+                    <div class="frow">
+                        <button class="ghost action" id="btn-backup">导出备份（配置 + 文档）</button>
+                        <button class="ghost action" id="btn-restore-backup">导入备份（配置 + 文档）</button>
+                        <button class="ghost action" id="btn-export-config">导出配置（JSON）</button>
+                        <button class="ghost action" id="btn-import-config">导入配置（JSON）</button>
+                    </div>
                     <input type="file" id="restore-backup-file" accept=".tar.gz,.tgz,application/gzip" style="display:none;">
-                    <button class="ghost action" id="btn-export-config">导出配置（JSON）</button>
-                    <button class="ghost action" id="btn-import-config">导入配置（JSON）</button>
                     <input type="file" id="import-config-file" accept="application/json,.json" style="display:none;">
                     <div class="sub backup-doc">
                         <p><b>两种备份与恢复的区别：</b></p>
@@ -810,11 +860,11 @@
                         <p>一句话：要搬文档用①，只搬这个设置项用②；两者互补，建议定期同时备份。</p>
                     </div>
                 </div>
-                <div class="set-pw">
-                    <h4>状态与日志</h4>
+                <div class="set-sub">
+                    <h3>状态与日志</h3>
                     <p class="sub">查看应用当前所处状态（浏览器、网络环境、服务器信息）与运行日志，便于排查问题。点击按钮展开对应面板，再次点击收回；打开新面板时会自动收回先前展开的。</p>
                     <div class="frow">
-                        <button class="action" id="btn-refresh-status" data-logpanel="status">应用状态</button>
+                        <button class="ghost action" id="btn-refresh-status" data-logpanel="status">应用状态</button>
                         <button class="ghost action" id="btn-view-app-log" data-logpanel="applog">查看应用日志</button>
                         <button class="ghost action" id="btn-view-log" data-logpanel="loginlog">查看登录日志</button>
                         <button class="ghost action" id="btn-refresh-current">刷新</button>
@@ -829,50 +879,32 @@
                         <div class="log-box" id="log-box"></div>
                     </div>
                 </div>
-                <div class="set-pw">
-                    <h4>卸载时的应用数据处理</h4>
+                <div class="set-sub">
+                    <h3>卸载时的应用数据处理</h3>
                     <label class="set-toggle"><input type="checkbox" id="set-clear-on-uninstall"> 卸载本应用时清除所有软件数据</label>
                     <p class="sub">默认不勾选，在 fnOS 卸载本应用后保留应用数据（登录密码、Web 设置、上传文件、历史版本缓存等），重装后直接恢复。<br>勾选后，卸载时将彻底删除所有应用数据。如果需要全新安装，请勾选此选项后再卸载。<br>您的 Markdown 文档文件始终保留，不受该选项影响。</p>
                 </div>
             </section>
         </div>
 
-        <!-- ===== 选项卡：外观 ===== -->
-        <div class="set-page" id="pg-appearance">
-            <section class="set-sec">
-                <h3>外观设置</h3>
-                <label class="set-toggle"><input type="checkbox" id="set-dark-mode"> 深色模式</label>
-                <p class="sub">深色模式选项更改即刻生效，无需保存设置；未手动设置时跟随系统和浏览器默认偏好；Vditor 编辑器主题同步更改为深色。</p>
-                <label>网页标题（浏览器标签页显示的名称）</label>
-                <input id="set-page-title" type="text" maxlength="60" placeholder="网页标题">
-                <label>网页图标（上传图片，将作为浏览器标签页图标；支持 png / jpg / svg / ico 等）</label>
-                <input id="set-favicon" type="file" accept="image/*">
-                <button class="ghost action" id="btn-upload-favicon">上传图标</button>
-                <div id="favicon-err" class="sub"></div>
-                <p class="sub">此处仅控制前端网页标题与图标，fnOS 内显示的本应用名与图标不受此处影响。</p>
-            </section>
-        </div>
-
         <!-- ===== 选项卡：关于与帮助 ===== -->
         <div class="set-page" id="pg-about">
             <section class="set-sec">
-                <h3>关于与帮助</h3>
-
                 <div class="set-sub">
-                    <h4>帮助与快捷键</h4>
+                    <h3>帮助与快捷键</h3>
                     <p class="sub">本应用的完整功能说明与上手指引，以及本应用与内置编辑器支持的常用快捷键。</p>
                     <div class="frow">
-                        <button id="btn-word-help" class="action" title="使用指南（点击查看本应用功能详解）">？ 使用指南</button>
+                        <button id="btn-word-help" class="ghost action" title="使用指南（点击查看本应用功能详解）">？ 使用指南</button>
                         <button id="btn-kb-help" class="ghost action" title="快捷键（点击查看本应用与编辑器支持的常用快捷键）">⌨ 快捷键</button>
                     </div>
                 </div>
 
                 <div class="set-sub">
-                    <h4>关于本应用</h4>
+                    <h3>关于本应用</h3>
                     <p class="about-p">
                         <b>Vditor 编辑器</b> 是一个运行在 NAS 上的轻量级在线 Markdown 文档工具。
                         采用非 Docker 部署，由系统进程直接运行；后端仅使用 Python 标准库，
-                        <b>零第三方运行时依赖</b>，文档直接以Markdown 文件形式存放在你指定的 NAS 目录中，
+                        <b>零第三方运行时依赖</b>，文档直接以 Markdown 文件形式存放在你指定的 NAS 目录中，
                         可经 SMB / FTP 直接访问，数据完全自主掌控。
                     </p>
                     <dl class="kv-list">
@@ -884,7 +916,7 @@
                 </div>
 
                 <div class="set-sub">
-                    <h4>开源协议与法律声明</h4>
+                    <h3>开源协议与法律声明</h3>
                     <p class="about-p">
                         本应用源码采用 <b>MIT 许可</b>，Copyright (c) 2026 mian38。
                         可自由使用、修改、再分发与商用，但须保留版权声明与许可声明。
@@ -987,7 +1019,7 @@
                 <p>点「上传」可插入图片或文件（需登录）；上传物保存在<b>当前文档所在文件夹</b>内，并以相对链接引用，便于随文档整体打包。在 <b>HTTPS</b> 环境下额外支持「录音」。左侧「大纲」自动列出文档标题，点按即可跳转。</p>
 
                 <p class="g-h">二、文件与分区（左侧栏）</p>
-                <p>左侧按「分区」列出各 NAS 文件夹下的 Markdown 文件，选文件即打开。分区（即文档存放位置）在「设置 → 文件夹设置」中添加与管理；顶栏「«」按钮可折叠 / 展开左侧文档栏。</p>
+                <p>左侧按「分区」列出各 NAS 文件夹下的 Markdown 文件，选文件即打开。分区（即文档存放位置）在「设置 → 分区」中添加与管理；顶栏「«」按钮可折叠 / 展开左侧文档栏。</p>
 
                 <p class="g-h">三、保存与自动保存</p>
                 <p>编辑后点右上角「保存」即可存盘，内容也会按设置的间隔 <b>自动保存</b>。自动保存间隔、是否保留历史版本在「设置 → 版本与自动保存」中配置。</p>
@@ -999,7 +1031,7 @@
                 <p>顶栏「导出 .md / 导出 HTML」导出当前文档：若该文档文件夹内还有图片 / 音频等<b>其它文件</b>，会自动把整个文件夹打包为 zip 一起导出，否则只导出单文件。「设置 → 维护」里还有「导出备份（配置 + 文档）」与「导出 / 导入配置（JSON）」，用于迁移与容灾。</p>
 
                 <p class="g-h">六、设置</p>
-                <p>顶栏「设置」打开设置面板，顶部为选项卡：<br><b>文件夹设置</b>：添加 NAS 文件夹作为分区，可隐藏 / 恢复系统默认分区。<br><b>安全设置</b>：修改密码、信任反向代理、强制 Cookie Secure。<br><b>版本与自动保存</b>：历史版本开关与保留数量、自动保存间隔。<br><b>上传</b>：上传大小上限与格式黑名单。<br><b>维护</b>：导出 / 导入备份（配置 + 文档）、导出 / 导入配置（JSON）、「状态与日志」（应用状态 / 应用日志 / 登录日志），以及「卸载时是否清除软件数据」。<br><b>外观</b>：暗黑模式、网页标题、网页图标（浏览器标签页）。<br><b>关于与帮助</b>：使用指南、快捷键一览（与使用指南并列的「快捷键」按钮，均以弹窗打开）、开源协议与法律声明。</p>
+                <p>顶栏「设置」打开设置面板，顶部为选项卡：<br><b>分区</b>：管理现有分区（可隐藏 / 恢复系统默认分区、删除自建分区），并在其中添加新的 NAS 目录作为分区。<br><b>文件</b>：历史版本开关与保留数量、自动保存间隔，以及上传大小上限与格式黑名单。<br><b>安全</b>：网络访问安全（信任反向代理、强制 Cookie Secure）与修改登录密码。<br><b>外观</b>：暗黑模式、网页标题、网页图标（浏览器标签页）。<br><b>维护</b>：导出 / 导入备份（配置 + 文档）、导出 / 导入配置（JSON）、「状态与日志」（应用状态 / 应用日志 / 登录日志），以及「卸载时是否清除软件数据」。<br><b>关于与帮助</b>：使用指南、快捷键一览（与使用指南并列的「快捷键」按钮，均以弹窗打开）、开源协议与法律声明。</p>
 
                 <p class="g-h">七、账号与访问</p>
                 <p>首次进入需设置管理员密码，之后凭密码访问。忘记密码：请在 fnOS 终端中执行命令 <code>vditor reset-password</code>，按指引重置密码。</p>
@@ -2212,7 +2244,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         const path = document.getElementById('folder-path').value.trim();
         const err = document.getElementById('folders-err');
         err.textContent = '';
-        if (!path) { err.textContent = '请填写文件夹绝对路径'; return; }
+        if (!path) { err.textContent = '请填写目录绝对路径'; return; }
         fetch('/api/folders', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ action: 'add', name: name, path: path })
@@ -2222,7 +2254,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             document.getElementById('folder-path').value = '';
             refreshFolders();
             refreshFiles();
-            toast('已添加文件夹');
+            toast('已添加分区');
         }).catch(() => err.textContent = '添加失败');
     }
     function folderAction(action, path, wasManaged) {
@@ -2235,7 +2267,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             if (!d.ok) { if (err) err.textContent = d.error || '操作失败'; return; }
             refreshFolders();
             refreshFiles();
-            toast(action === 'restore' ? '已恢复分区' : (wasManaged ? '已删除文件夹' : '已隐藏分区'));
+            toast(action === 'restore' ? '已恢复分区' : (wasManaged ? '已删除分区' : '已隐藏分区'));
         }).catch(() => { if (err) err.textContent = '操作失败'; });
     }
 
@@ -2846,8 +2878,14 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 kv(dl, '显示语言', navigator.language || '—');
                 kv(dl, '网络协议', (n.proto || 'http') + (n.isHttps ? '（已加密）' : '（未加密）'),
                    n.isHttps ? 'ok' : 'warn');
-                kv(dl, '访问来源', n.isLan ? '局域网' : '外部网络', n.isLan ? 'ok' : 'warn');
-                kv(dl, '客户端 IP', (n.clientIp || '—') + (n.clientIp !== n.directIp ? '（经代理，原始 ' + n.directIp + '）' : ''));
+                // 访问来源（1.2.4）：服务端已改用**真实客户端 IP** 判定（经 XFF 解析），
+                // 故内网穿透访问不再被误报为「局域网」。此处再叠加 viaProxy 标记，
+                // 把「外部网络」细分显示为「外部网络（经代理 / 内网穿透）」。
+                const viaProxy = !!n.viaProxy || n.clientIp !== n.directIp;
+                kv(dl, '访问来源',
+                   n.isLan ? '局域网' : (viaProxy ? '外部网络（经代理 / 内网穿透）' : '外部网络'),
+                   n.isLan ? 'ok' : 'warn');
+                kv(dl, '客户端 IP', (n.clientIp || '—') + (viaProxy ? '（经代理，直连来源 ' + n.directIp + '）' : ''));
                 kv(dl, '信任反向代理', n.trustProxy ? '已开启' : '未开启');
                 kv(dl, 'Cookie Secure', n.secureCookie ? '已开启' : '未开启');
                 kv(dl, '登录会话', s.hasSession ? '有效' : '已失效', s.hasSession ? 'ok' : 'warn');

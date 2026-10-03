@@ -178,7 +178,7 @@
         /* ---------------- 通用控件：输入框 ---------------- */
         #login-card input,
         .set-num input,
-        .set-pw input:not([type="checkbox"]),
+        .set-sub input:not([type="checkbox"]),
         .frow input,
         .set-ext-row input,
         #set-page-title,
@@ -194,13 +194,13 @@
         .set-ext-row input { flex: 1 1 auto; min-width: 0; }
         #login-card input:focus,
         .set-num input:focus,
-        .set-pw input:not([type="checkbox"]):focus,
+        .set-sub input:not([type="checkbox"]):focus,
         .frow input:focus,
         .set-ext-row input:focus,
         #set-page-title:focus { border-color: var(--c-brand); box-shadow: 0 0 0 3px var(--c-brand-soft); }
         #login-card input::placeholder,
         .set-num input::placeholder,
-        .set-pw input:not([type="checkbox"])::placeholder,
+        .set-sub input:not([type="checkbox"])::placeholder,
         .frow input::placeholder,
         .set-ext-row input::placeholder,
         #set-page-title::placeholder { color: var(--c-text-3); }
@@ -244,9 +244,18 @@
         #settings-card .set-body {
             flex: 1 1 auto; min-height: 0;
             max-height: 70vh; overflow-y: auto;
+            /* 1.2.4 修复：overflow-y:auto 会隐式把 overflow-x 置为 auto，
+               子元素（如并排按钮行）一旦超宽，对话框内容就出现横向滚动条。
+               显式关闭横向滚动，并把超宽内容约束在容器内换行显示。 */
+            overflow-x: hidden;
             /* 独立滚动容器：避免滚动条紧贴选项卡栏下边框，视觉上留一道呼吸位 */
             padding-right: 2px;
         }
+        /* 1.2.4：子选项块内的长内容（按钮行、说明段落、键值表）统一允许换行，不撑宽内容区 */
+        .set-sec .frow,
+        .set-sec .set-sub { min-width: 0; max-width: 100%; }
+        .set-sec .sub,
+        .set-sec .backup-doc p { overflow-wrap: anywhere; }
 
         /* ---------------- 设置面板：区块与控件统一 ---------------- */
         .set-sec { border-top: 1px solid var(--c-border-2); padding: 16px 0; }
@@ -254,10 +263,10 @@
         .set-sec h3 { margin: 0 0 8px; font-size: var(--fs-lg); color: var(--c-text); font-weight: 600; }
         .set-sec h4 { margin: 14px 0 6px; font-size: var(--fs-md); color: var(--c-text-2); font-weight: 600; }
         .set-sec .sub { margin: 0 0 10px; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.6; }
-        /* 统一所有字段标签（开关型 label 由 .set-toggle 自行定义，子选项卡 .set-pw 内的也须排除） */
+        /* 统一所有字段标签（开关型 label 由 .set-toggle 自行定义，子选项块内的也须排除） */
         .set-sec label:not(.set-toggle),
         .set-num label,
-        .set-pw label:not(.set-toggle),
+        .set-sub label:not(.set-toggle),
         #login-card label {
             display: block; font-size: var(--fs-sm); color: var(--c-text-2); margin: 10px 0 5px;
         }
@@ -290,9 +299,8 @@
         .set-ext-chip button:hover { color: var(--c-danger); }
         /* 条目较多时最多显示两行，超出部分可滚动，避免把设置面板撑得过长 */
         .set-ext-list { max-height: 108px; overflow-y: auto; }
-        .set-pw { margin-top: 12px; }
-        /* 子选项卡内的整行输入框；开关复选框（type=checkbox）交由 .set-toggle 控制，不受此影响 */
-        .set-pw input:not([type="checkbox"]) { width: 100%; }
+        /* 子选项块内的整行输入框；开关复选框（type=checkbox）交由 .set-toggle 控制，不受此影响 */
+        .set-sub input:not([type="checkbox"]) { width: 100%; }
         /* 设置面板内的操作按钮（含「修改密码」与「维护」各按钮）：统一上下 10px、左右 8px 间距，避免拥挤 */
         .set-sec button.action { margin: 10px 8px 0 0; }
         .set-foot {
@@ -321,9 +329,18 @@
         /* 「恢复」与「删除/隐藏」同为行内小按钮，仅配色不同 */
         #folders-list .fitem .fdel.restore { background: var(--c-brand); }
         #folders-list .fitem .fdel.restore:hover { background: var(--c-brand-hover); }
-        .frow { display: flex; gap: 8px; margin-top: 8px; }
+        /* 1.2.4 修复：原先 .frow 未设 flex-wrap，四个并排按钮（「应用状态 / 查看应用日志 /
+         * 查看登录日志 / 刷新」）在移动端窄屏下总宽度超出对话框，撑出横向滚动条，
+         * 导致整个设置对话框内容可横向滚动。改为允许换行，并让按钮在窄屏均分整行。 */
+        .frow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
         .frow input { flex: 1 1 auto; min-width: 0; }
-        .frow button { flex: 0 0 auto; padding: 8px 14px; }
+        /* 按钮不固定宽度（去掉 flex:0 0 auto 的强约束），配合 wrap 后窄屏可均分一行 */
+        .frow button { flex: 0 1 auto; min-width: 0; padding: 8px 14px; }
+        @media screen and (max-width: 560px) {
+            /* 窄屏：按钮独占一行等分，避免出现半行文字被截断 */
+            .frow button { flex: 1 1 100%; }
+        }
+
         /* 两列布局（分区显示名 / 绝对路径）：路径列更宽，窄屏自动堆叠以免占位文字被截断 */
         .frow.frow-2col {
             display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 8px;
@@ -550,10 +567,18 @@
         /* 选项卡面板：默认全部隐藏，仅显示当前选中项 */
         .set-page { display: none; }
         .set-page.on { display: block; }
-        /* 面板内子选项卡（帮助 / 快捷键 / 关于） */
-        .set-sub { border-top: 1px solid var(--c-border-2); margin-top: 14px; padding-top: 10px; }
+        /* ---------------- 1.2.4：设置面板子选项块 ----------------
+         * 1.2.3 及更早版本里，安全 / 维护 / 关于与帮助等选项卡下有两层标题：
+         *   第一层 h3「安全设置 / 维护 / 关于与帮助」（与选项卡名同名，冗余）
+         *   第二层 h4「网络访问安全 / 备份与恢复 / 帮助与快捷键」等
+         * 1.2.4 起删除冗余的第一层，第二层**升级为第一层**（改用 h3 标签与样式），
+         * 因此各选项卡下只保留一层子选项标题。
+         * 同时 .set-sub 统一了原 .set-pw（安全/维护块）与旧 .set-sub（关于页块）两套类名。 */
+        .set-sub { border-top: 1px solid var(--c-border-2); margin-top: 14px; padding-top: 12px; }
         .set-sub:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
-        .set-sub h4 { margin: 0 0 6px; font-size: var(--fs-md); color: var(--c-text-2); font-weight: 600; }
+        /* 子选项标题：沿用原第一层 h3 的字号权重，使其在视觉上仍是「一层」标题 */
+        .set-sub h3 { margin: 0 0 8px; font-size: var(--fs-lg); color: var(--c-text); font-weight: 600; }
+        .set-sub h4 { margin: 14px 0 6px; font-size: var(--fs-md); color: var(--c-text-2); font-weight: 600; }
 
         /* 状态与日志：键值表 */
         .kv-list { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 6px 0 0; }
@@ -589,7 +614,7 @@
         }
         html[data-theme="dark"] .log-box { background: var(--c-bg-fill); }
         /* 状态/日志按钮的选中态：与选项卡选中态保持同一套视觉语言 */
-        .set-pw button.action.on {
+        .set-sub button.action.on {
             background: var(--c-brand); color: #fff; border-color: var(--c-brand);
         }
 

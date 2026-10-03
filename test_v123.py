@@ -19,7 +19,15 @@ MAIN = os.path.join(FPK, "cmd", "main")
 MF = os.path.join(FPK, "manifest")
 HTML = os.path.join(FPK, "app", "index.html")
 CSS = os.path.join(HERE, "ui_style_v414.css")
-VER = "1.2.3"
+# 当前版本号：从 manifest 动态读取。历史教训（1.2.3）：写死版本号会导致每次
+# 升版都出现一批「版本号断言失败」的假红。1.2.4 重构了设置面板，但本脚本
+# 关注的 1.2.3 行为（向导结构、死代码清除、固定端口）仍然成立，故只动态化版本号。
+def _detect_ver():
+    import re as _r
+    m = _r.search(r"(?m)^version\s*=\s*([0-9.]+)\s*$",
+                 io.open(MF, encoding="utf-8").read())
+    return m.group(1) if m else "0.0.0"
+VER = _detect_ver()
 
 PASS, FAIL = [], []
 
@@ -66,7 +74,7 @@ for kw, label in [("Python3", "A10 含 Python3 依赖说明"),
                   ("内网", "A13 含内网使用建议"),
                   ("公网", "A14 含公网暴露风险提示"),
                   ("备份", "A15 含数据备份责任"),
-                  ("设置 → 文件夹", "A16 引导至「设置 → 文件夹」"),
+                  ("设置 → 分区", "A16 引导至「设置 → 分区」"),
                   ("访问权限", "A17 含访问权限授权说明")]:
     ck(kw in h, label)
 # 不应再有已移除功能的表述
@@ -296,10 +304,14 @@ for f, name in (("CHANGELOG.md", "G1 开发者版"), ("CHANGELOG_USER.md", "G2 �
 uc = io.open(os.path.join(HERE, "CHANGELOG_USER.md"), encoding="utf-8").read()
 sec123 = re.search(r"^##\s*%s.*?(?=^##\s|\Z)" % re.escape(VER), uc, re.S | re.M)
 body123 = sec123.group(0) if sec123 else ""
-ck(bool(body123), "G3 用户版 1.2.3 段落可定位")
+ck(bool(body123), "G3 用户版 %s 段落可定位" % VER)
 ck(bool(re.search(r"^###\s*(新增|修复|优化|更改)\s*$", body123, re.M)),
    "G4 用户版使用四分点分类（### 标题）", re.findall(r"^###\s*(\S+)", body123, re.M))
-ck("3838" in body123, "G5 用户版说明固定端口")
+# 固定端口的说明写在 1.2.3 段落（1.2.4 段落未改动端口，故不在其段落内）。
+# 这里校验「用户版全篇有端口说明」+「1.2.3 段落确有该说明」两条。
+ck("3838" in uc, "G5a 用户版全篇说明固定端口")
+_s123 = re.search(r"^##\s*1\.2\.3.*?(?=^##\s|\Z)", uc, re.S | re.M)
+ck(bool(_s123 and "3838" in _s123.group(0)), "G5b 1.2.3 段落确有固定端口说明")
 banned = ["根因", "代码", "接口", "机制", "变量名", "回退", "三级取值", "静默失效", "PostgreSQL", "appcenter"]
 hit = [b for b in banned if b in body123]
 ck(not hit, "G6 用户版无开发者术语", hit)

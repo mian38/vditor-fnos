@@ -136,9 +136,14 @@ check("B5 样式源含 .set-page.on 显示", ".set-page.on { display: block; }" 
 
 # B2 七个顶级选项卡 + 三个子选项卡
 tabs = re.findall(r'data-page="(pg-[a-z]+)"', html)
-check("B6 顶级选项卡 7 个", len(tabs) == 7, tabs)
-check("B7 首项为 pg-folders（默认选中「文件夹设置」）", tabs and tabs[0] == "pg-folders")
+# 1.2.4：「版本与自动保存」与「上传」合并为「文件」，顶级选项卡由 7 个减为 6 个
+check("B6 顶级选项卡 6 个（1.2.4 起合并「文件」）", len(tabs) == 6, tabs)
+check("B7 首项为 pg-folders（默认选中「分区」）", tabs and tabs[0] == "pg-folders", tabs[:1])
 check("B8 含 pg-about 关于与帮助", "pg-about" in tabs)
+check("B8b 选项卡顺序：分区/文件/安全/外观/维护/关于与帮助",
+      tabs == ["pg-folders", "pg-file", "pg-security", "pg-appearance", "pg-maint", "pg-about"], tabs)
+check("B8c 旧选项卡 pg-version / pg-upload 已移除",
+      "pg-version" not in tabs and "pg-upload" not in tabs)
 
 # B3 JS：显式写 style.display，不单靠 CSS 类
 check("B9 selectSetPage 显式写 style.display",
@@ -161,8 +166,9 @@ for bid, label in [("btn-refresh-status", "应用状态"),
                    ("btn-view-log", "查看登录日志"),
                    ("btn-refresh-current", "刷新")]:
     check("C1 存在按钮 %s（%s）" % (bid, label), ('id="%s"' % bid) in html)
-check("C2 「应用状态」为主样式、其余为 ghost",
-      html.count('class="action" id="btn-refresh-status"') == 1
+# 1.2.4：四枚按钮统一为 ghost 白底（「应用状态」原为主色，为与并排按钮一致已改）
+check("C2 状态/日志四按钮统一为 ghost",
+      html.count('class="ghost action" id="btn-refresh-status"') == 1
       and html.count('class="ghost action" id="btn-view-app-log"') == 1
       and html.count('class="ghost action" id="btn-view-log"') == 1
       and html.count('class="ghost action" id="btn-refresh-current"') == 1)
@@ -204,8 +210,9 @@ check("D3 日志正文换行防溢出（pre-wrap + break-all）",
 check("D4 日志面板限制最大高度并纵向滚动", "max-height" in css and "overflow-y: auto" in css)
 check("D5 日志面板禁止横向溢出", "overflow-x: hidden" in css)
 check("D6 深色模式适配 log-box", 'html[data-theme="dark"] .log-box' in css)
+# 1.2.4：.set-pw 已统一为 .set-sub
 check("D7 状态/日志按钮选中态与选项卡同风格",
-      ".set-pw button.action.on" in css and ".set-pw button.action.on" in html)
+      ".set-sub button.action.on" in css and ".set-sub button.action.on" in html)
 check("D8 快捷键表样式已注入", ".kb-list kbd" in html)
 check("D9 状态键值表样式已注入", ".kv-list {" in html)
 # 状态面板须用 log-panel 包一层（与登录日志同级观感）
