@@ -19,12 +19,12 @@
 ## 测试
 
 - [ ] 已运行本轮改动对应的定向测试
-- [ ] 若改动了 `vditor-fpk/app/`，已运行 `python test_smoke_pkg.py`
+- [ ] 若改动了 `vditor-fpk/app/`，已运行 `python test_pkg.py && python test_core.py`
 
 测试命令与结果：
 
 ```
-<!-- 例：python test_v114.py → passed=37 failed=0 -->
+<!-- 例：python test_core.py → passed=26 failed=0 -->
 ```
 
 - [ ] 若改动 `server.py` / `vd_util.py`，已确认未新增裸写`int(self.headers.get("Content-Length"))` 或 `self.rfile.read()`

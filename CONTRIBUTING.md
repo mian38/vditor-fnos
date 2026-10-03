@@ -186,9 +186,11 @@ chore(1.1.4): 版本号统一更新
 **测试脚本自带计数器，直接运行，不需要 pytest**：
 
 ```bash
-python test_v114.py         # 定向测试
-python test_audit114.py     # 全量回归
-python test_smoke_pkg.py    # 包内资源冒烟
+python test_version.py      # 版本号一致性
+python test_security.py     # 安全/正确性原语
+python test_cli.py          # 生命周期脚本语法
+python test_pkg.py          # 安装包结构 + 版本
+python test_core.py         # 核心功能端到端
 ```
 
 写 HTTP 测试用例的两条硬规则（踩过坑，请务必遵守）：
@@ -202,7 +204,7 @@ python test_smoke_pkg.py    # 包内资源冒烟
 否则故意声明的超大值会被覆盖，导致超限测试失效。
 
 **测试范围**：自 1.1.1 起只对**本轮修改**做定向测试，不再全量回归。
-但改动 `vditor-fpk/app/` 后必须跑 `test_smoke_pkg.py`（改静态服务或精简包体时必跑）。
+但改动 `vditor-fpk/app/` 后必须跑 `python test_pkg.py && python test_core.py`（核心功能 + 包结构门禁）。
 
 ---
 
@@ -218,11 +220,10 @@ rm -rf vditor-fpk/app/__pycache__
 
 ## 升版本流程
 
-版本号存于 fpk 两处 + 测试脚本，`bump_version.py` 只同步 **fpk**：
+版本号存于 fpk 两处，`bump_version.py` 只同步这 **两处**（测试已改为动态读取版本，无需同步）：
 
 - `vditor-fpk/manifest` 的 `version=`
 - `vditor-fpk/app/server.py` 的 `APP_VERSION`
-- `test_v406.py` / `test_v407.py` 的硬编码断言
 
 ```bash
 python bump_version.py 1.2.6 --dry-run

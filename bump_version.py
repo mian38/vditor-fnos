@@ -4,10 +4,9 @@
 # SPDX-License-Identifier: MIT
 """版本号一键同步：把新版本号写入所有需要同步的位置，避免漏改。
 
-同步位置（仅 fpk 单一来源）：
+同步位置（仅两处源码；测试已改为动态读取版本，无需同步）：
   - vditor-fpk/manifest            : version=<旧>            → version=<新>
   - vditor-fpk/app/server.py       : APP_VERSION = "<旧>"    → "<新>"
-  - test_v406.py / test_v407.py    : == "<旧>"               → == "<新>"
 
 用法：
     python3 bump_version.py 1.2.0            # 执行
@@ -76,8 +75,6 @@ def main():
     ok &= sub_once(mf, "version=%s" % old, "version=%s" % new, dry)
     for p in ("vditor-fpk/app/server.py",):
         ok &= sub_once(os.path.join(HERE, p), 'APP_VERSION = "%s"' % old, 'APP_VERSION = "%s"' % new, dry)
-    for t in ("test_v406.py", "test_v407.py"):
-        ok &= sub_once(os.path.join(HERE, t), '"%s"' % old, '"%s"' % new, dry)
 
     print()
     if not ok:

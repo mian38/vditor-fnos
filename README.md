@@ -213,9 +213,11 @@ python bump_version.py 1.2.6             # 确认后执行
 测试脚本自带计数器，**直接运行即可**（不依赖 pytest）：
 
 ```bash
-python test_audit114.py     # 1.1.4 全量回归
-python test_v114.py         # 1.1.4 定向测试
-python test_smoke_pkg.py    # 包内资源冒烟
+python test_version.py      # 版本号一致性
+python test_security.py     # 安全/正确性原语
+python test_cli.py          # 生命周期脚本语法
+python test_pkg.py          # 安装包结构 + 版本
+python test_core.py         # 核心功能端到端
 ```
 
 约定：自 1.1.1 起只对**本轮修改**做定向测试，不再全量回归。
