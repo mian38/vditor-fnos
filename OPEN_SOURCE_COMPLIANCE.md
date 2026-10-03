@@ -251,3 +251,50 @@ git ls-files | grep -iE "\.idea|\.vscode|\.DS_estore|__pycache__|\.log$"
 git ls-files | grep -iE "\.(exe|fpk|gz|apk)$"
 grep -vE "^\s*#|^\s*$" vditor-nas/config.env   # 生效配置项
 ```
+
+---
+
+## 整改执行记录（2026-10-03）
+
+全部 P0 / P1 / P2 / P3 整改项已执行完毕，提交 `1b7366f`。
+
+| 编号 | 严重程度 | 状态 | 落实位置 |
+| --- | --- | --- | --- |
+| P0-1 | Blocker | ✅ 已修复 | 新增根 `LICENSE`（MIT, mian38）；替换 `vditor-fpk/` `vditor-nas/` `nas-template/` 三份副本 |
+| P0-2 | Blocker | ✅ 已修复 | 17 个 Python 源文件全部添加 SPDX 标识 |
+| P0-3 | Blocker | ✅ 已修复 | 新增 `THIRD_PARTY_NOTICES.md`；补`echarts/LICENSE` + `echarts/NOTICE`（Apache-2.0 义务） |
+| P1-1 | High | ✅ 已修复 | 新增 `README.md` / `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` / `SECURITY.md` |
+| P1-2 | High | ✅ 已修复 | manifest 补 `author` 与 `homepage` 字段 |
+| P1-3 | High | ✅ 已修复 | `SECURITY.md` 明确私下报告渠道，禁止公开 issue 报漏洞 |
+| P2-1 | Medium | ✅ 已修复 | `.workbuddy/` 移出版本控制（4 份 AI 私有记忆） |
+| P2-2 | Medium | ✅ 已修复 | `fnpack.exe`（3.8 MB 第三方二进制）移出版本控制 |
+| P2-3 | Medium | ✅ 已修复 | 新增 `requirements.txt`（零依赖声明 + 实测 import 清单） |
+| P2-4 | Medium | ✅ 已修复 | 新增 `.github/`（PR 模板 + 2 个 issue 模板） |
+| P3-1 | Low | ✅ 已修复 | `.gitignore` 补fnpack.exe / `.workbuddy/` / IDE / 日志 / `.env` 类规则 |
+| P3-2 | Low | ✅ 已修复 | `ARCHIVE.md` 首行已为「当前主线 v1.1.x（1.1.4）」 |
+| P3-3 | Low | ✅ 已修复 | `README.md` 记录 Vditor 版本 4.0.0 及MD5 比对依据 |
+
+### 执行过程中的事实修正
+
+- **highlight.js 主题数**：审查初稿写「递归 251 个文件」，实测 `dist/js/highlight.js/styles/` 下共 **251 个文件、其中 `.css` 为 249 个**（另 2 个为 `brown-papersq.png`、`pojoaque.jpg` 两套主题的背景图）。**「249 套主题」是正确数字**，初稿把文件总数当成了主题数。
+- **Vditor 版本**：确证为 **4.0.0**（`lute.min.js` 等 7 个文件 MD5 与官方 unpkg 完全一致），非推测。
+- **第三方许可来源**：全部为文件内banner 实证或上游仓库核实，未使用推测信息。
+- **`.workbuddy/` 的敏感性**：内含内部 commit hash（如 `d718f1f`、`9f206fd`）、未发布的版本计划与内部踩坑记录，属不应公开的私有工作记忆。
+
+### 保留决定
+
+| 路径 | 决定 | 理由 |
+| --- | --- | --- |
+| `archive/` | **保留在仓库** | 4.0.17-beta / 1.1.2 / 1.1.3 三个快照在 Git 历史中**无对应提交**，移出后仅存于本地磁盘，不可追溯 |
+| `releases/*.fpk` | 已被`.gitignore` 忽略 | 24 个 `.fpk` 从未进入 Git 跟踪（实测`git ls-files "*.fpk"` = 0） |
+| `releases/vditor-nas-1.1.4.tar.gz` | **保留跟踪** | NAS 通用版发布产物，供用户直接下载 |
+| `vditor-fpk/app/vditor/LICENSE` | **原样保留** | 上游 MIT 许可，MIT §要求保留原始版权声明 |
+
+### 遗留提醒
+
+- `SECURITY.md` 中已记录当前版本的**已知边界**：`X-Forwarded-Proto: https` 被无条件信任，不经过可信代理时可能绕过 HTTP 限制，更严格的方案需维护可信代理白名单，当前未实现。
+- `archive/` 中仍含3 个 Git 无对应提交的历史快照，若未来开源且希望减小仓库体积，需先将其转为Git 提交或移至独立发布，再从主仓库移除。
+
+### 最终结论
+
+**项目已具备直接公开发布到GitHub 的条件。** 三个 Blocker 级法律风险全部闭环，敏感信息扫描无命中，回归测试 443/443 全绿。
