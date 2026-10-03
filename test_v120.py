@@ -12,8 +12,8 @@
   E. 样式与窄屏适配    —— table-layout、三列宽、极窄屏隐藏分类列
   F. 样式同步与防回归  —— apply_style_v414 MUST 断言已含新样式
   G. 结构配平          —— 标签配平、set-sub 合并、样式源唯一性
-  H. 派生副本一致性    —— vditor-nas 已同步
   I. 版本号            —— 全项目版本号一致为 1.2.0
+（原 H 段「派生副本一致性」已随通用部署目录 vditor-nas/ 移除）
 """
 import os
 import re
@@ -192,24 +192,8 @@ check("G3 使用指南正文已更新描述（提及并列按钮）", "与使用
 check("G4 弹窗内不含内联 style.display（由 JS 控制，避免与初始隐藏冲突）",
       'style="display:' not in kb_block)
 
-print("\n=== H. 派生副本一致性 ===")
-nas_index_p = os.path.join(HERE, "vditor-nas", "index.html")
-if os.path.exists(nas_index_p):
-    nas_index = read(nas_index_p)
-    check("H1 vditor-nas/index.html 已同步快捷键按钮", 'id="btn-kb-help"' in nas_index)
-    check("H2 vditor-nas/index.html 已同步弹窗", 'id="kb-help-mask"' in nas_index)
-    check("H3 vditor-nas/index.html 已同步 table-layout", "table-layout: fixed;" in nas_index)
-    check("H4 vditor-nas/index.html 已同步 ESC 栈", "{ mask: 'kb-help-mask'," in nas_index)
-else:
-    print("  SKIP vditor-nas/ 不存在（尚未运行 make_nas.py）")
-nas_server_p = os.path.join(HERE, "vditor-nas", "server.py")
-if os.path.exists(nas_server_p):
-    # NAS 通用版按项目约定不随 fpk 同步升版（只在明确要求时更新），
-    # 因此这里只校验「内部自洽」，不要求与 fpk 版本相同。
-    _nas_v = re.search(r'APP_VERSION\s*=\s*"([0-9.]+)"', read(nas_server_p))
-    check("H5 vditor-nas/server.py 版本号可解析且为正式版号",
-          _nas_v is not None and _nas_v.group(1).count(".") == 2,
-          _nas_v.group(1) if _nas_v else "未找到")
+# 注：原 H 段「派生副本一致性」检查已随通用部署目录 vditor-nas/ 一并移除。
+# 本项目现仅发布 fpk，唯一源 vditor-fpk/app/ 即交付物。
 
 print("\n=== I. 版本号 ===")
 # 版本号断言写成「三方一致 + 不低于 1.2.0」而非硬编码具体版本——

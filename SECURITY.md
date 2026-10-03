@@ -51,8 +51,7 @@
 
 - `vditor-fpk/app/server.py`、`vd_util.py` —— 自研后端
 - `vditor-fpk/app/index.html`、`ui/` —— 自研前端
-- `make_nas.py`、`bump_version.py`、`build_fpk.py` —— 自研构建工具
-- NAS 部署脚本 `nas-template/install.sh` / `uninstall.sh`
+- `bump_version.py`、`build_fpk.py` —— 自研构建工具
 
 **不属于本项目范畴**（请向上游报告）：
 

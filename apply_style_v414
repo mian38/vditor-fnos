@@ -11,7 +11,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CSS = os.path.join(HERE, "ui_style_v414.css")
 TARGETS = [
     ("vditor-fpk/app/index.html", "打包源（交付物）"),
-    ("vditor-nas/index.html", "独立部署副本"),
 ]
 
 MUST = [

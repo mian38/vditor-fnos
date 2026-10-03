@@ -4,10 +4,9 @@
 # SPDX-License-Identifier: MIT
 """版本号一键同步：把新版本号写入所有需要同步的位置，避免漏改。
 
-同步位置：
+同步位置（仅 fpk 单一来源）：
   - vditor-fpk/manifest            : version=<旧>            → version=<新>
   - vditor-fpk/app/server.py       : APP_VERSION = "<旧>"    → "<新>"
-  - vditor-nas/server.py           : 同上（若存在；派生版，随后可再跑 make_nas.py）
   - test_v406.py / test_v407.py    : == "<旧>"               → == "<新>"
 
 用法：
@@ -75,7 +74,7 @@ def main():
     print("版本：%s → %s%s\n" % (old, new, "（dry-run）" if dry else ""))
     ok = True
     ok &= sub_once(mf, "version=%s" % old, "version=%s" % new, dry)
-    for p in ("vditor-fpk/app/server.py", "vditor-nas/server.py"):
+    for p in ("vditor-fpk/app/server.py",):
         ok &= sub_once(os.path.join(HERE, p), 'APP_VERSION = "%s"' % old, 'APP_VERSION = "%s"' % new, dry)
     for t in ("test_v406.py", "test_v407.py"):
         ok &= sub_once(os.path.join(HERE, t), '"%s"' % old, '"%s"' % new, dry)
@@ -86,7 +85,7 @@ def main():
     if not dry:
         print("请手动补 manifest 的 changelog（单行、新条目前置）：")
         print("  changelog=%s：<本次更新说明>%s：..." % (new, old))
-        print("完成后建议：python3 make_nas.py && ./fnpack.exe build -d vditor-fpk")
+        print("完成后建议：./fnpack.exe build -d vditor-fpk")
     return 0
 
 

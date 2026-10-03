@@ -14,9 +14,7 @@
 ## 是否改动 `vditor-fpk/app/`
 
 - [ ] 否
-- [ ] 是 —— **必须已运行 `python make_nas.py`**，且 `vditor-nas/` 已同步
-
-> `vditor-nas/` 是派生副本。手工修改会在下次生成时被覆盖。
+- [ ] 是 —— 本项目**仅发布 fpk**，通用 Linux 部署直接以 `vditor-fpk/app/` 源码运行，无需同步其它目录
 
 ## 测试
 

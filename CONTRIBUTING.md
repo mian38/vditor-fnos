@@ -15,7 +15,7 @@
 - [提交规范](#提交规范)
 - [分支管理规范](#分支管理规范)
 - [测试约定](#测试约定)
-- [派生副本纪律](#派生副本纪律)
+- [打包前清理](#打包前清理)
 - [升版本流程](#升版本流程)
 - [许可](#许可)
 
@@ -61,17 +61,18 @@ cd vditor-nas
 
 ## 代码结构约定
 
-### 单一源 + 派生副本
+### 唯一源（fpk）
 
 这是本项目**最容易踩坑**的地方，务必理解：
 
 | 目录 | 角色 | 能否手工修改 |
 | --- | --- | --- |
-| `vditor-fpk/app/` | **唯一源** | ✅ 可以 |
-| `vditor-nas/` | 派生副本 | ❌ **绝对不行** |
+| `vditor-fpk/app/` | **唯一源，也是通用 Linux 部署的运行代码** | ✅ 可以 |
+| `vditor-fpk/` | fnOS 打包源目录（`manifest` + `app/`） | ✅ 可以 |
 
-`vditor-nas/` 全部内容由 `make_nas.py` 从 `vditor-fpk/app/` + `nas-template/` 生成。
-手工改派生副本会在下次生成时被覆盖。
+本项目**仅发布 fpk**，不再维护独立的通用部署目录（历史上曾有 `vditor-nas/`、`nas-template/`
+与派生脚本 `make_nas.py`，均已移除）。通用 Linux / 任意 NAS 的部署直接以 `vditor-fpk/app/`
+源码运行即可（见 README「方式 B」与「免责声明」）。
 
 ### 模块职责
 
@@ -205,17 +206,9 @@ python test_smoke_pkg.py    # 包内资源冒烟
 
 ---
 
-## 派生副本纪律
+## 打包前清理
 
-改完 `vditor-fpk/app/` 下的任何文件后，**必须**：
-
-```bash
-python make_nas.py
-```
-
-该脚本自带 `filecmp` 逐字节自检与 import 覆盖自检，输出 `OK 已生成` 才算成功。
-
-打包前还需清理：
+打包 fpk 前需清理字节码缓存：
 
 ```bash
 rm -rf vditor-fpk/app/__pycache__
@@ -225,15 +218,15 @@ rm -rf vditor-fpk/app/__pycache__
 
 ## 升版本流程
 
-版本号存于三处，`bump_version.py` 会一次性同步：
+版本号存于 fpk 两处 + 测试脚本，`bump_version.py` 只同步 **fpk**：
 
 - `vditor-fpk/manifest` 的 `version=`
-- `vditor-fpk/app/server.py` 与 `vditor-nas/server.py` 的 `APP_VERSION`
+- `vditor-fpk/app/server.py` 的 `APP_VERSION`
 - `test_v406.py` / `test_v407.py` 的硬编码断言
 
 ```bash
-python bump_version.py 1.1.5 --dry-run
-python bump_version.py 1.1.5
+python bump_version.py 1.2.6 --dry-run
+python bump_version.py 1.2.6
 ```
 
 **两份更新记录必须同时更新**：

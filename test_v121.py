@@ -506,8 +506,8 @@ for _tf in ("test_v406.py", "test_v407.py"):
     c = read(os.path.join(HERE, _tf))
     check("G3 %s 不再硬编码具体版本号" % _tf,
           ('== "1.2.1"' not in c) and ('== "1.2.2"' not in c) and ('== "1.2.3"' not in c))
-check("G4 NAS 通用版按约定未升版（保持 1.2.0，本轮只打 fpk）",
-      'APP_VERSION = "1.2.0"' in read(os.path.join(HERE, "vditor-nas", "server.py")))
+# 注：原 G4「NAS 通用版未升版」检查已移除——通用部署目录 vditor-nas/ 已按开源策略删除。
+# 版本号一致性现由 fpk 内部（manifest + server.py，见 G1/G2）保证。
 
 # ============================================================
 print("\n" + "=" * 66)

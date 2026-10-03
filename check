@@ -12,7 +12,7 @@
 import io, os, re, sys
 
 CJK = r"[\u4e00-\u9fa5]"
-TARGETS = ["vditor-fpk/app/index.html", "vditor-nas/index.html"]
+TARGETS = ["vditor-fpk/app/index.html"]
 
 
 def strip_blocks(src):

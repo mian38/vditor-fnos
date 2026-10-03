@@ -15,7 +15,6 @@ import io, os, re, sys
 #   python3 check_css_clip.py /tmp/x/appx/index.html
 DEFAULT_TARGETS = (
     "vditor-fpk/app/index.html",
-    "vditor-nas/index.html",
 )
 TARGETS = tuple(sys.argv[1:]) if len(sys.argv) > 1 else DEFAULT_TARGETS
 # 需要被约束的关键词：工具栏上的 overflow 声明或 flex-wrap/nowrap 布局覆盖

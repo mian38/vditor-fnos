@@ -60,11 +60,7 @@ ck(bool(mver), "A1 manifest version 可解析", mver)
 ck(sver == mver, "A2 manifest 与 server.py 版本一致", (sver, mver))
 ck(re.match(r"^\d+\.\d+\.\d+$", mver) and tuple(map(int, mver.split('.'))) >= (1, 2, 5),
    "A3 版本不低于 1.2.5", mver)
-nas_srv = os.path.join(HERE, "vditor-nas", "server.py")
-if os.path.isfile(nas_srv):
-    nsm = re.search(r'APP_VERSION = "([^"]+)"', io.open(nas_srv, encoding="utf-8").read())
-    nsver = nsm.group(1) if nsm else ""
-    ck(re.match(r"^\d+\.\d+\.\d+$", nsver), "A4 NAS 版本为合法正式版号（按约定不同步升版）", nsver)
+# 注：通用部署目录 vditor-nas/ 已按开源策略移除，版本号一致性只校验 fpk 内部（manifest + server.py）。
 
 # ------------------------------------------------------ B. 公网访问引导文案
 section("B. 公网访问引导文案")

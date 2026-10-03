@@ -8,7 +8,9 @@
 - 文档直接落盘到 NAS 目录，可经 SMB / FTP 直接访问
 - 跨平台：飞牛 fnOS、群晖、极空间、任意带 Python 3 的 Linux
 
-**当前版本：1.1.4** ｜ 许可：[MIT](LICENSE)
+**当前版本：1.2.5** ｜ 许可：[MIT](LICENSE)
+
+> 本项目以 **fpk 为唯一发布形态与唯一源**（`vditor-fpk/app/`）。通用 Linux / 任意 NAS 可直接以该目录源码运行（见「安装方式 · 方式 B」与「免责声明」）。
 
 ---
 
@@ -22,6 +24,7 @@
 - [项目结构](#项目结构)
 - [开发与测试](#开发与测试)
 - [安全](#安全)
+- [免责声明](#免责声明)
 - [许可](#许可)
 
 ---
@@ -70,37 +73,28 @@
 >
 > 本应用为纯 HTTP 服务，不提供 HTTPS，请勿使用 https:// 直接访问；出于安全考虑，暂不支持以 公网IP/域名:3838 在公网直接访问。如需暴露至公网，请使用反向代理 / 内网穿透等方案，并在前置代理处启用 HTTPS。
 
-### 方式 B：通用 Linux（NAS 通用版）
+### 方式 B：通用 Linux / 任意 NAS（非 fnOS）
 
-适用于任意带 Python 3 的 Linux（群晖、极空间、树莓派等）：
-
-```bash
-# 1. 上传 vditor-nas-<版本>.tar.gz 到 NAS 并解压
-tar -xzf vditor-nas-<版本>.tar.gz -C /tmp
-cd /tmp/vditor-nas
-
-# 2. 运行安装脚本（可指定端口，默认 3838）
-sudo bash install.sh /opt/vditor-nas 3838
-```
-
-脚本会安装到 `/opt/vditor-nas`、注册 systemd 服务并设置开机自启。
-
-**手动运行**（无 systemd 环境亦可）：
+本项目的后端（`vditor-fpk/app/server.py`）**零第三方依赖、仅用 Python 标准库**，
+且内置 `load_config()`：优先读环境变量 `VDITOR_PORT` / `VDITOR_HOST`，
+其次读同目录 `config.env`，最后回退默认 `3838` / `0.0.0.0`。
+因此**无需 fnOS，直接在任意带 Python 3 的 Linux / NAS 上运行即可**。
 
 ```bash
-cd /opt/vditor-nas
+git clone https://github.com/mian38/vditor-nas.git
+cd vditor-nas/vditor-fpk/app
+# 可选：在该目录放一个 config.env（PORT=3838 等），不放在就用默认值
 python3 server.py
 ```
 
-**卸载**：
+**后台常驻（示例，自行负责）**：可用 systemd 单元或 `nohup` 托管，例如
 
 ```bash
-sudo bash /opt/vditor-nas/uninstall.sh
+nohup python3 server.py >/var/log/vditor.log 2>&1 &
 ```
 
-> 卸载会删除安装目录（含已上传文件与文档），请先备份。
-
-部署细节详见 [`nas-template/README.md`](nas-template/README.md)。
+> ⚠️ 通用 Linux / 非 fnOS 平台的部署**不在本项目的发布与实机测试范围内**，
+> 详见下方「[免责声明](#免责声明)」。
 
 ---
 
@@ -154,17 +148,12 @@ cd vditor-nas
 
 ### 目录布局约定
 
-本仓库采用「单一源 + 派生副本」结构：
+本仓库采用「单一源」结构，唯一源即 `vditor-fpk/app/`：
 
-- `vditor-fpk/app/` —— **唯一源**，后端与前端的真实来源
-- `vditor-nas/` —— **派生副本**，由 `make_nas.py` 自动生成，**请勿手工修改**
-- `vditor-fpk/` —— fnOS 打包源目录
+- `vditor-fpk/app/` —— **唯一源**，后端与前端的真实来源，也是通用 Linux 部署的运行代码
+- `vditor-fpk/` —— fnOS 打包源目录（`manifest` + `app/`）
 
-改动后端或前端后，必须重新生成派生副本：
-
-```bash
-python make_nas.py      # 逐字节自检 + import覆盖自检
-```
+改动后端或前端后，只需更新唯一源 `vditor-fpk/app/`。
 
 ### 构建 fnOS 安装包
 
@@ -177,11 +166,12 @@ fnpack.exe build -d vditor-fpk
 
 ### 升版本号
 
-版本号存于三处，`bump_version.py` 会一次性同步：
+版本号存于 fpk 两处（`manifest` + `vditor-fpk/app/server.py`）+ 测试脚本，
+`bump_version.py` 会一次性同步 fpk 相关位置：
 
 ```bash
-python bump_version.py 1.1.5 --dry-run   # 先预览
-python bump_version.py 1.1.5             # 确认后执行
+python bump_version.py 1.2.6 --dry-run   # 先预览
+python bump_version.py 1.2.6             # 确认后执行
 ```
 
 ---
@@ -198,13 +188,10 @@ python bump_version.py 1.1.5             # 确认后执行
 │       ├── index.html           # 单页前端（含内联样式）
 │       ├── ui/                  # 前端资源
 │       └── vditor/              # Vditor 4.0.0 发行资源
-├── vditor-nas/               # 派生：通用 Linux 版（勿手工改）
-├── nas-template/            # NAS 部署模板（install.sh 等）
 ├── docs/                    # 文档
 ├── test_*.py                # 回归测试
-├── make_nas.py              # 派生脚本
-├── bump_version.py          # 版本号同步
-└── build_fpk.py             # fpk 构建
+├── bump_version.py          # 版本号同步（仅 fpk）
+└── build_fpk.py             # fpk 构建（如有）
 ```
 
 ---
@@ -234,6 +221,27 @@ Cookie、客户端 IP 绑定、常量时间密码比较、失败锁定（5 次�
 CSP 与 `X-Frame-Options: DENY` 等安全响应头、非内联扩展名强制下载 + 沙箱。
 
 经内网穿透暴露公网时，**务必**开启 HTTPS 并设置 `VDITOR_TRUST_PROXY=1`。
+
+---
+
+## 免责声明
+
+1. **仅依赖 Python 标准库**：本项目后端仅使用 Python 标准库（`os` / `re` / `json` /
+   `hashlib` / `http.server` 等），**不引入任何第三方依赖**，亦不依赖 fnOS 专有 SDK。
+   因此无需 `pip install`、无需 Node.js、无需容器，只要有 Python 3.8+ 即可运行。
+2. **理论可二次开发迁移**：正因不存在第三方依赖，本项目在理论上**支持二次开发并迁移至任何
+   具备 Python 3 环境的 NAS / Linux 平台**——直接运行 `vditor-fpk/app/server.py`，或在其基础上
+   自行改造、打包、对接目标平台的进程托管与反向代理。
+3. **二次开发须遵守开源协议**：你可以按需对本项目进行二次开发、修改与再分发，但**必须严格遵守
+   相关开源协议**——本项目源码以 MIT 许可发布（须保留版权声明与许可声明）；随包分发的第三方组件
+   （Vditor、ECharts、KaTeX 字体等）保留各自许可，均不在本项目 MIT 许可覆盖范围内，改造与
+   分发时须一并保留。
+4. **不对二次开发成果作任何保证**：开发者**仅对基于本仓库代码构建的 fpk（fnOS 安装包）进行实机
+   功能测试**；对于任何人基于本项目进行的二次开发、衍生版本，或在其他 NAS / 发行版 / 容器环境下的
+   部署，开发者**不对稳定性、安全性、兼容性、数据完整性等任何方面作任何明示或默示的承诺或保证**。
+   二次开发及其部署、运维的风险与责任由使用者自行承担，请在测试环境充分验证后再上生产。
+
+> 简言之：代码开源、可改、可迁移；但「改完能否跑、安不安全、与你平台兼不兼容」，开发者不作背书，由你自己负责。
 
 ---
 

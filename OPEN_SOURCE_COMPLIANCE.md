@@ -7,6 +7,25 @@
 
 ---
 
+## 政策更新（2026-10，本轮开源策略调整）
+
+本报告反映 **2026-10-03 审计当时**的仓库结构。此后开源发布策略已调整，正文里
+「`vditor-nas/` 为 `make_nas.py` 自动派生的副本」「随版本号发布 nas 独立产物」
+「LICENSE 有四份副本」等描述**已不适用**，请以当前仓库与 `README.md` 为准。要点：
+
+- **fpk 为唯一发布形态与唯一源**（`vditor-fpk/app/`）。
+- **通用部署相关目录与脚本已彻底移除**：`vditor-nas/`、`nas-template/`、派生脚本
+  `make_nas.py`，以及 `releases/vditor-nas-*.tar.gz` 产物，均已从仓库删除。
+  通用 Linux / 任意 NAS 的部署改为**直接以 `vditor-fpk/app/` 源码运行**。
+- **`bump_version.py` 仅同步 fpk**（`manifest` + `vditor-fpk/app/server.py` + 测试脚本）。
+- 本项目 LICENSE 现为**两份**（根目录 + `vditor-fpk/`），内容一致；
+  `vditor-fpk/app/vditor/LICENSE` 为上游 Vditor 许可，永不改动。
+- **免责声明**：开发者仅对基于本仓库代码构建的 fpk 进行实机功能测试；因项目零第三方依赖，
+  理论上可二次开发迁移至其他具备 Python 环境的 NAS / Linux 平台，但**开发者不对二次开发成果的
+  稳定性、安全性、兼容性等作任何承诺或保证**。完整四点声明见 `README.md`「免责声明」。
+
+---
+
 ## 结论速览
 
 **当前不具备直接发布到 GitHub 等开源平台的条件。**

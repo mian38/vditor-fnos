@@ -306,15 +306,9 @@ check("G9 manifest 与 server.py 的 APP_VERSION 一致（当前 %s）" % _mf_ve
       _mf_ver == _srv_ver and _mf_ver != "?", "manifest=%s server=%s" % (_mf_ver, _srv_ver))
 check("G10 版本号不低于 1.2.0（历史基线不回退）", _tuple(_mf_ver) >= (1, 2, 0), _mf_ver)
 
-print("\n=== H. 派生副本一致性 ===")
-nas_index = read(os.path.join(HERE, "vditor-nas", "index.html"))
-check("H1 vditor-nas/index.html 已同步选项卡样式", ".set-page { display: none; }" in nas_index)
-check("H2 vditor-nas/index.html 已同步 log-box 样式", ".log-box {" in nas_index)
-check("H3 vditor-nas/index.html 已同步四按钮", 'id="btn-refresh-current"' in nas_index)
-nas_server = read(os.path.join(HERE, "vditor-nas", "server.py"))
-check("H4 vditor-nas/server.py çæ¬ä¸è´", 'APP_VERSION = "1.2.0"' in nas_server)
-nas_cfg = read(os.path.join(HERE, "vditor-nas", "config.env"))
-check("H5 config.env 默认端口 3838", re.search(r"(?m)^PORT=3838\s*$", nas_cfg) is not None)
+# 注：原 H 段「派生副本一致性」检查（读取 vditor-nas/）已随通用部署目录一并移除。
+# 本项目现仅发布 fpk，唯一源 vditor-fpk/app/ 即交付物，不存在双份后端漂移问题。
+
 
 print("\n" + "=" * 56)
 if FAILED == 0:

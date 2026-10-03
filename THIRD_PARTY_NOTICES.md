@@ -93,7 +93,7 @@ OFL 允许自由使用、修改与再分发（含商业用途），要求：
 - `vditor-fpk/app/vd_util.py` —— 无副作用工具函数与常量
 - `vditor-fpk/app/index.html` —— 单页前端（含内联样式 `ui_style_v414`）
 - `vditor-fpk/app/ui/` —— 前端样式与脚本
-- `make_nas.py`、`bump_version.py`、`build_fpk.py` —— 构建与发布工具
+- `bump_version.py`、`build_fpk.py` —— 构建与发布工具
 - `test_*.py` —— 回归测试脚本
 - `docs/`、`README.md`、`CHANGELOG.md`、`CHANGELOG_USER.md` —— 文档
 

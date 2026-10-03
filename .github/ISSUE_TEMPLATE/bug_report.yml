@@ -40,17 +40,17 @@ body:
     id: version
     attributes:
       label: 应用版本
-      placeholder: "1.1.4（见 manifest 的 version= 字段）"
+      placeholder: "1.2.5（见 manifest 的 version= 字段）"
     validations:
       required: true
 
   - type: input
     id: fnos
     attributes:
-      label: fnOS 版本
-      placeholder: "1.5.1"
+      label: fnOS 版本（仅 fnOS 部署需填）
+      placeholder: "1.5.1；源码部署可留空"
     validations:
-      required: true
+      required: false
 
   - type: input
     id: python
@@ -66,8 +66,7 @@ body:
       label: 安装方式
       options:
         - fnOS 应用中心（.fpk 安装包）
-        - NAS 通用版（install.sh 脚本）
-        - 手动运行 python3 server.py
+        - 手动运行 python3 server.py（源码）
     validations:
       required: true
 
