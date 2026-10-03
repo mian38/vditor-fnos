@@ -2,7 +2,24 @@
 # cmd/install_callback —— 安装后：读取向导端口与文档目录，写入配置并同步桌面图标端口
 set -u
 
-PORT="${wizard_app_port:-3838}"
+# ============ 升级安装 vs 全新安装 ============
+# fnOS 的安装向导**只在全新安装时出现**。升级安装时 install_callback 照常执行，
+# 但 wizard_* 环境变量全部为空。此时若直接 `${wizard_app_port:-3838}` 这样的回退，
+# 会把用户上一轮安装时填写的端口 / 文档目录**静默覆写为默认值**，
+# 表现为「我明明在向导里填了 5555，升级后却又变回 3838」。
+# 因此统一采用三级取值：向导变量 → 已有配置文件 → 内置默认值。
+
+CONFIG_DIR="${TRIM_PKGETC}"
+PORT_FILE="${CONFIG_DIR}/port"
+DOC_DIR_FILE="${CONFIG_DIR}/doc_dir"
+FOLDERS_JSON="${CONFIG_DIR}/folders.json"
+
+# 端口：向导变量优先；为空（升级）则沿用已有 port 文件；都没有才用默认 3838。
+WIZARD_PORT="${wizard_app_port:-}"
+if [ -z "$WIZARD_PORT" ] && [ -f "$PORT_FILE" ]; then
+  WIZARD_PORT="$(tr -d '[:space:]' < "$PORT_FILE" 2>/dev/null || true)"
+fi
+PORT="${WIZARD_PORT:-3838}"
 
 # 端口合法性校验
 if ! echo "$PORT" | grep -Eq '^[0-9]+$' || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
@@ -10,21 +27,36 @@ if ! echo "$PORT" | grep -Eq '^[0-9]+$' || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65
 fi
 
 # 持久化端口（供 cmd/main 启动使用）
-echo "$PORT" > "${TRIM_PKGETC}/port"
+echo "$PORT" > "$PORT_FILE"
 
-# 文档存储目录（可留空；留空则用应用私有目录）
+# 文档存储目录：向导变量优先；为空（升级）则沿用已有 doc_dir 文件；都没有则保持不写，
+# 由 cmd/main 回退到应用私有目录（${TRIM_PKGVAR}/docs）。
 DOC_DIR="${wizard_doc_dir:-}"
+if [ -z "$DOC_DIR" ] && [ -f "$DOC_DIR_FILE" ]; then
+  DOC_DIR="$(tr -d '\r\n' < "$DOC_DIR_FILE" 2>/dev/null || true)"
+fi
 if [ -n "$DOC_DIR" ]; then
-  echo "$DOC_DIR" > "${TRIM_PKGETC}/doc_dir"
+  printf '%s' "$DOC_DIR" > "$DOC_DIR_FILE"
 fi
 
 # 向导填写的目录**直接落盘为文档分区**（与「设置 → 文件夹设置」同一份配置文件），
 # 否则该路径只会作为 VDITOR_DOC_DIR 单目录回退生效，不会出现在左侧分区列表中。
 # folders.json 结构： [{"name": 显示名, "path": 绝对路径}, ...]
 DOC_PARTITION_NAME="${wizard_doc_partition_name:-}"
+if [ -n "$DOC_DIR" ]; then
+  # 目录不存在则创建。原实现用 `[ -d "$DOC_DIR" ]` 守卫，导致向导里填写一个
+  # **尚不存在的新路径**时整段写入被跳过 → 「文档存储目录」填了等于没填。
+  # 这里改为 mkdir -p 后再落盘；创建失败（权限不足等）则跳过分区写入并告警，
+  # 但 doc_dir 已在上一步写入，cmd/main 启动时也会再次尝试创建。
+  if [ ! -d "$DOC_DIR" ]; then
+    if ! mkdir -p "$DOC_DIR" 2>/dev/null; then
+      echo "警告：无法创建文档目录 $DOC_DIR（权限不足或路径非法），该路径不会显示为文档分区。" >&2
+      DOC_DIR=""
+    fi
+  fi
+fi
 if [ -n "$DOC_DIR" ] && [ -d "$DOC_DIR" ]; then
   [ -n "$DOC_PARTITION_NAME" ] || DOC_PARTITION_NAME="我的文档"
-  FOLDERS_JSON="${TRIM_PKGETC}/folders.json"
   # 已存在同名路径则不重复写入（同路径只保留一条）
   if ! grep -q "\"path\": *\"$DOC_DIR\"" "$FOLDERS_JSON" 2>/dev/null; then
     printf '[\n  {\n    "name": "%s",\n    "path": "%s"\n  }\n]\n' \
@@ -86,7 +118,7 @@ fi
 # 启动过，那么本回调写入的 port 文件不会被读到，表现为「图标跳到自定义端口却打不开、
 # 仍需用默认端口访问」。因此这里主动重启一次服务，让 cmd/main 重新读取 port 文件。
 # 失败不阻断安装（应用中心通常还会在安装流程末尾自行拉起一次服务）。
-echo "端口配置已写入 ${TRIM_PKGETC}/port（值：$PORT），正在重启服务以应用该端口…"
+echo "端口配置已写入 ${PORT_FILE}（值：$PORT），正在重启服务以应用该端口…"
 "${TRIM_APPDEST}/cmd/main" stop >/dev/null 2>&1 || true
 sleep 1
 if "${TRIM_APPDEST}/cmd/main" start >/dev/null 2>&1; then

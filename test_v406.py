@@ -75,7 +75,7 @@ except Exception as e:
     exp = {}
 check("export is json", st == 200 and hdr.get("Content-Type", "").startswith("application/json"), str(hdr))
 check("export has settings", isinstance(exp.get("settings"), dict) and "autosave_interval" in exp["settings"], str(exp))
-check("export has version", exp.get("version") == "1.2.0", str(exp.get("version")))
+check("export has version", exp.get("version") == "1.2.1", str(exp.get("version")))
 
 # 3) 配置导入：改一个值后回写
 mod = dict(exp.get("settings", {}))

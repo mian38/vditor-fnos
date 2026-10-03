@@ -5,12 +5,144 @@
 > **后续发布任何新版本时，需同时更新这两份更新记录。**
 
 - **应用标识**：`com.mian38.vditor`
-- **当前版本**：**1.2.0**（当前主线）
+- **当前版本**：**1.2.1**（当前主线）
 - **归档版本**：**1.1.4beta**（标签 `v1.1.4beta` / 分支 `archive/v1.1.4beta`，不再作为主线维护；原为 `1.2.0beta`，因占用下一个 minor 号而统一改号为 `1.1.4beta`）
 - **形态**：飞牛 fnOS 官方 `.fpk` 安装包（非 Docker：系统进程直接运行 Python 标准库后端，前端静态托管）
 - **版本体系**：`4.0.x` 为早期 β 迭代线（产物文件名统一带 `-beta` 标识）；自 **1.0** 起进入正式版序列。
 
-> 说明：本文按时间倒序排列，覆盖自首个 `.fpk`（4.0.0）到 1.2.0 的全部版本。
+> 说明：本文按时间倒序排列，覆盖自首个 `.fpk`（4.0.0）到 1.2.1 的全部版本。
+
+---
+
+## 1.2.1
+
+**升版依据**：按项目版本号规则（x.y.z），**用户可见的功能范围是否扩大**为唯一判据。
+本轮 6 项全部是把 1.2.0 已存在但未按预期工作的功能**修成正确行为**，未新增任何用户可见功能 → 递增 **z**（1.2.0 → 1.2.1）。
+
+本轮所有根因均先做定位、再改代码。**关键教训：4 个 bug 里有 3 个属于「静默失效」类型**——
+代码路径存在、但被 `if (x)` / 变量回退 / 异常吞噬，界面上表现为「点了没反应」，日志里一行错误都没有。
+其中两个（日志面板、ESC）靠读代码看不出来，**必须把脚本丢进真实 JS 引擎跑一遍**才定位到（见文末「方法论」）。
+
+### 修复 · 升级安装会覆写用户已配置的端口与文档目录（本轮最严重）
+
+- **现象**：1.1.5 引入安装向导自定义端口后，用户在**全新安装**时填 5555 是生效的；
+  但**升级**到 1.2.0 后端口自行变回 3838，填 5555 访问直接 `ERR_CONNECTION_REFUSED`。
+  文档存储目录同理：升级后设置里看不到任何分区。
+- **根因**：fnOS 的安装向导**只在全新安装时出现**。升级路径下 `cmd/install_callback` 照常执行，
+  但 `wizard_*` 环境变量**全部为空**。而原代码是破坏性回退：
+  ```bash
+  PORT="${wizard_app_port:-3838}"     # 变量空 → 无条件回落 3838
+  DOC_DIR="${wizard_doc_dir:-}"       # 变量空 → 空字符串，什么都不写
+  ```
+  升级时 `port` 文件里明明存着用户上轮填的 5555，这行却**静默覆写**成 3838。
+- **修复**：改为**三级取值——向导变量 → 已有配置文件 → 内置默认值**（`cmd/install_callback` 第 5–25 行）：
+  向导变量为空时先读 `${TRIM_PKGETC}/port` 与 `.../doc_dir`，只有文件也不存在才用 3838 / 回退应用私有目录。
+  端口合法性校验与图标端口同步逻辑保持不变。
+- **配套**：`doc_dir` 文件改用 `printf '%s'` 写入（原先 `echo` 在路径含反斜杠转义时会出问题），
+  读取时用 `tr -d '\r\n'` 归一。
+
+### 修复 · 文档目录填了不存在的路径 → 分区不落盘（独立第二 bug）
+
+- **现象**：向导「文档存储目录」填一个**尚不存在**的新路径，安装后左侧分区列表里什么都没有。
+- **根因**：`[ -d "$DOC_DIR" ]` 守卫要求目录**必须已经存在**，而向导填的路径恰恰通常还不存在，
+  于是整段 `folders.json` 写入被跳过——`doc_dir` 单文件虽然写了，分区列表却是空的。
+- **修复**：守卫放宽为「不存在则 `mkdir -p` 后再落盘」；创建失败（权限不足 / 路径非法）时
+  打警告并跳过分区写入，但 `doc_dir` 已写入，`cmd/main` 启动时还会再 `mkdir -p` 一次。
+
+### 修复 · 应用状态「自动保存间隔」显示「— 秒」
+
+- **根因**：`server.py` 的 `GET /api/status` 里写的是 `SETTINGS.get("autosave_sec")`，
+  而 settings.json 中的实际键是 **`autosave_interval`**（同段其余 3 个字段键名均正确，属孤立笔误）。
+  取不到值 → 返回 `null` → 前端 `s.autosaveSec || '—'` 显示「— 秒」。
+- **修复**：改为 `SETTINGS.get("autosave_interval")`，并加注释说明「对外 JSON 字段名与内部存储键不同名」。
+- **实测**：起服务后 `GET /api/status` 返回 `"autosaveSec": 60`。
+
+### 修复 · 「查看应用日志 / 查看登录日志」点击后面板不展开
+
+- **根因**：`toggleLogPanel` 用 `document.getElementById(name + '-panel')` **拼接** id，
+  但按钮值与实际面板 id 对不上：
+
+  | 按钮 | `data-logpanel` | 拼出 id | 实际面板 id | 结果 |
+  | --- | --- | --- | --- | --- |
+  | 应用状态 | `status` | `status-panel` | `status-panel` | 匹配 |
+  | 查看应用日志 | `applog` | `applog-panel` | **`app-log-panel`** | `null` |
+  | 查看登录日志 | `loginlog` | `loginlog-panel` | **`login-log-panel`** | `null` |
+
+  `if (panel)` 把 `null` 静默吞掉，面板永不显示；但第 2885 行的数据加载照常执行——
+  所以**内容其实拉到了，只是容器不可见**（用户实测 `status-list` 长度 813 正是此现象的证据）。
+  `closeLogPanels()` 用同一套错 id，故「点第二次收回」也失效。
+- **修复**：**不再依赖拼接约定**，改为显式映射表
+  `const LOG_PANEL_IDS = { status:'status-panel', applog:'applog-panel', loginlog:'loginlog-panel' }`，
+  取不到时 `console.error` 而非静默跳过。
+  面板 id 改为 `applog-panel` / `loginlog-panel`（`data-logpanel` 的值同时被 `LOG_PANEL_LOADER` 用作键名，不宜改动）。
+
+### 修复 · Esc 无法关闭任何弹窗
+
+- **根因**：ESC 关闭栈里写了 `{ mask:'kb-help-mask', close: closeKbHelp }`，
+  而 `closeKbHelp` 定义在 `initEditorAndFiles()` 函数体内（该函数在登录成功时调用，**执行完毕后作用域即销毁**）。
+  顶层 keydown 处理器引用这个符号，会在 **`const layers = [...]` 数组字面量求值阶段**就抛
+  `ReferenceError: closeKbHelp is not defined`——**抛在 `for` 循环之前**，导致整条 Esc 链路完全失效。
+- **实测**：用 node + `vm.runInContext` 跑真实内联脚本、捕获 keydown 监听器并伪造 `e.key='Escape'` 逐个弹窗触发，
+  结果 **6 个弹窗全部抛同一个 ReferenceError，且无一被关闭**。这与用户「Esc 完全无法退出窗口」的现象吻合。
+- **修复**：`kb-help` 那层改用匿名函数（与 `word-help` 同款写法）。
+  其余各层保留原函数引用——`hideConfirm` 有额外副作用（`_confirmCb = null`）不能简化。
+  经作用域探测确认 `hideConfirm` / `closeDocInfo` / `closeHistory` / `closeSettings` **均在顶层可见**。
+- **附带发现**：作用域探测同时确认 `toggleLogPanel` / `currentLogPanel` / `refreshStatus` / `viewAppLog` 只在函数内。
+  用户此前在控制台访问这些符号报 `not defined` 属**正常**（它们本就不挂 `window`），
+  但那两条红字是**诊断指令写错**、不是功能失效的原因——已在分析阶段向用户澄清。
+
+### 修复 · Graphviz 仍只显示 dot 源码（1.1.5 修复未生效的真因）
+
+- **现象**：1.1.5 已补`<script id="vditorGraphVizScript">` 标签，但 Graphviz 依旧只显示源码。
+- **根因**：漏了 CSP 的 **`worker-src`**。Vditor 的 `graphvizRenderAdapter` 走的是
+  `new Blob(["importScripts('<同源>/full.render.js')"])` → `createObjectURL` → **`new Worker(blobURL)`**。
+  CSP 对 worker 的回退链是 `worker-src → child-src → script-src → default-src`，
+  而本项目 `script-src` 与 `default-src` 都只有 `'self'`（**不含 `blob:`**）→ 浏览器拒绝创建 blob worker。
+  该异常被 Vditor 的 `try/catch` 吞掉（仅 `console.error`），于是 dot 代码块保持源码原样。
+- **修复**：`SEC_HEADERS` 增加 `"worker-src 'self' blob:;"`，并把上述推导链写进代码注释。
+  范围仅「允许以 blob: URL 创建 worker」，不放开任何外部来源的 worker。
+- **对照实验（决定性证据）**：用真实 Edge（Playwright `channel:'msedge'`，无需下载 Chromium）打开应用，
+  切到阅读模式读 `.language-graphviz` 的真实 DOM；再用一层代理**只剥掉响应头里的 `worker-src`** 做对照：
+
+  | CSP | `.language-graphviz` 是否有 `<svg>` |
+  | --- | --- |
+  | 含 `worker-src 'self' blob:;` | **true**（渲染出 275pt×87pt 的 SVG） |
+  | 剥掉 `worker-src` | **false**（仍是 dot 源码文本） |
+
+  两组均无控制台错误、无失败请求。根因确认，修复有效。
+- **另有一个「非 bug」的既有行为**（未改）：Vditor 上游的 graphviz adapter 在
+  **ir / wysiwyg 编辑模式**下会检查父元素 class 是否含 `vditor-ir__marker--pre` / `vditor-wysiwyg__pre`，
+  命中就**主动跳过渲染**（避免打字时反复重排）。因此 graphviz 只在**阅读模式 / 分屏预览**下出图，
+  编辑态看到源码是上游设计而非本应用的缺陷。已在实测中确认：同一个代码块在 ir 编辑节点
+  （`parentClass = vditor-ir__marker--pre`）无 SVG，而在 preview 节点（`vditor-ir__preview`）有 SVG。
+
+### 方法论：JS 作用域问题必须用真实引擎判定（本轮最大教训）
+
+排查 ESC 问题时，本项目里**连续判错三次**：先靠肉眼数括号，再靠读缩进（本文件全文统一 4 空格缩进，毫无区分度），
+最后自制括号配平脚本——**把函数自身的 `{` 当成边界，循环论证**。
+
+**唯一可靠的判定方法**：把内联 `<script>` 丢进 `node` + `vm.runInContext` 真实执行，
+用两类探针读结果：
+1. **hoisting 探针**：在 script 最开头插 `var __p={sym:(function(){return typeof sym})()}`。
+   顶层函数声明会被提升 → `typeof` 为 `'function'`；在函数体内 → `'undefined'`。
+   探针赋值先于一切语句，后续语句抛错也不影响读结果。
+2. **事件触发探针**：捕获 `document.addEventListener` 注册的处理器，伪造事件逐个弹窗触发，直接看抛什么错。
+
+顺带固化两条：① 提取内联 JS 必须按 `src=` 过滤，`type="text/markdown"` 的欢迎正文会被误当 JS 报语法错；
+② 诊断脚本用完即删，不要留在仓库里。
+
+### 验证
+
+- `test_v121.py`（本轮新建）：8 段，覆盖升级/全新安装四种 `install_callback` 场景（含 `bash -n` 语法检查）、
+  `autosave_interval` 键名、日志面板 id 映射、ESC 栈作用域（复用 `node + vm` 探针，**防回归**）、
+  `worker-src` CSP、Graphviz 包内资源可达性、双 changelog、版本号一致性。
+- 真实浏览器验证：Playwright 驱动本机 Edge，登录后读真实 DOM 确认 `autosaveSec=60`、
+  `.language-graphviz` 含 `<svg>`；含/不含 `worker-src` 两组对照如上表。
+
+### 产物
+
+- 按项目约定本轮**只打 fpk**，未执行全量回归、未更新 NAS 通用版
+  （`vditor-nas/` 保持 1.2.0，本次改动不进 NAS 版）。
 
 ---
 

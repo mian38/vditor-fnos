@@ -86,7 +86,11 @@ check("A7 install_callback 校验端口合法性",
 check("A8 install_callback 写盘后重启服务（关键修复）",
       'cmd/main" start' in install_cb and 'cmd/main" stop' in install_cb)
 check("A9 install_callback 落盘端口到 PKGETC/port",
-      re.search(r'echo\s+"\$PORT"\s*>\s*"\$\{TRIM_PKGETC\}/port"', install_cb) is not None)
+      # 1.2.1 起改用 PORT_FILE 变量（CONFIG_DIR="${TRIM_PKGETC}"），
+      # 落盘目标仍是 etc/port，只是不再把路径内联写死。
+      re.search(r'echo\s+"\$PORT"\s*>\s*"\$PORT_FILE"', install_cb) is not None
+      and 'CONFIG_DIR="${TRIM_PKGETC}"' in install_cb
+      and 'PORT_FILE="${CONFIG_DIR}/port"' in install_cb)
 check("A10 install_callback 有端口占用提示", 'ss -ltn' in install_cb)
 
 # A5 upgrade_callback 同样两处路径
@@ -150,13 +154,14 @@ check("C2 「应用状态」为主样式、其余为 ghost",
       and html.count('class="ghost action" id="btn-refresh-current"') == 1)
 
 # C2 data-logpanel 标记三个可展开面板（刷新按钮不标记）
-panels_attr = re.findall(r'data-logpanel="(\w+)"', html)
+# 只扫 <button> 标签——JS 注释里为说明踩坑也会写 data-logpanel="applog" 字面量。
+panels_attr = re.findall(r'<button[^>]*\bdata-logpanel="(\w+)"', html)
 check("C3 三个可展开面板标记", sorted(panels_attr) == ["applog", "loginlog", "status"], panels_attr)
 check("C4 刷新按钮无 data-logpanel", 'id="btn-refresh-current"' in html
       and not re.search(r'id="btn-refresh-current"[^>]*data-logpanel', html))
 
-# C3 三个折叠面板容器
-for pid in ("status-panel", "app-log-panel", "login-log-panel"):
+# C3 三个折叠面板容器（id 须与 data-logpanel 值经 LOG_PANEL_IDS 映射后一致）
+for pid in ("status-panel", "applog-panel", "loginlog-panel"):
     check("C5 存在面板容器 %s" % pid, ('id="%s"' % pid) in html)
 
 # C4 折叠逻辑
@@ -261,8 +266,24 @@ for tag in ("div", "section", "dl", "table", "tbody", "thead", "button"):
 
 check("G8 无 console/debugger 残留",
       not re.search(r"\bconsole\.(log|debug)\b|\bdebugger\b", html))
-check("G9 APP_VERSION = 1.2.0", 'APP_VERSION = "1.2.0"' in srv)
-check("G10 manifest version=1.2.0", re.search(r"(?m)^version\s*=\s*1\.2\.0", manifest) is not None)
+# 版本号断言写成「三方一致 + 不低于 1.2.0」而非硬编码具体版本，
+# 否则每次升版都会红（升版是正常操作，不是回归）。
+_mf_ver = re.search(r"(?m)^version\s*=\s*([0-9.]+)\s*$", manifest)
+_mf_ver = _mf_ver.group(1) if _mf_ver else "?"
+_srv_ver = re.search(r'APP_VERSION\s*=\s*"([0-9.]+)"', srv)
+_srv_ver = _srv_ver.group(1) if _srv_ver else "?"
+
+
+def _tuple(v):
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except Exception:
+        return (0, 0, 0)
+
+
+check("G9 manifest 与 server.py 的 APP_VERSION 一致（当前 %s）" % _mf_ver,
+      _mf_ver == _srv_ver and _mf_ver != "?", "manifest=%s server=%s" % (_mf_ver, _srv_ver))
+check("G10 版本号不低于 1.2.0（历史基线不回退）", _tuple(_mf_ver) >= (1, 2, 0), _mf_ver)
 
 print("\n=== H. 派生副本一致性 ===")
 nas_index = read(os.path.join(HERE, "vditor-nas", "index.html"))

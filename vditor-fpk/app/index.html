@@ -800,10 +800,10 @@
                     <div class="log-panel" id="status-panel" style="display:none;">
                         <dl class="kv-list" id="status-list"></dl>
                     </div>
-                    <div class="log-panel" id="app-log-panel" style="display:none;">
+                    <div class="log-panel" id="applog-panel" style="display:none;">
                         <div class="log-box" id="app-log-box"></div>
                     </div>
-                    <div class="log-panel" id="login-log-panel" style="display:none;">
+                    <div class="log-panel" id="loginlog-panel" style="display:none;">
                         <div class="log-box" id="log-box"></div>
                     </div>
                 </div>
@@ -2872,12 +2872,18 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // 当前展开的面板 id（null = 全部收回）。再次点击同一按钮即收回。
         let currentLogPanel = null;
         const LOG_PANEL_LOADER = { status: refreshStatus, applog: viewAppLog, loginlog: viewLog };
+        // name -> 面板 DOM id 的**显式映射**，不再用 name + '-panel' 拼接。
+        // 1.2.0 之前靠拼接约定，data-logpanel="applog" 拼出 applog-panel，
+        // 而实际面板 id 写成 app-log-panel，getElementById 返回 null 被 if(panel) 静默吞掉，
+        // 面板永不显示（数据仍照常拉取，故表现为「点了没反应但内容其实有」）。
+        const LOG_PANEL_IDS = { status: 'status-panel', applog: 'applog-panel', loginlog: 'loginlog-panel' };
         function toggleLogPanel(name) {
             if (currentLogPanel === name) { closeLogPanels(); return; }
             closeLogPanels();                 // 打开新面板前先收回先前展开的
             currentLogPanel = name;
-            const panel = document.getElementById(name + '-panel');
+            const panel = document.getElementById(LOG_PANEL_IDS[name] || '');
             if (panel) panel.style.display = 'block';
+            else console.error('状态与日志：找不到面板容器', name, LOG_PANEL_IDS[name]);
             // 当前按钮呈选中态
             document.querySelectorAll('[data-logpanel]').forEach(b => {
                 b.classList.toggle('on', b.getAttribute('data-logpanel') === name);
@@ -2886,8 +2892,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         }
         function closeLogPanels() {
             currentLogPanel = null;
-            ['status', 'applog', 'loginlog'].forEach(n => {
-                const p = document.getElementById(n + '-panel');
+            Object.keys(LOG_PANEL_IDS).forEach(n => {
+                const p = document.getElementById(LOG_PANEL_IDS[n]);
                 if (p) p.style.display = 'none';
             });
             document.querySelectorAll('[data-logpanel]').forEach(b => b.classList.remove('on'));
@@ -2960,13 +2966,21 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         }
         // Esc：关闭当前最上层的弹窗，效果等同各弹窗右上角的关闭按钮。
         // 顺序按「后打开的先关」排列；登录层与遮罩背景不属于弹窗，不受Esc 影响。
+        //
+        // ⚠️ close **只能引用顶层作用域的函数**（本文件缩进 4 空格的函数）。
+        // 1.2.0 曾写成 { mask:'kb-help-mask', close: closeKbHelp }，而 closeKbHelp 定义在
+        // initEditorAndFiles() 函数体内（登录成功后调用完毕，作用域即销毁）——
+        // 顶层处理器引用它会在**数组字面量求值阶段**就抛 ReferenceError，
+        // 抛在 for 循环之前 → 整条 Esc 链路完全失效，6 个弹窗一个都关不掉。
+        // 故 kb-help 这层改用匿名函数（与 word-help 同款写法）；其余各层函数均为顶层，安全。
+        // 若日后新增弹窗入栈，务必先用 node+vm 确认该 close 符号在顶层可见（见 test_v121.py）。
         if (e.key === 'Escape') {
             const layers = [
                 { mask: 'confirm-mask',   close: hideConfirm },
                 { mask: 'doc-info-mask',  close: closeDocInfo },
                 { mask: 'history-mask',   close: closeHistory },
                 { mask: 'word-help-mask', close: function () { document.getElementById('word-help-mask').style.display = 'none'; } },
-                { mask: 'kb-help-mask',   close: closeKbHelp },
+                { mask: 'kb-help-mask',   close: function () { document.getElementById('kb-help-mask').style.display = 'none'; } },
                 { mask: 'settings-mask',  close: closeSettings },
             ];
             for (const L of layers) {

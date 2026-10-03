@@ -203,17 +203,39 @@ else:
     print("  SKIP vditor-nas/ 不存在（尚未运行 make_nas.py）")
 nas_server_p = os.path.join(HERE, "vditor-nas", "server.py")
 if os.path.exists(nas_server_p):
-    check("H5 vditor-nas/server.py 版本一致", 'APP_VERSION = "1.2.0"' in read(nas_server_p))
+    # NAS 通用版按项目约定不随 fpk 同步升版（只在明确要求时更新），
+    # 因此这里只校验「内部自洽」，不要求与 fpk 版本相同。
+    _nas_v = re.search(r'APP_VERSION\s*=\s*"([0-9.]+)"', read(nas_server_p))
+    check("H5 vditor-nas/server.py 版本号可解析且为正式版号",
+          _nas_v is not None and _nas_v.group(1).count(".") == 2,
+          _nas_v.group(1) if _nas_v else "未找到")
 
 print("\n=== I. 版本号 ===")
-check("I1 manifest version=1.2.0", re.search(r"(?m)^version\s*=\s*1\.2\.0\s*$", manifest) is not None)
-check("I2 server.py APP_VERSION = 1.2.0", 'APP_VERSION = "1.2.0"' in srv)
-check("I3 manifest changelog 前置 1.2.0 条目",
-      re.search(r"(?m)^changelog=1\.2\.0：", manifest) is not None)
+# 版本号断言写成「三方一致 + 不低于 1.2.0」而非硬编码具体版本——
+# 升版是正常操作，每轮都硬编码会让这些断言在每次升版后误报为失败。
+_mf = re.search(r"(?m)^version\s*=\s*([0-9.]+)\s*$", manifest)
+_mf = _mf.group(1) if _mf else "?"
+_sv = re.search(r'APP_VERSION\s*=\s*"([0-9.]+)"', srv)
+_sv = _sv.group(1) if _sv else "?"
+
+
+def _vt(v):
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except Exception:
+        return (0, 0, 0)
+
+
+check("I1 manifest 与 server.py 的 APP_VERSION 一致（当前 %s）" % _mf,
+      _mf == _sv and _mf != "?", "manifest=%s server=%s" % (_mf, _sv))
+check("I2 版本号不低于 1.2.0（历史基线不回退）", _vt(_mf) >= (1, 2, 0), _mf)
+check("I3 manifest changelog 以当前版本号开头",
+      re.search(r"(?m)^changelog=%s：" % re.escape(_mf), manifest) is not None)
 for f in ["CHANGELOG.md", "CHANGELOG_USER.md"]:
     c = read(os.path.join(HERE, f))
-    check("I4 %s 含 ## 1.2.0 条目" % f, re.search(r"(?m)^## 1\.2\.0", c) is not None)
-    check("I5 %s 头部当前版本为 1.2.0" % f, "**当前版本**：**1.2.0**" in c)
+    check("I4 %s 含 ## %s 条目" % (f, _mf), re.search(r"(?m)^## %s" % re.escape(_mf), c) is not None)
+    check("I5 %s 头部当前版本为 %s" % (f, _mf),
+          ("**当前版本**：**%s**" % _mf) in c)
 check("I6 归档版本已统一为 1.1.4beta（版本标识中无 1.2.0beta 残留）",
       not any(re.search(r"(^|[^\w`])(##\s*|v|version=)1\.2\.0beta", read(os.path.join(HERE, f)), re.M)
               for f in ["CHANGELOG.md", "CHANGELOG_USER.md", "ARCHIVE.md", "SECURITY.md"]),

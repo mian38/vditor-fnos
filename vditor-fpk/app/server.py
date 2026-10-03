@@ -68,7 +68,7 @@ from vd_util import (
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -702,6 +702,18 @@ SEC_HEADERS = {
         # 去掉这两项图表全部无法渲染（实测 echarts 直接抛 EvalError）。
         # 缓解措施：script-src 仍限定 'self'，不放开任何外部脚本来源。
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        # worker-src 是 Graphviz 渲染的硬性依赖，缺失时 Graphviz 永远不渲染。
+        # Vditor 的 graphvizRenderAdapter 用
+        #     new Blob(["importScripts('<同源>/full.render.js')"]) → createObjectURL → new Worker(blobURL)
+        # 构造 Web Worker 再调 Viz({worker})。CSP 对 worker 的回退链是
+        #     worker-src → child-src → script-src → default-src，
+        # 本项目的 script-src 与 default-src 都只有 'self'（不含 blob:），
+        # 因此**必须显式声明 worker-src 'self' blob:**，否则浏览器直接抛
+        #     "Refused to create a worker from a blob: URL by CSP"
+        # 该异常被 Vditor 的 try/catch 吞掉（仅 console.error），dot 代码块于是保持源码原样，
+        # 表现为「Graphviz 只显示代码不渲染」——1.1.5 补了 script 标签但漏了本条，故仍复现。
+        # 范围说明：仅放行「以 blob: URL 创建 worker」，不放开任何外部来源的 worker。
+        "worker-src 'self' blob:; "
         "font-src 'self' data:; "
         # 'wasm-unsafe-eval' 供 KaTeX 等可能用 WebAssembly 的渲染路径
         "connect-src 'self'"
@@ -864,7 +876,10 @@ class Handler(BaseHTTPRequestHandler):
                 "hasSession": sess is not None,
                 "maxUploadMb": SETTINGS.get("upload_max_mb"),
                 "versioning": SETTINGS.get("versioning"),
-                "autosaveSec": SETTINGS.get("autosave_sec"),
+                # 注意：这里的键名是「对外 JSON 字段名」（前端 index.html 用 s.autosaveSec 读），
+                # 与 settings.json 内部存储键 autosave_interval 不同名，切勿写成 autosave_sec ——
+                # 1.2.0 之前误写为 autosave_sec，取不到值返回 null，前端「应用状态」显示「— 秒」。
+                "autosaveSec": SETTINGS.get("autosave_interval"),
             },
             "logFile": APP_LOG_FILE,
         }
