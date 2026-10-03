@@ -128,6 +128,40 @@
         .vditor-counter { display: none !important; }
         /* 移动端下拉面板脱离裁剪容器后，强制 position:fixed 不被内联 absolute 覆盖，浮层覆盖编辑区 */
         #vditor { flex: 1 1 auto; min-height: 0; }
+        /* ---- 纯文本模式（大文件降级）：不渲染，仅编辑原始 Markdown ---- */
+        #raw-editor {
+            display: none;
+            flex: 1 1 auto;
+            min-height: 0;
+            width: 100%;
+            box-sizing: border-box;
+            border: 0;
+            outline: none;
+            resize: none;
+            padding: 16px 20px;
+            font-family: Consolas, Menlo, "DejaVu Sans Mono", monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            background: var(--c-bg);
+            color: var(--c-text);
+            tab-size: 4;
+            white-space: pre;
+            overflow: auto;
+        }
+        #raw-editor.is-active { display: block; }
+        /* 纯文本模式下隐藏 Vditor 富文本区（其 DOM 仍在，但不显示、不渲染新内容） */
+        body.raw-mode #vditor { display: none; }
+        /* 纯文本模式下富文本专用工具栏项不可用 */
+        body.raw-mode .vditor-toolbar { display: none; }
+        #raw-mode-tip {
+            display: none;
+            padding: 6px 20px;
+            font-size: 12px;
+            color: var(--c-text-muted, #6a737d);
+            background: var(--c-bg-fill, #fafbfc);
+            border-bottom: 1px solid var(--c-border, #e1e4e8);
+        }
+        body.raw-mode #raw-mode-tip { display: block; }
 
         /* ---------------- 通用控件：按钮 ---------------- */
         #sidebar .side-head button,
@@ -693,11 +727,16 @@
                 <button id="btn-export-md" class="ghost">导出 .md</button>
                 <button id="btn-export-html" class="ghost">导出 HTML</button>
                 <button id="btn-doc-info" class="ghost">信息</button>
+                <button id="btn-raw-mode" class="ghost" title="切换为纯文本模式（关闭渲染，适合大文件）">纯文本</button>
                 <button id="btn-theme" class="ghost" title="切换浅色 / 暗黑模式">🌙</button>
                 <button id="btn-save">保存</button>
             </div>
         </div>
         <div id="vditor"></div>
+        <!-- 纯文本（原始 Markdown）编辑区：大文件 / 超大文件降级使用。
+             完全不经过 Vditor 渲染，仅编辑文本本身，用于承载 ir 模式无法处理的大文档。 -->
+        <div id="raw-mode-tip">纯文本模式：已关闭富文本渲染以降低资源占用，可直接编辑 Markdown 原文（保存与历史版本不受影响）。</div>
+        <textarea id="raw-editor" spellcheck="false" wrap="off" hidden></textarea>
     </div>
     <div id="sidebar-backdrop"></div>
 </div>
@@ -920,7 +959,7 @@
                         <dt>应用版本</dt><dd id="about-version">—</dd>
                         <dt>编辑器内核</dt><dd>Vditor 4.0.0（MIT）</dd>
                         <dt>开发人员</dt><dd>mian38</dd>
-                        <dt>项目地址</dt><dd><a href="https://github.com/mian38/vditor-nas" target="_blank" rel="noopener">github.com/mian38/vditor-nas</a></dd>
+                        <dt>项目地址</dt><dd><a href="https://github.com/mian38/vditor-fnos" target="_blank" rel="noopener">github.com/mian38/vditor-fnos</a></dd>
                     </dl>
                 </div>
 
@@ -1559,6 +1598,94 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     let needsSetup = false;
     let autoSaveSec = 60;       // 自动保存间隔（秒），来自设置
     let SETTINGS_UI = {};
+
+    // ---------- 大文件性能：渲染分级 / 纯文本降级 ----------
+    // 背景：Vditor 的 ir（即时渲染）模式对全文做实时渲染，成本与「块级结构数量」成正比。
+    // 对话记录类 Markdown 虽仅 1~2MB，却可能含上千代码块与标题，渲染后 DOM 达 10 万级，
+    // 超出浏览器流畅阈值一个数量级，表现为打开即卡死。
+    // 对策：超出阈值时切换到「纯文本模式」——不渲染，直接用 <textarea> 编辑 Markdown 原文，
+    // 保存 / 历史版本 / 导出等能力全部保留，仅失去富文本实时预览。
+    let rawMode = false;                                  // 当前是否处于纯文本模式
+    let rawEl = null;                                     // #raw-editor 元素引用
+    // 自动进入纯文本模式的阈值（按 Markdown 原文字符数）。
+    // 1.44MB 对话记录实测在 ir 模式下卡死，故阈值取 30 万字符（约 300KB）以提前规避。
+    const RAW_AUTO_CHARS = 300000;
+    // 超过该字符数时，字数统计不再做全文语法剥离（改用原文估算）。
+    // 实测 stripMarkdown 对 15MB 文档耗时约 78ms，对 1.4MB 约 13ms，均在可接受范围，
+    // 故阈值放宽到 200 万字符（约 2MB）：2MB 以内仍做精确剥离以保证字数准确，
+    // 仅超大型文档（如 15MB 对话记录）才退化为原文估算，换取绝对流畅。
+    const COUNT_FAST_CHARS = 2000000;
+
+    function isRawMode() { return rawMode; }
+
+    // 手动切换纯文本 / 富文本。切回富文本时若文档过大，先二次确认（渲染可能明显卡顿）。
+    function toggleRawMode() {
+        if (rawMode) {
+            const len = rawEl ? (rawEl.value || '').length : 0;
+            if (len > RAW_AUTO_CHARS) {
+                showConfirm('切回富文本', '当前文档 ' + fmtSize(len) + '，恢复富文本渲染可能明显卡顿。确定切换吗？',
+                    () => { exitRawMode(); updateRawModeBtn(); });
+                return;
+            }
+            exitRawMode();
+        } else {
+            const len = (getContent() || '').length;
+            enterRawMode(len > 0 ? ('已切换纯文本模式（' + fmtSize(len) + '），渲染已关闭') : '已切换纯文本模式，渲染已关闭');
+        }
+        updateRawModeBtn();
+    }
+    function updateRawModeBtn() {
+        const b = document.getElementById('btn-raw-mode');
+        if (!b) return;
+        b.textContent = rawMode ? '富文本' : '纯文本';
+        b.title = rawMode ? '切回富文本渲染模式' : '切换为纯文本模式（关闭渲染，适合大文件）';
+    }
+
+    // 人类可读的文件规模（字数统计与提示复用）
+    function fmtSize(n) {
+        if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(2) + ' MB';
+        if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+        return n + ' 字符';
+    }
+
+    // 统一内容读取：纯文本模式取 textarea，否则取 Vditor
+    function getContent() {
+        if (rawMode) return rawEl ? rawEl.value : '';
+        return vditor ? vditor.getValue() : '';
+    }
+    // 统一内容写入
+    function setContent(text) {
+        const t = text || '';
+        if (rawMode) { if (rawEl) rawEl.value = t; return; }
+        if (vditor) vditor.setValue(t, false);
+    }
+
+    function enterRawMode(reason) {
+        if (rawMode) return;
+        rawMode = true;
+        rawEl = document.getElementById('raw-editor');
+        document.body.classList.add('raw-mode');
+        if (rawEl) {
+            rawEl.classList.add('is-active');
+            rawEl.hidden = false;
+            if (!rawEl._bound) {
+                rawEl._bound = true;
+                rawEl.addEventListener('input', () => { dirty = true; scheduleCounter(); });
+            }
+        }
+        if (reason) toast(reason);
+        scheduleCounter();
+    }
+
+    function exitRawMode() {
+        if (!rawMode) return;
+        const text = rawEl ? rawEl.value : '';
+        rawMode = false;
+        document.body.classList.remove('raw-mode');
+        if (rawEl) { rawEl.classList.remove('is-active'); rawEl.hidden = true; rawEl.value = ''; }
+        if (vditor) vditor.setValue(text, false);
+        scheduleCounter();
+    }
     // 上传时随表单携带「当前文档所属分区 + 文档路径」，使上传物存进文档所在文件夹（与文档放一起）。
     // 注意：Vditor 初始化时会把传入 options 与其默认值**合并/克隆**，故直接改此对象无效——
     // 必须写入 vditor.vditor.options.upload.extraData（上传请求发出时才读取的实时对象）。
@@ -1579,30 +1706,61 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     // 预计阅读时间按"正文字数"估算：取中文平均阅读速度 400 字/分钟（普通读者约 300–500 字/分钟区间的中值），
     // 公式：阅读分钟 = 正文字数 ÷ 400，向上取整。
     const READ_SPEED = 400;
-    function countReaderWords(text) {
-        if (!text) return 0;
+    // 精确统计（小文本）：1 个 CJK 表意字符 = 1 字，连续拉丁字母/数字 = 1 个词。
+    function countReaderWordsExact(text) {
         const cjk = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3005\u3007\u3040-\u30ff\uac00-\ud7af]/g;
         const nCjk = (text.match(cjk) || []).length;
         const rest = text.replace(cjk, " ");
         const words = rest.match(/[0-9A-Za-z]+(?:['\u2019-][0-9A-Za-z]+)*/g) || [];
         return nCjk + words.length;
     }
-    // 取「读者可见文本」：**统一按预览口径**（渲染后的 HTML）统计，三种编辑模式结果一致。
-    // 用 vditor.getHTML()（渲染后的 HTML）而不是编辑区 DOM——编辑区含隐藏语法标记，且四种编辑器的
-    // DOM 同时存在（非当前模式者仅被 CSS 隐藏），直接取 DOM 容易命中错误节点（曾出现正文恒为 2）。
+    // 超大文本：改用「采样估算」。
+    // 原因：text.match(regex) 会一次性返回**全部匹配项组成的数组**。对 15MB 中文文档，
+    // 该数组可达数百万元素，既造成内存峰值，也让单次统计耗时数百毫秒；而更新计数器
+    // 在每次输入（防抖后）都会触发。改为取前 20 万字统计密度再按比例外推，
+    // 误差可接受（字数本是估算量），成本从 O(全文×3) 降为 O(常量)。
+    const COUNT_SAMPLE_CHARS = 200000;
+    function countReaderWords(text) {
+        if (!text) return 0;
+        if (text.length <= COUNT_SAMPLE_CHARS) return countReaderWordsExact(text);
+        const sample = text.slice(0, COUNT_SAMPLE_CHARS);
+        const n = countReaderWordsExact(sample);
+        return Math.round(n * (text.length / sample.length));
+    }
+    // 轻量 Markdown 语法剥离：**纯字符串操作**，不触发任何渲染 / DOM 构建。
+    // 用途：从 Markdown 原文估算「读者可见正文」，供字数统计使用。
+    function stripMarkdown(text) {
+        if (!text) return '';
+        let s = text;
+        s = s.replace(/```[\s\S]*?```/g, ' ');        // 围栏代码块
+        s = s.replace(/~~~[\s\S]*?~~~/g, ' ');        // 波浪围栏代码块
+        s = s.replace(/`[^`\n]*`/g, ' ');             // 行内代码
+        s = s.replace(/<[^>]+>/g, ' ');               // 内联 HTML 标签
+        s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1'); // 图片：保留替代文字
+        s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');  // 链接：保留可见文字
+        s = s.replace(/^\s{0,3}#{1,6}\s+/gm, '');     // 标题标记
+        s = s.replace(/^\s{0,3}>\s?/gm, '');          // 引用标记
+        s = s.replace(/^\s{0,3}([-*+]|\d+\.)\s+/gm, ''); // 列表标记
+        s = s.replace(/(\*\*|__)(.*?)\1/g, '$2');     // 加粗
+        s = s.replace(/(\*|_)(.*?)\1/g, '$2');        // 斜体
+        s = s.replace(/~~(.*?)~~/g, '$1');            // 删除线
+        s = s.replace(/^\s*\|?[\s:|-]+\|[\s:|-]*$/gm, ' '); // 表格分隔行
+        s = s.replace(/\|/g, ' ');                    // 表格竖线
+        s = s.replace(/\\([\\`*_{}\[\]()#+\-.!])/g, '$1');  // 转义符
+        return s;
+    }
+    // 取「读者可见文本」用于字数统计。
+    //
+    // ⚠️ 历史实现曾调用 vditor.getHTML()：那会对全文再跑一次 Lute 渲染，并把生成的
+    //    HTML 用 innerHTML 重建一棵离屏 DOM，再 textContent 遍历——单次打开触发 3 次以上，
+    //    是大文件卡顿的**最大放大器**。现改为基于原文的正则剥离：成本从「全文重渲染 +
+    //    离屏 DOM 构建」降为 O(n) 字符串操作，且不再触碰 DOM。
     function readerVisibleText() {
-        let html = '';
-        try { html = (vditor && vditor.getHTML()) || ''; } catch (e) { html = ''; }
-        if (html) {
-            const box = document.createElement('div');
-            box.innerHTML = html;
-            const chrome = box.querySelectorAll('.vditor-preview__action');   // 剔除预览操作栏等非正文
-            for (let i = 0; i < chrome.length; i++) {
-                if (chrome[i].parentNode) chrome[i].parentNode.removeChild(chrome[i]);
-            }
-            return box.textContent || '';
-        }
-        return domVisibleText();   // 兜底：拿不到渲染 HTML 时按当前模式取可见文本
+        const md = getContent() || '';
+        if (!md) return '';
+        // 超大文本：正则在百万字符上仍有可观成本，直接用原文估算（字数会略高，但不再卡顿）
+        if (md.length > COUNT_FAST_CHARS) return md;
+        return stripMarkdown(md);
     }
     // 兜底实现：按当前模式取内容节点的可见文本（并跳过隐藏节点）
     function domVisibleText() {
@@ -1627,7 +1785,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     }
     function updateCounter() {
         if (!vditor) return;
-        const val = vditor.getValue() || '';
+        const val = getContent() || '';
         const mdLen = val.endsWith('\n') ? val.length - 1 : val.length;
         const textLen = countReaderWords(readerVisibleText());
         const readMin = textLen === 0 ? 0 : Math.ceil(textLen / READ_SPEED);
@@ -1931,7 +2089,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                     if (!d.ok) { toast('删除失败：' + (d.error || '')); return; }
                     toast('已删除文档及其历史版本');
                     closeDocInfo();
-                    if (currentPath) { currentPath = null; currentRoot = null; syncUploadExtra(); setCurName('未选择'); vditor.setValue('', false); }
+                    if (currentPath) { currentPath = null; currentRoot = null; syncUploadExtra(); setCurName('未选择'); if (rawMode) exitRawMode(); else setContent(''); }
                     refreshFiles();
                 }).catch(() => toast('删除失败'));
         });
@@ -2006,10 +2164,11 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
     // ---------- 打开 / 新建 / 保存 ----------
     function openFile(root, path) {
+        const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
         fetch('/api/file?root=' + encodeURIComponent(root) + '&path=' + encodeURIComponent(path))
             .then(r => r.json()).then(d => {
                 if (d.error) { toast('打开失败：' + d.error); return; }
-                vditor.setValue(d.content || '', false);
+                const content = d.content || '';
                 currentRoot = d.root; currentPath = d.path; dirty = false;
                 syncUploadExtra();
                 setCurName(d.name);
@@ -2017,6 +2176,26 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 document.querySelectorAll('#file-list li').forEach(li => {
                     li.classList.toggle('active', li.dataset.root === currentRoot && li.dataset.path === currentPath);
                 });
+                // 大文件分级：超过阈值切纯文本模式，规避 ir 渲染卡死
+                const big = content.length > RAW_AUTO_CHARS;
+                if (big) {
+                    enterRawMode('文件较大（' + fmtSize(content.length) + '），已切换纯文本模式以保证流畅');
+                } else if (rawMode) {
+                    exitRawMode();
+                }
+                // 先让浏览器完成一帧绘制（含模式切换后的布局），再灌入内容，
+                // 避免大文本写入长时间占用主线程造成「白屏假死」观感。
+                const fill = () => {
+                    setContent(content);
+                    dirty = false;
+                    scheduleCounter();
+                    if (big) {
+                        const t1 = (window.performance && performance.now) ? performance.now() : Date.now();
+                        toast('已载入 ' + fmtSize(content.length) + '（纯文本模式），耗时 ' + Math.round(t1 - t0) + ' ms');
+                    }
+                };
+                if (window.requestAnimationFrame) requestAnimationFrame(() => requestAnimationFrame(fill));
+                else setTimeout(fill, 0);
             }).catch(() => toast('读取文件失败'));
     }
 
@@ -2038,7 +2217,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             if (!d.ok) { toast('新建失败：' + (d.error || '未知错误')); return; }
             currentRoot = d.root; currentPath = d.path; dirty = false;
             syncUploadExtra();
-            vditor.setValue('', false);
+            if (rawMode) exitRawMode(); else setContent('');
             setCurName(name);
             refreshFiles();
             toast('已新建，开始编辑吧');
@@ -2069,7 +2248,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     function doSave(silent) {
         fetch('/api/save', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ root: currentRoot, path: currentPath, content: vditor.getValue() })
+            body: JSON.stringify({ root: currentRoot, path: currentPath, content: getContent() })
         }).then(r => r.json()).then(d => {
             if (!d.ok) { toast('保存失败：' + (d.error || '')); return; }
             dirty = false;
@@ -2098,9 +2277,15 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 const hasAssets = (d && d.count) > 0;
                 if (kind === 'md') {
                     if (hasAssets) { postExportZip(null); return; }
-                    download(name + '.md', vditor.getValue(), 'text/markdown;charset=utf-8');
+                    download(name + '.md', getContent(), 'text/markdown;charset=utf-8');
                     toast('已导出 Markdown');
                 } else {
+                    if (rawMode) {
+                        // 纯文本模式下 Vditor 未渲染该文档，getHTML() 拿不到当前内容。
+                        // 与其导出空白，不如明确告知并引导切回富文本模式。
+                        toast('纯文本模式下不支持导出渲染后的 HTML；请先在「更多 → 编辑模式」切回富文本，或导出 Markdown');
+                        return;
+                    }
                     const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + escapeHtml(name) + '</title>' +
                         '<link rel="stylesheet" href="/vditor/dist/index.css"></head><body>' +
                         vditor.getHTML() + '</body></html>';
@@ -2471,7 +2656,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             body: JSON.stringify({ root: currentRoot, path: currentPath, ts: ts })
         }).then(r => r.json()).then(d => {
             if (!d.ok) { toast('恢复失败：' + (d.error || '')); return; }
-            vditor.setValue(d.content || '', false);
+            setContent(d.content || '');
             dirty = false;
             closeHistory();
             toast('已恢复到该版本');
@@ -2726,9 +2911,15 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             outline: { enable: true, position: 'left' },
             preview: {
                 theme: { current: isDark ? 'dark' : 'light' },
-                hljs: { style: isDark ? 'a11y-dark' : 'github', lineNumber: true },
+                // lineNumber: false —— 代码行号会为「每一行」生成 DOM 节点。对话记录 / 日志类
+                //   文档常含上万行代码（实测样本 674 个代码块、12,825 行），开启会使 DOM 规模
+                //   再翻一倍，是大文件卡顿的放大项之一。
+                hljs: { style: isDark ? 'a11y-dark' : 'github', lineNumber: false },
                 math: { engine: 'KaTeX' },
-                markdown: { toc: true, mark: true, footnotes: true, autoSpace: true }
+                // autoSpace: false —— 需对全文逐字符做中英文间距处理，O(n) 且每个渲染周期重跑。
+                // toc: false —— 需遍历全文标题生成目录（样本含 1,450 个标题）；
+                //   本应用已提供 outline 大纲侧栏，功能上可替代。
+                markdown: { toc: false, mark: true, footnotes: true, autoSpace: false }
             },
             toolbar: [
                 'emoji', 'headings', 'bold', 'italic', 'strike', 'link', '|',
@@ -2759,7 +2950,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             after() {
                 // 编辑器默认内容 = Markdown 教程（内嵌于 #welcome-md，仿 Vditor 官方 demo 预置示例）
                 const welcomeEl = document.getElementById('welcome-md');
-                vditor.setValue(welcomeEl ? welcomeEl.textContent : '', false);
+                setContent(welcomeEl ? welcomeEl.textContent : '');
                 refreshFiles();
                 // 窄屏下拉面板脱离工具栏，避免被滚动容器裁掉
                 initMobilePanelFix();
@@ -2814,6 +3005,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         attachSecurityConfirm('set-secure-cookie', '强制 Cookie Secure 标记');
         bindDenyUI();
         document.getElementById('btn-doc-info').addEventListener('click', openDocInfo);
+        document.getElementById('btn-raw-mode').addEventListener('click', toggleRawMode);
+        updateRawModeBtn();
         document.getElementById('btn-theme').addEventListener('click', function () {
             applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
         });

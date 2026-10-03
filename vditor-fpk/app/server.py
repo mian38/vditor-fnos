@@ -68,7 +68,13 @@ from vd_util import (
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.2.6"
+APP_VERSION = "1.3.0"
+
+# 超过此体积的文档不再生成「历史版本」快照。
+# 背景：快照机制是每次保存都存一份**全文**。配合默认 60 秒自动保存，
+# 一个 10MB 的文档每小时会产生约 600MB 快照、一天约 14GB，磁盘会被静默耗尽。
+# 超过阈值的文档直接跳过快照（保存、读取、编辑均不受影响，仅无历史版本）。
+VERSION_SKIP_BYTES = 5 * 1024 * 1024
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -626,6 +632,9 @@ def _version_dir(root_path, rel):
 def save_file_version(root_path, rel, content_bytes):
     """覆盖写之前把旧内容快照为一个历史版本；仅在启用且内容发生变化时记录。"""
     if not SETTINGS.get("versioning"):
+        return
+    # 超大文档跳过快照：避免自动保存把磁盘写满（详见 VERSION_SKIP_BYTES 注释）
+    if len(content_bytes) > VERSION_SKIP_BYTES:
         return
     try:
         vdir = _version_dir(root_path, rel)
@@ -1400,13 +1409,16 @@ class Handler(BaseHTTPRequestHandler):
             parent = os.path.dirname(fp)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-            # 覆盖写之前，把旧内容快照为历史版本（内容有变化才记录）
-            if os.path.isfile(fp):
+            # 覆盖写之前，把旧内容快照为历史版本（内容有变化才记录）。
+            # 性能：仅在「确实会记录版本」时才读取旧内容——版本功能关闭或文档超限时
+            # 直接跳过，避免大文档每次保存白读一遍全文（10MB 级文件可省数十毫秒~数百毫秒）。
+            if os.path.isfile(fp) and SETTINGS.get("versioning"):
                 try:
-                    with open(fp, "rb") as f:
-                        prev = f.read()
-                    if prev and prev != content.encode("utf-8"):
-                        save_file_version(root["path"], rel_stored, prev)
+                    if os.path.getsize(fp) <= VERSION_SKIP_BYTES:
+                        with open(fp, "rb") as f:
+                            prev = f.read()
+                        if prev and prev != content.encode("utf-8"):
+                            save_file_version(root["path"], rel_stored, prev)
                 except OSError:
                     pass
             with open(fp, "w", encoding="utf-8") as f:
@@ -1669,12 +1681,13 @@ class Handler(BaseHTTPRequestHandler):
         if not fp:
             self._send_json({"ok": False, "error": "invalid path"}, 400)
             return
-        # 恢复前先快照当前内容，避免覆盖丢失
-        if os.path.isfile(fp):
+        # 恢复前先快照当前内容，避免覆盖丢失（同样遵循版本开关与体积上限）
+        if os.path.isfile(fp) and SETTINGS.get("versioning"):
             try:
-                with open(fp, "rb") as f:
-                    cur = f.read()
-                save_file_version(root["path"], rel, cur)
+                if os.path.getsize(fp) <= VERSION_SKIP_BYTES:
+                    with open(fp, "rb") as f:
+                        cur = f.read()
+                    save_file_version(root["path"], rel, cur)
             except OSError:
                 pass
         try:

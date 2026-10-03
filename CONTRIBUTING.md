@@ -191,6 +191,8 @@ python test_security.py     # 安全/正确性原语
 python test_cli.py          # 生命周期脚本语法
 python test_pkg.py          # 安装包结构 + 版本
 python test_core.py         # 核心功能端到端
+python test_perf.py         # 大文件读写性能（小/中/大/超大四档）
+python test_frontend.py     # 前端静态一致性（防大文件优化被回退）
 ```
 
 写 HTTP 测试用例的两条硬规则（踩过坑，请务必遵守）：
