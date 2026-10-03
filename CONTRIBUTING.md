@@ -53,8 +53,8 @@
 ### 获取源码
 
 ```bash
-git clone https://github.com/mian38/vditor-nas.git
-cd vditor-nas
+git clone https://github.com/mian38/vditor-fnos.git
+cd vditor-fnos
 ```
 
 ---

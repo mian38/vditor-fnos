@@ -61,7 +61,7 @@
 
 ### 方式 A：fnOS 应用中心（推荐）
 
-1. 从 [Releases](https://github.com/mian38/vditor-nas/releases) 下载 `com.mian38.vditor_<版本>.fpk`
+1. 从 [Releases](https://github.com/mian38/vditor-fnos/releases) 下载 `com.mian38.vditor_<版本>.fpk`
 2. 飞牛 fnOS → 应用中心 → 手动安装 → 上传该 `.fpk` 文件
 3. 安装完成后浏览器访问 `http://<NAS IP>:3838/`
 
@@ -86,8 +86,8 @@
 因此从代码上**无需 fnOS 即可在任意带 Python 3 的 Linux 上启动**：
 
 ```bash
-git clone https://github.com/mian38/vditor-nas.git
-cd vditor-nas/vditor-fpk/app
+git clone https://github.com/mian38/vditor-fnos.git
+cd vditor-fnos/vditor-fpk/app
 # 可选：在该目录放一个 config.env（PORT=3838 等），不放在就用默认值
 python3 server.py
 ```
@@ -148,8 +148,8 @@ sudo /usr/local/bin/vditor reset-password
 ## 从源码构建
 
 ```bash
-git clone https://github.com/mian38/vditor-nas.git
-cd vditor-nas
+git clone https://github.com/mian38/vditor-fnos.git
+cd vditor-fnos
 ```
 
 ### 目录布局约定

@@ -5,7 +5,7 @@
 > **后续发布任何新版本时，需同时更新这两份更新记录。**
 
 - **应用标识**：`com.mian38.vditor`
-- **当前版本**：**1.2.5**（当前主线）
+- **当前版本**：**1.2.6**（当前主线）
 - **归档版本**：**1.1.4beta**（标签 `v1.1.4beta` / 分支 `archive/v1.1.4beta`，不再作为主线维护；原为 `1.2.0beta`，因占用下一个 minor 号而统一改号为 `1.1.4beta`）
 - **形态**：飞牛 fnOS 官方 `.fpk` 安装包（非 Docker：系统进程直接运行 Python 标准库后端，前端静态托管）
 - **版本体系**：`4.0.x` 为早期 β 迭代线（产物文件名统一带 `-beta` 标识）；自 **1.0** 起进入正式版序列。
@@ -13,6 +13,55 @@
 > 说明：本文按时间倒序排列，覆盖自首个 `.fpk`（4.0.0）到 1.2.4 的全部版本。
 
 ---
+
+## 1.2.6（2026-10-03）
+
+**发布仓库地址统一 + 开源合规整改**
+
+### 变更
+
+- 仓库地址由 `github.com/mian38/vditor-nas` 统一为 **`github.com/mian38/vditor-fnos`**，
+  同步更新 `manifest` 的 `homepage`、README 的 clone 与 Releases 链接、CONTRIBUTING 的 clone 步骤。
+- 新增 `.gitattributes`：bash 脚本（`cmd/*`、`app/bin/vditor`、`preflight.sh`）强制 LF，
+  二进制资源（png/woff/woff2/ttf/fpk/exe 等）标记 `binary`，避免换行符转换污染。
+- README 许可章节改为表格并补全非 MIT 许可；新增「开发方式说明」（AI 辅助开发披露）。
+- CONTRIBUTING 新增「AI 辅助贡献」约定。
+- 修正 `requirements.txt` 中对已删除 `build_fpk.py` 的引用；README 项目结构树与版本同步表述同步更新。
+
+### 合规
+
+补齐随包分发第三方组件的许可证全文（此前部分组件仅有文件内 banner 或文档描述）：
+
+| 组件 | 补充文件 | 许可 |
+|---|---|---|
+| KaTeX 字体（60 个） | `katex/fonts/OFL.txt` | SIL OFL 1.1（OFL §2 要求随字体附许可副本） |
+| Graphviz（Viz.js 内） | `graphviz/EPL-1.0.txt` | EPL-1.0（取自 Graphviz 2.40.1 官方，与包内版本对应） |
+| abcjs | `abcjs/abcjs_basic_5.10.3-min.js.LICENSE` | MIT（文件 banner 显式指向该文件，原缺失） |
+| markmap 内嵌 d3 | `markmap/LICENSE.d3` | ISC |
+| KaTeX 库 / Mermaid / PlantUML / smiles-drawer / flowchart.js / Lute | 各目录 `LICENSE` | MIT |
+
+同时修正 `THIRD_PARTY_NOTICES.md` 两处不准确表述：
+- **markmap** —— 原简记为 ISC，实为 **MIT 主体 + 内嵌 d3（ISC）** 的混合许可；
+- **Viz.js** —— 原记为「MIT **OR** EPL-1.0」二选一，实为 **EPL-1.0 / MIT(Expat) / zlib 并存**
+  （Viz.js 以 MIT 封装，其内嵌的 Graphviz 本体为 EPL-1.0）。
+
+应用内「开源协议与法律声明」弹窗同步补全 EPL-1.0、BSD-3-Clause、ISC 的披露。
+
+### 验证
+
+- 回归 `test_version.py` / `test_security.py` / `test_cli.py` / `test_pkg.py` / `test_core.py`
+  共 **122/122** 全绿。
+- `.gitattributes` 生效核验：仓库内 54 个 shell 脚本均为纯 LF。
+- 已确认随包第三方许可文件来源均为权威上游（npm / GitHub / 官方站点）逐字保留，无推测内容。
+
+### 清理
+
+- 删除 `archive/v4.0.17-beta_*/legacy_patches/` 与 `legacy_tests/`（13 个历史死代码文件，
+  内含本机绝对路径，且指向早已移除的 `vditor-nas/`，无任何引用）。
+
+### 升版依据
+
+属发布元数据与合规文档整改，**未扩大用户可见功能范围**，按项目版本号规则升 `z` 位（1.2.5 → 1.2.6）。
 
 ## 1.2.5
 
