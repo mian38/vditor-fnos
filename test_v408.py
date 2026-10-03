@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """v4.0.8 专项测试：HTTP 登录守卫。
 
 验证 _https_required_error 在「安全策略强制 HTTPS(Secure Cookie) 且当前为 HTTP 连接」时

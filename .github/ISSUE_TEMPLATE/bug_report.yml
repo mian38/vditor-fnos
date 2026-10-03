@@ -1,0 +1,98 @@
+name: Bug 反馈
+description: 报告 Vditor for NAS 的功能异常
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 发生了什么？期望是什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开设置面板
+        2. 点击「上传设置」
+        3. 点击「恢复默认」
+        4. 观察按钮位置
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志或报错
+      description: 浏览器控制台输出、服务端 stderr 片段等
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      placeholder: "1.1.4（见 manifest 的 version= 字段）"
+    validations:
+      required: true
+
+  - type: input
+    id: fnos
+    attributes:
+      label: fnOS 版本
+      placeholder: "1.5.1"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python 版本
+      placeholder: "3.11.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: 安装方式
+      options:
+        - fnOS 应用中心（.fpk 安装包）
+        - NAS 通用版（install.sh 脚本）
+        - 手动运行 python3 server.py
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: 浏览器与版本
+      placeholder: "Chrome 126"
+
+  - type: dropdown
+    id: access
+    attributes:
+      label: 访问方式
+      options:
+        - 仅局域网
+        - 经反向代理 / 内网穿透（公网 HTTPS）
+        - 公网 HTTP
+    validations:
+      required: true
+
+  - type: textarea
+    id: checklist
+    attributes:
+      label: 提交前确认
+      description: 请勿在 issue 中填写密码、哈希值或 Token。
+      value: |
+        - [ ] 我已确认提交内容不含密码 / 哈希 / Token 等敏感信息
+        - [ ] 我已搜索过现有 issue，确认不是重复报告

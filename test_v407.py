@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """v4.0.7 专项测试：文档信息/删除、保存返回绝对路径、网页标题/图标设置、图标上传、SSH 重置密码脚本。"""
 import os, sys, json, time, tempfile, subprocess, urllib.request, urllib.error, shutil, io, tarfile
 

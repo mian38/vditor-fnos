@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """v1.1.3 专项测试：定向验证本轮修改（版本断言随 1.1.4 升版同步）。
 
 覆盖：

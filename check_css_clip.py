@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """静态校验：.vditor-toolbar 的 overflow 规则是否只存在于窄屏 @media 内。
 
 背景：Vditor 下拉面板 .vditor-panel 以 position:absolute 挂在 position:relative 的工具栏按钮内部，

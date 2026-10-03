@@ -1,0 +1,21 @@
+# Vditor for NAS —— 运行时依赖
+#
+# 本项目运行时 ZERO 第三方依赖，仅使用 Python 内置标准库。
+# 服务端代码未 import 任何 pip 包，因此无需 pip install。
+#
+# 最低 Python 版本：3.8
+#
+# 标准库中实际 import 的模块（由 vditor-fpk/app/server.py 与 vd_util.py 实测得出，
+# 供审计参考，均为内置）：
+#   http.server, socketserver   —— HTTP 服务
+#   urllib.parse                 —— URL 解析
+#   json, re, os, sys, time      —— 通用
+#   hashlib, hmac, secrets       —— 密码哈希与令牌
+#   ipaddress, threading         —— IP 校验与并发
+#   tarfile, zipfile, tempfile, shutil, glob —— 备份、压缩与文件操作
+#   mimetypes, difflib, uuid, io —— 静态资源、文本对比与工具
+#
+# 构建期同样零依赖（make_nas.py / bump_version.py / build_fpk.py 只用标准库）。
+# 打包 fnOS 安装包所需的 fnpack.exe 需从飞牛官方获取，不通过 pip 分发。
+#
+# 如未来引入第三方依赖，请在此声明并固定版本号，以保证部署可复现。

@@ -1,10 +1,38 @@
-# 归档目录不参与构建，但体积大；用归档压缩包代替
-archive/_tmp_split/
-archive/**/app/
-archive/**/vditor/
+# ===== 构建产物 =====
 *.fpk
 *.pyc
 __pycache__/
 .audit_backup/
 .verify_pkg/
 .audit_full.txt
+# 归档目录体积大，源码快照用 Git 历史替代
+archive/_tmp_split/
+archive/**/app/
+archive/**/vditor/
+
+# ===== 第三方可执行文件（需从飞牛官方获取，不随仓库分发）=====
+fnpack.exe
+
+# ===== AI 协作私有记忆（含内部 commit hash 与工作记录，不应公开）=====
+.workbuddy/
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+*.rej
+
+# ===== 日志与临时文件 =====
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 环境变量与本地配置（含密码，禁止提交）=====
+.env
+*.env.local
+config.local.*

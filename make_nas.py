@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """从 vditor-fpk 衍生通用 Linux 部署版 vditor-nas/。
 
 设计原则：**唯一源是 `vditor-fpk/app`**（所有开发与回归测试都在这里进行），

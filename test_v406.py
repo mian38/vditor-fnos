@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """v4.0.6 专项测试：配置导入/导出、历史版本目录不进入“我的文档”、备份收录历史版本与配置。
 
 注：1.0 起「导出备份」改为完整快照（含文档 + 历史版本 + 上传物 + 配置），

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """Vditor 应用 —— 无副作用的工具与常量（从 server.py 抽出）。
 
 这里只放**纯函数与常量**：不读写任何可变模块状态（SETTINGS / SESSIONS / DOC_ROOTS / PWHASH 等

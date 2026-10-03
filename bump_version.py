@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """版本号一键同步：把新版本号写入所有需要同步的位置，避免漏改。
 
 同步位置：

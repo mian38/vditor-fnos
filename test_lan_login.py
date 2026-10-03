@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """回归测试：Bug#1 局域网 HTTP 登录 + v4.0.8 HTTP 登录守卫。
 场景：SECURE_COOKIE=1 + TRUST_PROXY=1 时：
   A) 局域网私有网段（无 XFF，客户端 127.0.0.1）访问 -> Set-Cookie 不带 Secure，且 HTTP 会话可正常建立（登录成功）。

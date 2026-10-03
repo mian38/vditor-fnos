@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 # test_v411.py —— 验证 v4.0.11 的“卸载清理由设置控制”机制
 # 1) server.py：DEFAULT_SETTINGS 含 clear_on_uninstall；_apply_settings 接受布尔、拒绝非布尔；导出含该键
 # 2) uninstall_callback：读 @appconf/settings.json 的 clear_on_uninstall 决定删/留

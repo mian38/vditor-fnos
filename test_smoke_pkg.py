@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """包内资源冒烟测试：确保交付所需的静态资源齐全、被移除的组件确实不存在、
 静态服务白名单与安全响应头按预期工作、版本号一致。
 

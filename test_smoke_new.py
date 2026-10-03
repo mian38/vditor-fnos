@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """冒烟测试：新接口（设置/改密/登录日志/历史版本/备份）"""
 import os, sys, json, time, tempfile, subprocess, urllib.request, urllib.error, urllib.parse, shutil
 

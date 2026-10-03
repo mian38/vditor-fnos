@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """
 可复现地构建飞牛 FnOS 安装包 com.mian38.vditor.fpk。
 
