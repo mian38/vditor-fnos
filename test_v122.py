@@ -31,6 +31,19 @@ def section(t):
     print("\n=== %s ===" % t)
 
 
+# ---------- 版本守卫：本脚本仅在 1.2.2 上有意义 ----------
+# 1.2.3 已把安装向导改为单 step，并移除了 install_callback 的端口取值 /
+# sync_icon_port / doc_dir 落盘逻辑，本脚本针对旧结构的断言不再适用。
+_m = re.search(r'^version\s*=\s*(\S+)', io.open(os.path.join(FPK, "manifest"), encoding="utf-8").read(), re.M)
+_ver = _m.group(1) if _m else None
+if _ver != "1.2.2":
+    print("\n" + "=" * 60)
+    print("SKIP: test_v122.py 仅适用于 1.2.2（当前版本 %s）" % _ver)
+    print("      1.2.3 重构了安装向导与 install_callback，本脚本不适用。")
+    print("      当前版本的测试请运行 test_v123.py。")
+    print("=" * 60)
+    sys.exit(0)
+
 # ---------------------------------------------------------------- A. 向导文案
 section("A. 安装向导文案")
 

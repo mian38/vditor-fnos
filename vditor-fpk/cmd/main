@@ -26,7 +26,8 @@ start() {
 
   cd "$APP_DIR" || { echo "无法进入 $APP_DIR" > "$TRIM_TEMP_LOGFILE"; exit 1; }
 
-  # 文档根目录：优先取安装向导写入的 doc_dir，否则用应用私有目录（升级保留）
+  # 文档根目录：优先取历史 doc_dir 文件（1.2.2 及更早版本由安装向导写入，1.2.3 起不再写入，
+  # 故新装时该文件不存在），否则用应用私有目录下的 docs。
   DOC_DIR_FILE="${TRIM_PKGETC}/doc_dir"
   DOC_DIR="$(cat "$DOC_DIR_FILE" 2>/dev/null || true)"
   if [ -z "$DOC_DIR" ]; then DOC_DIR="${TRIM_PKGVAR}/docs"; fi
@@ -51,7 +52,7 @@ start() {
   # 端口被占用是「服务起不来」最常见的原因，单独给出可执行的提示。
   # 注意不能只用 $! 判断：进程若因端口占用在 bind阶段即退出，$! 仍是一个已结束的 pid。
   if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -qE "[:.]$PORT[[:space:]]"; then
-    echo "Vditor 启动失败：端口 $PORT 已被其它进程占用。请在 fnOS 应用中心停止占用该端口的服务，或重新安装本应用并填写其它端口。" > "$TRIM_TEMP_LOGFILE"
+    echo "Vditor 启动失败：端口 $PORT 已被其它进程占用。请在 fnOS 应用中心停止占用该端口的服务后重新启动本应用。" > "$TRIM_TEMP_LOGFILE"
     exit 1
   fi
 

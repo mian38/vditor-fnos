@@ -39,8 +39,12 @@ def start_server(port, cfg, secure, trust_proxy):
         "VDITOR_DOC_DIR": docs,
         "VDITOR_DOC_NAME": "docs",
         "VDITOR_UPLOAD_DIR": uploads,
-        "VDITOR_SECURE_COOKIE": "1" if secure else "",
-        "VDITOR_TRUST_PROXY": "1" if trust_proxy else "",
+        # ⚠️ 安全开关默认开启（_bool_default_true：仅当显式为 0/false/no 时才关闭）。
+        # 传空串等于「已设置且非假值」= 开启，故对照组必须显式传 0。
+        # 早期版本此处传 ""，导致 secure_cookie=False 的对照组实际仍是开启 →
+        # 纯 HTTP 公网登录被正确拒绝，测试却期望放行 → 2 项假失败。
+        "VDITOR_SECURE_COOKIE": "1" if secure else "0",
+        "VDITOR_TRUST_PROXY": "1" if trust_proxy else "0",
     })
     proc = subprocess.Popen([PY, "server.py"], cwd=APP, env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -34,12 +34,19 @@ try:
     srv = load_server_module()
     Handler = srv.Handler
     check("DEFAULT_SETTINGS 含 clear_on_uninstall", "clear_on_uninstall" in srv.DEFAULT_SETTINGS)
-    # _apply_settings 仅操作模块级 SETTINGS，不依赖 self，可用未绑定方式直接调用
-    changed, errs = Handler._apply_settings(None, {"clear_on_uninstall": False})
+    # ⚠️ 注释里的假设「_apply_settings 不依赖 self」在 1.1.4 审计后已不成立：
+    # 该方法内部会调用 self._apply_int_setting(...) 校验三个整型字段，
+    # 传 None 作 self 会抛 AttributeError: 'NoneType' object has no attribute
+    # '_apply_int_setting'（1.1.4 之前无此间接依赖，故该测试一直通过）。
+    # 这里传一个最小 stub：_apply_settings 用到的 self 仅限这一个方法。
+    class _StubSelf:
+        _apply_int_setting = Handler._apply_int_setting
+    stub = _StubSelf()
+    changed, errs = Handler._apply_settings(stub, {"clear_on_uninstall": False})
     check("接受 False 且无错误", (not errs) and (srv.SETTINGS.get("clear_on_uninstall") is False), str(errs))
-    changed, errs = Handler._apply_settings(None, {"clear_on_uninstall": True})
+    changed, errs = Handler._apply_settings(stub, {"clear_on_uninstall": True})
     check("接受 True 且无错误", (not errs) and (srv.SETTINGS.get("clear_on_uninstall") is True), str(errs))
-    changed, errs = Handler._apply_settings(None, {"clear_on_uninstall": "yes"})
+    changed, errs = Handler._apply_settings(stub, {"clear_on_uninstall": "yes"})
     check("非布尔被拒绝", any("布尔" in e for e in errs), str(errs))
     # 导出：用假 self 捕获 _send 的 body，验证导出的 settings 含 clear_on_uninstall
     class FakeSelf:

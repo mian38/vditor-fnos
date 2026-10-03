@@ -72,16 +72,27 @@ check("A3 manifest service_port=3838", svc is not None and svc.group(1) == "3838
       svc.group(1) if svc else "未找到")
 
 # A3 向导 initValue 与默认端口一致
-init = re.search(r'"field"\s*:\s*"app_port".*?"initValue"\s*:\s*"(\d+)"', wizard, re.S)
-check("A4 向导端口 initValue=3838", init is not None and init.group(1) == "3838",
-      init.group(1) if init else "未找到")
+# ⚠️ 自 1.2.3 起安装向导不再提供端口字段（fnOS 桌面图标固定指向 manifest 的
+# service_port，不接受自定义，详见 CHANGELOG 1.2.3），故本项仅在 1.2.2 及更早适用。
+_mfv = re.search(r"(?m)^version\s*=\s*([0-9.]+)\s*$", manifest)
+_ver = _mfv.group(1) if _mfv else "0"
+if tuple(int(x) for x in _ver.split(".")) < (1, 2, 3):
+    init = re.search(r'"field"\s*:\s*"app_port".*?"initValue"\s*:\s*"(\d+)"', wizard, re.S)
+    check("A4 向导端口 initValue=3838", init is not None and init.group(1) == "3838",
+          init.group(1) if init else "未找到")
+else:
+    check("A4 向导端口字段（1.2.3 已移除自定义端口，跳过）", True)
 
 # A4 install_callback 必须同步桌面图标端口，且**两处路径都尝试**
 check("A5 install_callback 同步 ui/config 端口", 'ui/config' in install_cb)
-check("A6 install_callback 兼容 app/ui/config 路径",
-      'TRIM_APPDEST}/app/ui/config' in install_cb)
-check("A7 install_callback 校验端口合法性",
-      'grep -Eq' in install_cb and '65535' in install_cb)
+# ⚠️ 1.2.3 移除了 sync_icon_port（真机证实改 ui/config 无效），相关断言不再适用
+if 'TRIM_APPDEST}/app/ui/config' in install_cb:
+    check("A6 install_callback 兼容 app/ui/config 路径", True)
+else:
+    check("A6 install_callback app/ui/config 路径（1.2.3 已移除该逻辑，跳过）", True)
+# 1.2.3 端口固定 3838，格式校验改为 port_in_use() 的表头/格式校验，口径已变
+check("A7 install_callback 保留端口探测与占用校验",
+      'port_in_use' in install_cb and 'exit 1' in install_cb)
 # 关键修复：写盘后必须重启，否则服务仍监听旧端口
 check("A8 install_callback 写盘后重启服务（关键修复）",
       'cmd/main" start' in install_cb and 'cmd/main" stop' in install_cb)
@@ -94,8 +105,11 @@ check("A9 install_callback 落盘端口到 PKGETC/port",
 check("A10 install_callback 有端口占用提示", 'ss -ltn' in install_cb)
 
 # A5 upgrade_callback 同样两处路径
-check("A11 upgrade_callback 兼容两处 ui 路径",
-      'TRIM_APPDEST}/app/ui/config' in upgrade_cb and 'TRIM_APPDEST}/ui/config' in upgrade_cb)
+# ⚠️ 1.2.3 移除了 upgrade_callback 中的 ui/config 同步（同上，真机证实无效）
+if 'ui/config' in upgrade_cb:
+    check("A11 upgrade_callback 同步 ui 路径", True)
+else:
+    check("A11 upgrade_callback ui/config 同步（1.2.3 已移除该逻辑，跳过）", True)
 
 # A6 cmd/main 端口占用时给出可执行提示
 check("A12 cmd/main 端口占用有专门报错", 'ss -ltn' in main_sh and '已被其它进程占用' in main_sh)

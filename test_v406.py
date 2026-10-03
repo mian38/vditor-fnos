@@ -6,11 +6,18 @@
 
 注：1.0 起「导出备份」改为完整快照（含文档 + 历史版本 + 上传物 + 配置），
 故此处断言由「备份排除历史版本」改为「备份包含历史版本」。"""
-import os, sys, json, time, tempfile, subprocess, urllib.request, urllib.error, urllib.parse, shutil, io, tarfile
+import os, re, sys, json, time, tempfile, subprocess, urllib.request, urllib.error, urllib.parse, shutil, io, tarfile
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(BASE, "vditor-fpk", "app")
 PY = sys.executable
+
+
+def _cur_ver():
+    """当前版本号：从 manifest 读取，避免每次升版都要改断言（历史教训：硬编码必假红）。"""
+    m = re.search(r"(?m)^version\s*=\s*([0-9.]+)\s*$",
+                  io.open(os.path.join(BASE, "vditor-fpk", "manifest"), encoding="utf-8").read())
+    return m.group(1) if m else "?"
 
 tmp = tempfile.mkdtemp(prefix="vd406_")
 docs = os.path.join(tmp, "docs")
@@ -75,7 +82,7 @@ except Exception as e:
     exp = {}
 check("export is json", st == 200 and hdr.get("Content-Type", "").startswith("application/json"), str(hdr))
 check("export has settings", isinstance(exp.get("settings"), dict) and "autosave_interval" in exp["settings"], str(exp))
-check("export has version", exp.get("version") == "1.2.2", str(exp.get("version")))
+check("export has version", exp.get("version") == _cur_ver(), str(exp.get("version")))
 
 # 3) 配置导入：改一个值后回写
 mod = dict(exp.get("settings", {}))

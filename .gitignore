@@ -32,6 +32,13 @@ fnpack.exe
 Thumbs.db
 desktop.ini
 
+# Windows 保留设备名：测试脚本里的 `2>nul` 重定向在 Git Bash 下会真的创建名为
+# nul 的文件（Linux 上则是丢弃输出）。该文件无法用普通 rm / 安全删除机制处理
+# （DeleteFileW 返回 err=5），故只能忽略。需清理时用：
+#   python -c "import os;os.remove(r'\\\\?\\'+os.path.abspath('nul'))"
+# 或在资源管理器中以 \\?\ 前缀操作。
+/nul
+
 # ===== 环境变量与本地配置（含密码，禁止提交）=====
 .env
 *.env.local

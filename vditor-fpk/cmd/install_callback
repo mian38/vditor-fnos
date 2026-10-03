@@ -1,77 +1,83 @@
 #!/bin/bash
-# cmd/install_callback —— 安装后：读取向导端口与文档目录，写入配置并同步桌面图标端口
+# cmd/install_callback —— 安装后：固定端口落盘、端口占用校验、诊断日志、建立终端命令软链
+#
+# ============ 1.2.3 变更说明 ============
+# 本脚本在 1.2.2 曾包含四段与「安装向导自定义端口/文档目录」相关的逻辑，1.2.3 全部移除：
+#
+#   1. 端口三级取值（向导变量 → 已有 port 文件 → 默认 3838）
+#      移除原因：安装向导自 1.2.3 起不再提供端口字段，取值链路的输入端已消失。
+#      端口固定为 3838（与 manifest service_port 及桌面图标一致）。
+#
+#   2. sync_icon_port()（改 target/ui/config 的 port 字段）
+#      移除原因：**已实测证伪**。真机验证（fnOS 1.2.2）确认桌面图标跳转地址
+#      并不读取 target/ui/config，而是取自应用中心 PostgreSQL appcenter 库的
+#      app 表（安装时一次性写入）。改文件无效、重启 trim_app_center.service
+#      亦无效。该逻辑属「静默失效」典型形态——制造了"已同步端口"的假象，
+#      却在日志与返回值上都表现为成功。社区自 2024 年起多人遇到，无官方解法。
+#      详见 CHANGELOG.md 1.2.3 条目。
+#
+#   3. doc_dir 文件写入
+#      移除原因：安装向导自 1.2.2 起已不再提供 doc_dir 字段，该段在新装时从不执行。
+#      已存在的 doc_dir 文件由 cmd/main 继续读取（兼容老安装），此处不再维护。
+#
+#   4. folders.json + doc_partition_name 落盘
+#      移除原因：同上，向导已不提供该字段，变量恒为空导致整块被 if 跳过。
+#      文档分区统一由应用内「设置 → 文件夹」管理（写入同一份 folders.json）。
+#
+# 保留的部分（经 1.2.2 三轮真机排查验证有实际价值）：
+#   · 环境变量诊断日志 —— 真机出问题的第一手材料
+#   · 端口占用硬校验 —— 占用时当场中止，而非装完才发现打不开
+#   · bin/vditor 软链与服务重启
 set -u
 
-# ============ 诊断输出（1.2.2 新增） ============
+# ============ 诊断输出 ============
 # 背景：本脚本曾因「向导变量名与读取名不一致」长期静默失效——wizard/install 里
 # field 写的是 app_port，fnOS 注入的环境变量也叫 app_port（**环境变量名 = field 原名，
 # 系统不会自动补 wizard_ 前缀**，见官方文档《用户向导》/《环境变量》），
 # 而本脚本读的是 wizard_app_port → 恒为空 → 端口被静默回退成默认值 3838。
-# 这次排查最费时的就是「日志里看不到任何变量」，所以先把环境变量全量落盘，
-# 今后再出问题只需用户回传这一段即可定位，不必来回试探。
+# 那次排查最耗时的环节就是"日志里看不到任何变量"，故保留此诊断输出。
 LOGF="${TRIM_TEMP_LOGFILE:-/dev/null}"
 {
   echo "=== vditor install_callback 诊断 ==="
   echo "TRIM_APP_STATUS=${TRIM_APP_STATUS:-<空>}"
   echo "TRIM_PKGETC=${TRIM_PKGETC:-<空>}"
   echo "TRIM_APPDEST=${TRIM_APPDEST:-<空>}"
-  echo "app_port=${app_port:-<未注入>}"
-  echo "wizard_app_port=${wizard_app_port:-<未注入>}"
-  echo "doc_dir=${doc_dir:-<未注入>}"
-  echo "wizard_doc_dir=${wizard_doc_dir:-<未注入>}"
+  echo "TRIM_APPNAME=${TRIM_APPNAME:-<空>} ${TRIM_APPVER:-<空>}"
   echo "---- 全部环境变量 ----"
   env | sort
 } >> "$LOGF" 2>/dev/null || true
 
-# ============ 升级安装 vs 全新安装 ============
-# fnOS 的安装向导**只在全新安装时出现**。升级安装时 install_callback 照常执行，
-# 但向导环境变量全部为空。此时若直接 `${wizard_app_port:-3838}` 这样的回退，
-# 会把用户上一轮安装时填写的端口 / 文档目录**静默覆写为默认值**...
-# 因此统一采用三级取值：向导变量 → 已有配置文件 → 内置默认值。
-
 CONFIG_DIR="${TRIM_PKGETC}"
 PORT_FILE="${CONFIG_DIR}/port"
-DOC_DIR_FILE="${CONFIG_DIR}/doc_dir"
-FOLDERS_JSON="${CONFIG_DIR}/folders.json"
 
-# 端口：向导变量优先；为空（升级）则沿用已有 port 文件；都没有才用默认 3838。
-# 双读兜底：同时兼容带前缀与不带前缀两种注入写法。
-#   fnOS 官方文档明确「收集到的值会成为同名环境变量」，wizard_ 只是命名建议；
-#   但个别环境/版本是否存在前缀注入尚未在真机确认过，故两种都读，谁有值用谁。
-#   嵌套 ${a:-${b:-}} 在 POSIX sh / bash 下均合法。
-WIZARD_PORT="${wizard_app_port:-${app_port:-}}"
-if [ -z "$WIZARD_PORT" ] && [ -f "$PORT_FILE" ]; then
-  WIZARD_PORT="$(tr -d '[:space:]' < "$PORT_FILE" 2>/dev/null || true)"
-fi
-PORT="${WIZARD_PORT:-3838}"
+# 固定端口 3838：与 manifest 的 service_port 及桌面图标跳转地址保持一致。
+# 用户若需改端口，须同步修改 manifest service_port 并重新打包——
+# 单独改本文件不会改变桌面图标的跳转地址（原因见文件头 sync_icon_port 说明）。
+PORT=3838
 
-# 端口合法性校验
-if ! echo "$PORT" | grep -Eq '^[0-9]+$' || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
-  PORT=3838
-fi
-
-# 端口被占用检测（1.2.2：由「仅提示」改为「硬校验中止」）。
-# 此前只 echo 一行提示就继续装，用户装完才发现图标跳过去打不开，
-# 排查成本远高于安装时直接拦下。install_callback 以非零退出可中止安装，
-# 官方文档说明 TRIM_TEMP_LOGFILE 的内容会展示给用户，故文案需自包含（含重试指引）。
+# 端口占用检测（1.2.2 引入，1.2.3 保留）。
+# 检测到占用即中止安装并给出可执行提示——此前只 echo 一行就继续装，
+# 用户装完才发现图标跳过去打不开，排查成本远高于安装时直接拦下。
+# install_callback 以非零退出可中止安装，官方文档说明 TRIM_TEMP_LOGFILE
+# 的内容会展示给用户，故文案需自包含（含重试指引）。
 #
-# 必须做多路兜底：只判 command -v ss 的话，目标系统一旦没有 ss（精简环境 / 容器 /
-# 某些 NAS 固件），整段校验会被静默跳过——正是本项目反复吃过的「静默失效」套路。
-# 三条路径任一可用即生效；都不可用时明确告警，不假装校验通过。
+# 必须做多路兜底：只判 command -v ss 的话，目标系统一旦没有 ss（精简环境 /
+# 容器 / 某些 NAS 固件），整段校验会被静默跳过——正是本项目反复吃过的
+# 「静默失效」套路。三条路径任一可用即生效；都不可用时明确告警，不假装校验通过。
 port_in_use() {
   P="$1"
   if command -v ss >/dev/null 2>&1; then
     ss -ltn 2>/dev/null | grep -qE "[:.]${P}[[:space:]]" && return 0
     return 1
   fi
+  # netstat 需先匹配到表头才采信：Windows 版 netstat 格式不同，
+  # command -v 判为可用但 grep 恒不命中 → 占用被静默漏判。
   if command -v netstat >/dev/null 2>&1 && netstat -ltn 2>/dev/null | head -3 | grep -qiE 'LISTEN|Proto'; then
     netstat -ltn 2>/dev/null | grep -qE "[:.]${P}[[:space:]]" && return 0
     return 1
   fi
-  # 最后兜底：直接读 /proc/net/tcp{,6} 的本地地址列（HEX:HEX，端口为十六进制）
-  # 注意不能只判 [ -r ]：某些环境（如 Git Bash / WSL 兼容层 / 容器）会提供**伪 /proc**，
-  # 文件可读但内容不是 Linux netlink 格式，grep 恒不匹配 → 端口占用被静默漏判。
-  # 故必须先校验首行特征（sl 字段 + 十六进制本地地址），再用 grep 判占用。
+  # /proc/net/tcp 需先匹配首行 sl: local_address 格式才采信：
+  # Git Bash / WSL 兼容层 / 部分容器提供**伪 /proc**，文件可读但内容非 netlink 格式。
   if [ -r /proc/net/tcp ] && head -1 /proc/net/tcp 2>/dev/null | grep -qE '^[[:space:]]*[0-9]+:[[:space:]]'; then
     HEXP="$(printf '%04X' "$P")"
     if grep -qiE ":[0-9A-F]*${HEXP}[[:space:]]" /proc/net/tcp 2>/dev/null; then return 0; fi
@@ -86,8 +92,8 @@ port_in_use "$PORT" || RC=$?
 if [ "$RC" -eq 0 ]; then
   {
     echo "端口 $PORT 已被其它进程占用，安装已中止。"
-    echo "请返回上一步重新安装，并改用一个未被占用的端口（建议 1024-65535，例如 6666、8080）。"
-    echo "若该端口确由本应用自己占用（重新安装场景），可先在 fnOS 应用中心停止本应用后重试。"
+    echo "请停止占用该端口的服务后重试；如需更换端口，需修改应用包内 manifest 的"
+    echo "service_port 后重新打包（桌面图标跳转地址以该字段为准）。"
   } > "$LOGF"
   exit 1
 elif [ "$RC" -eq 2 ]; then
@@ -97,67 +103,9 @@ elif [ "$RC" -eq 2 ]; then
   } >> "$LOGF"
 fi
 
-# 持久化端口（供 cmd/main 启动使用）
+# 持久化端口（供 cmd/main 启动时读取）。
+# 写入固定值而非省略：让 cat etc/port 始终有明确输出，便于用户与开发者排查。
 echo "$PORT" > "$PORT_FILE"
-
-# 文档存储目录：向导变量优先；为空（升级）则沿用已有 doc_dir 文件；都没有则保持不写，
-# 由 cmd/main 回退到应用私有目录（${TRIM_PKGVAR}/docs）。
-# 1.2.2 起安装向导已不再提供该字段（改为提示用户到「设置 → 文件夹」中添加），
-# 故新装时此段自然不执行；此处保留是为了兼容旧安装/升级路径下已有的 doc_dir 文件。
-DOC_DIR="${wizard_doc_dir:-${doc_dir:-}}"
-if [ -z "$DOC_DIR" ] && [ -f "$DOC_DIR_FILE" ]; then
-  DOC_DIR="$(tr -d '\r\n' < "$DOC_DIR_FILE" 2>/dev/null || true)"
-fi
-if [ -n "$DOC_DIR" ]; then
-  printf '%s' "$DOC_DIR" > "$DOC_DIR_FILE"
-fi
-
-# 向导填写的目录**直接落盘为文档分区**（与「设置 → 文件夹设置」同一份配置文件），
-# 否则该路径只会作为 VDITOR_DOC_DIR 单目录回退生效，不会出现在左侧分区列表中。
-# folders.json 结构： [{"name": 显示名, "path": 绝对路径}, ...]
-DOC_PARTITION_NAME="${wizard_doc_partition_name:-}"
-if [ -n "$DOC_DIR" ]; then
-  # 目录不存在则创建。原实现用 `[ -d "$DOC_DIR" ]` 守卫，导致向导里填写一个
-  # **尚不存在的新路径**时整段写入被跳过 → 「文档存储目录」填了等于没填。
-  # 这里改为 mkdir -p 后再落盘；创建失败（权限不足等）则跳过分区写入并告警，
-  # 但 doc_dir 已在上一步写入，cmd/main 启动时也会再次尝试创建。
-  if [ ! -d "$DOC_DIR" ]; then
-    if ! mkdir -p "$DOC_DIR" 2>/dev/null; then
-      echo "警告：无法创建文档目录 $DOC_DIR（权限不足或路径非法），该路径不会显示为文档分区。" >&2
-      DOC_DIR=""
-    fi
-  fi
-fi
-if [ -n "$DOC_DIR" ] && [ -d "$DOC_DIR" ]; then
-  [ -n "$DOC_PARTITION_NAME" ] || DOC_PARTITION_NAME="我的文档"
-  # 已存在同名路径则不重复写入（同路径只保留一条）
-  if ! grep -q "\"path\": *\"$DOC_DIR\"" "$FOLDERS_JSON" 2>/dev/null; then
-    printf '[\n  {\n    "name": "%s",\n    "path": "%s"\n  }\n]\n' \
-      "$DOC_PARTITION_NAME" "$DOC_DIR" > "$FOLDERS_JSON"
-  fi
-fi
-
-# 同步桌面图标访问端口（ui/config 中的 "port" 字段）
-# 注意路径：ui 目录在应用私有目录**内部**（fnOS 安装后 app/ 被解包到 TRIM_APPDEST，
-# 即 ui/ 与 server.py 同级），因此这里用 TRIM_APPDEST 即为正确路径；
-# 但为兼容个别环境把 ui 放在 TRIM_APPDEST 之外的情况，两处都尝试一次。
-sync_icon_port() {
-  for CFG in "${TRIM_APPDEST}/ui/config" "${TRIM_APPDEST}/app/ui/config"; do
-    if [ -f "$CFG" ]; then
-      if sed -i "s/\"port\"[[:space:]]*:[[:space:]]*\"[0-9]*\"/\"port\": \"$PORT\"/" "$CFG" 2>/dev/null; then
-        SYNCED="$SYNCED $CFG"
-      fi
-    fi
-  done
-}
-SYNCED=""
-sync_icon_port
-if [ -n "$SYNCED" ]; then
-  echo "桌面图标端口已同步为 $PORT：$SYNCED"
-else
-  echo "警告：未找到 ui/config，桌面图标端口可能仍为默认值 $PORT。" >&2
-  echo "如桌面图标打不开，请手动检查应用目录下的 ui/config 中 \"port\" 字段是否为 $PORT。" >&2
-fi
 
 # 建立终端命令 vditor：
 # 主机制：fnOS 的 usr-local-linker 资源会把 app/bin/vditor 软链到 /usr/local/bin/vditor（系统托管，可靠）。
@@ -178,16 +126,15 @@ else
   echo "警告：未找到 $TARGET，终端命令 vditor 未建立；可后续通过 usr-local-linker 自动软链到 /usr/local/bin。" >&2
 fi
 
-# ---------- 确保新端口真正生效 ----------
-# fnOS 的执行顺序不保证「先跑本回调、再启动服务」：若服务已用manifest 默认端口
-# 启动过，那么本回调写入的 port 文件不会被读到，表现为「图标跳到自定义端口却打不开、
-# 仍需用默认端口访问」。因此这里主动重启一次服务，让 cmd/main 重新读取 port 文件。
-# 失败不阻断安装（应用中心通常还会在安装流程末尾自行拉起一次服务）。
-echo "端口配置已写入 ${PORT_FILE}（值：$PORT），正在重启服务以应用该端口…"
+# ---------- 确保服务按固定端口启动 ----------
+# fnOS 的执行顺序不保证「先跑本回调、再启动服务」：若服务已用 manifest 默认端口
+# 启动过，本回调写入的 port 文件不会被读到。因此这里主动重启一次服务，
+# 让 cmd/main 重新读取 port 文件。失败不阻断安装（应用中心通常还会在安装流程末尾自行拉起）。
+echo "端口配置已写入 ${PORT_FILE}（值：$PORT），正在重启服务…"
 "${TRIM_APPDEST}/cmd/main" stop >/dev/null 2>&1 || true
 sleep 1
 if "${TRIM_APPDEST}/cmd/main" start >/dev/null 2>&1; then
-  echo "服务已按端口 $PORT 重启完成。"
+  echo "服务已按端口 $PORT 启动完成。"
 else
   echo "提示：自动重启未成功（不影响安装）。若访问端口不正确，请在 fnOS 应用中心停止后重新启动本应用。" >&2
 fi

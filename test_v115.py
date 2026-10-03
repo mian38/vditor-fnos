@@ -54,7 +54,14 @@ try:
     print("--- /api/status ---")
     d = json.loads(get("/api/status").read().decode())
     check("含 app/network/security 三段", all(k in d for k in ("app","network","security")), str(list(d.keys())))
-    check("app.version == 1.2.0", d["app"]["version"] == "1.2.0", d["app"]["version"])
+    # 版本号：与服务端 APP_VERSION 一致即可（不写死具体版本，避免每次升版假红）
+    _mf = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "vditor-fpk", "manifest"), encoding="utf-8").read()
+    import re as _re
+    _mv = _re.search(r"(?m)^version\s*=\s*(\S+)\s*$", _mf)
+    _vdef = _mv.group(1) if _mv else None
+    check("app.version 与 manifest 一致", d["app"]["version"] == _vdef,
+          "%s vs %s" % (d["app"]["version"], _vdef))
     check("app.port == %d" % PORT, d["app"]["port"] == PORT, str(d["app"]["port"]))
     check("uptime 存在且为数字", isinstance(d["app"]["uptime"], int))
     check("docRoots 为列表", isinstance(d["app"]["docRoots"], list) and len(d["app"]["docRoots"]) >= 1)

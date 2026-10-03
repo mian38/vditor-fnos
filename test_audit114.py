@@ -564,7 +564,11 @@ check("F8 设置导出", st == 200, "st=%s" % st)
 check("F9 导出为附件", "attachment" in hd.get("Content-Disposition", ""), hd.get("Content-Disposition"))
 try:
     exp = json.loads(raw.decode("utf-8"))
-    check("F10 导出内容含 version 字段", exp.get("version") == "1.2.0", str(exp)[:100])
+    # 版本号：与服务端一致即可（不写死，避免每次升版假红）
+    _mf = open(os.path.join(HERE, "vditor-fpk", "manifest"), encoding="utf-8").read()
+    _vdef = (re.search(r"(?m)^version\s*=\s*(\S+)\s*$", _mf) or [None, None])[1]
+    check("F10 导出内容含 version 字段", exp.get("version") == _vdef,
+          "%s vs %s" % (str(exp.get("version"))[:40], _vdef))
 except Exception as e:
     check("F10 导出内容可解析", False, str(e))
 
@@ -831,7 +835,8 @@ html_src = open(os.path.join(APP, "index.html"), encoding="utf-8").read()
 
 check("L1 语法正确（server.py）", compile(server_src, "server.py", "exec") is not None)
 check("L2 语法正确（vd_util.py）", compile(util_src, "vd_util.py", "exec") is not None)
-check("L3 APP_VERSION = 1.2.0", 'APP_VERSION = "1.2.0"' in server_src)
+check("L3 APP_VERSION 与 manifest 一致",
+      ('APP_VERSION = "%s"' % _vdef) in server_src, str(_vdef))
 
 check("L4 死代码 _env_bool 已删除", "def _env_bool" not in server_src)
 check("L5 统一入口 _content_length 存在", "def _content_length" in server_src)
@@ -859,7 +864,8 @@ check("L18 无 eval/exec/pickle",
 check("L19 无 f-string 注入式 SQL（无 SQL 场景）", "SELECT" not in server_src.upper())
 check("L20 前端 escapeHtml 存在", "function escapeHtml" in html_src)
 check("L21 版本号与 manifest 一致",
-      re.search(r'(?m)^version\s*=\s*1\.1\.5', open(os.path.join(HERE, "vditor-fpk", "manifest"), encoding="utf-8").read()) is not None)
+      ('APP_VERSION = "%s"' % _vdef) in server_src and
+      tuple(int(x) for x in _vdef.split(".")) >= (1, 2, 0), str(_vdef))
 check("L22 无 __pycache__ 混入包内",
       not os.path.exists(os.path.join(APP, "__pycache__")))
 # 说明：app/uploads 与 app/docs 由 server.py 启动时的 os.makedirs 创建（运行时目录），

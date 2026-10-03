@@ -13,7 +13,7 @@
   #1  界面统一：上传黑名单输入框与同页其它输入控件共用同一套样式（含聚焦态/占位符）
   文案与静态标记
 """
-import os, sys, json, time, tempfile, subprocess, urllib.request, urllib.error, shutil
+import os, re, sys, json, time, tempfile, subprocess, urllib.request, urllib.error, shutil
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(BASE, "vditor-fpk", "app")
@@ -322,11 +322,15 @@ check("normalize strips dots/case", normalize_ext_list(" .EXE , dll ") == ["exe"
 check("normalize dedupes", normalize_ext_list("exe,exe,EXE") == ["exe"], "")
 check("empty blacklist denies nothing", is_denied_upload("x.exe", "") == "", "")
 
-# 版本号已升到 1.2.0
+# 版本号：动态断言（三方一致 + 不低于基线），避免每次升版假红
 server_py = open(os.path.join(APP, "server.py"), encoding="utf-8").read()
 manifest = open(os.path.join(BASE, "vditor-fpk", "manifest"), encoding="utf-8").read()
-check("APP_VERSION = 1.2.0", 'APP_VERSION = "1.2.0"' in server_py, "")
-check("manifest version=1.2.0", "version=1.2.0" in manifest, "")
+_mv = re.search(r"(?m)^version\s*=\s*(\S+)\s*$", manifest)
+_vdef = _mv.group(1) if _mv else None
+_vt = tuple(int(x) for x in _vdef.split(".")) if _vdef else ()
+check("manifest version 可解析且 >= 1.2.0", _vt >= (1, 2, 0), str(_vdef))
+check("server.py APP_VERSION 与 manifest 一致",
+      'APP_VERSION = "%s"' % _vdef in server_py, str(_vdef))
 
 for p in (pA, pB, pC):
     try:

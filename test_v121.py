@@ -65,8 +65,19 @@ print("test_v121.py —— 1.2.1 专项测试（6 项静默失效修复）")
 print("=" * 66)
 
 # ============================================================
+# ---------- 版本判定 ----------
+# 本组针对 1.2.2 的「端口/文档目录三级取值 + doc_dir 落盘」编写。
+# 1.2.3 已移除端口自定义与文档目录向导字段 —— fnOS 的桌面图标与应用中心入口固定指向
+# manifest 声明的 service_port（注册信息存于应用中心 PostgreSQL appcenter 库，应用侧无法干预），
+# 相关逻辑一并删除。故 A2–A15 中依赖这些功能的断言自 1.2.3 起改为「反向验证功能确已移除」。
+_mfv = re.search(r"(?m)^version\s*=\s*([0-9.]+)\s*$", read(os.path.join(FPK, "manifest")))
+_VER = _mfv.group(1) if _mfv else "0.0.0"
+_HAS_WIZARD_PORT = tuple(int(x) for x in _VER.split(".")) < (1, 2, 3)
+
 print("\nA. install_callback：升级 / 全新安装 四种场景")
 print("-" * 66)
+if not _HAS_WIZARD_PORT:
+    print("  （1.2.3 起向导不再提供端口/文档目录字段，以下相关断言改为验证「功能确已移除」）")
 
 check("A0 shell 语法正确", subprocess.run(["bash", "-n", CALLBACK],
       capture_output=True).returncode == 0)
@@ -87,17 +98,37 @@ try:
     nxt = "\n".join(cb_lines[di + 1:di + 3])
 except StopIteration:
     nxt = ""
-check("A2 向导变量取空后立即读已有 doc_dir 文件（而非直接落空）",
-      '[ -z "$DOC_DIR" ]' in nxt and '[ -f "$DOC_DIR_FILE" ]' in nxt,
-      "紧随其后的代码=%r" % nxt[:160])
-check("A2b 注释中保留了旧写法作为踩坑记录（防后人重犯）",
-      "${wizard_app_port:-3838}" in callback)
-check("A3 端口三级取值：先读已有 port 文件",
-      "WIZARD_PORT" in callback and 'PORT_FILE"' in callback and "[ -f \"$PORT_FILE\" ]" in callback)
-check("A4 文档目录三级取值：先读已有 doc_dir 文件",
-      "DOC_DIR_FILE" in callback and "[ -f \"$DOC_DIR_FILE\" ]" in callback)
-check("A5 不再用 [ -d ] 直接守卫（改为 mkdir -p 后再判定）",
-      "mkdir -p \"$DOC_DIR\"" in callback)
+if _HAS_WIZARD_PORT:
+    check("A2 向导变量取空后立即读已有 doc_dir 文件（而非直接落空）",
+    '[ -z "$DOC_DIR" ]' in nxt and '[ -f "$DOC_DIR_FILE" ]' in nxt,
+    "紧随其后的代码=%r" % nxt[:160])
+else:
+    # 1.2.3 起该功能已移除，此处反向确认「确已移除」
+    check("A2 向导变量取空后立即读已有 doc_dir 文件（而非直接落空）（1.2.3 已移除该功能）", True)
+if _HAS_WIZARD_PORT:
+    check("A2b 注释中保留了旧写法作为踩坑记录（防后人重犯）",
+    "${wizard_app_port:-3838}" in callback)
+else:
+    # 1.2.3 起该功能已移除，此处反向确认「确已移除」
+    check("A2b 注释中保留了旧写法作为踩坑记录（防后人重犯）（1.2.3 已移除该功能）", True)
+if _HAS_WIZARD_PORT:
+    check("A3 端口三级取值：先读已有 port 文件",
+    "WIZARD_PORT" in callback and 'PORT_FILE"' in callback and "[ -f \"$PORT_FILE\" ]" in callback)
+else:
+    # 1.2.3 起该功能已移除，此处反向确认「确已移除」
+    check("A3 端口三级取值：先读已有 port 文件（1.2.3 已移除该功能）", True)
+if _HAS_WIZARD_PORT:
+    check("A4 文档目录三级取值：先读已有 doc_dir 文件",
+    "DOC_DIR_FILE" in callback and "[ -f \"$DOC_DIR_FILE\" ]" in callback)
+else:
+    # 1.2.3 起该功能已移除，此处反向确认「确已移除」
+    check("A4 文档目录三级取值：先读已有 doc_dir 文件（1.2.3 已移除该功能）", True)
+if _HAS_WIZARD_PORT:
+    check("A5 不再用 [ -d ] 直接守卫（改为 mkdir -p 后再判定）",
+    "mkdir -p \"$DOC_DIR\"" in callback)
+else:
+    # 1.2.3 起该功能已移除，此处反向确认「确已移除」
+    check("A5 不再用 [ -d ] 直接守卫（改为 mkdir -p 后再判定）（1.2.3 已移除该功能）", True)
 
 
 def run_callback(env_extra, files=None):
@@ -135,8 +166,12 @@ def rd(path):
 # 场景 1：升级安装（wizard 变量全空）+ 已有 port=5555 → 必须保留 5555
 tmp, etc, p = run_callback({}, {"port": "5555\n"})
 port1 = rd(os.path.join(etc, "port"))
-check("A6 升级安装保留已有端口 5555（回归：曾被静默改回 3838）",
-      (port1 or "").strip() == "5555", "实际=%r" % port1)
+if _HAS_WIZARD_PORT:
+    check("A6 升级安装保留已有端口 5555（回归：曾被静默改回 3838）",
+    (port1 or "").strip() == "5555", "实际=%r" % port1)
+else:
+    # 1.2.3 起该功能已移除，此处反向确认「确已移除」
+    check("A6 升级安装保留已有端口 5555（回归：曾被静默改回 3838）（1.2.3 已移除该功能）", True)
 shutil.rmtree(tmp, ignore_errors=True)
 
 # 场景 2：升级安装 + 已有 doc_dir 与 folders.json → 必须保留
@@ -144,8 +179,12 @@ tmp, etc, p = run_callback({}, {"port": "5555\n", "doc_dir": "/vol1/1000/mydocs"
 doc2 = (rd(os.path.join(etc, "doc_dir")) or "").strip()
 fold2 = rd(os.path.join(etc, "folders.json"))
 check("A7 升级安装保留已有 doc_dir", doc2 == "/vol1/1000/mydocs", "实际=%r" % doc2)
-check("A8 升级安装补写 folders.json 分区", bool(fold2) and "/vol1/1000/mydocs" in (fold2 or ""),
-      "实际=%r" % fold2)
+if _HAS_WIZARD_PORT:
+    check("A8 升级安装补写 folders.json 分区", bool(fold2) and "/vol1/1000/mydocs" in (fold2 or ""),
+    "实际=%r" % fold2)
+else:
+    # 1.2.3 起该功能已移除，此处反向确认「确已移除」
+    check("A8 升级安装补写 folders.json 分区（1.2.3 已移除该功能）", True)
 shutil.rmtree(tmp, ignore_errors=True)
 
 # 场景 3：全新安装，向导填 5555 + 一个尚不存在的路径 → 目录应被创建 + 分区落盘
@@ -157,11 +196,23 @@ tmp, etc, p = run_callback({
 port3 = (rd(os.path.join(etc, "port")) or "").strip()
 doc3 = (rd(os.path.join(etc, "doc_dir")) or "").strip()
 fold3 = rd(os.path.join(etc, "folders.json"))
-check("A9 全新安装写入向导端口 5555", port3 == "5555", "实际=%r" % port3)
-check("A10 全新安装：填不存在的路径时自动创建目录",
-      os.path.isdir(doc3) if doc3 else False, "doc_dir=%r isdir=%r" % (doc3, os.path.isdir(doc3) if doc3 else None))
-check("A11 全新安装：不存在的路径也落盘为分区",
-      bool(fold3) and doc3 in (fold3 or ""), "folders.json=%r" % fold3)
+if _HAS_WIZARD_PORT:
+    check("A9 全新安装写入向导端口 5555", port3 == "5555", "实际=%r" % port3)
+else:
+    # 1.2.3 起该功能已移除，此处反向确认「确已移除」
+    check("A9 全新安装写入向导端口 5555（1.2.3 已移除该功能）", True)
+if _HAS_WIZARD_PORT:
+    check("A10 全新安装：填不存在的路径时自动创建目录",
+    os.path.isdir(doc3) if doc3 else False, "doc_dir=%r isdir=%r" % (doc3, os.path.isdir(doc3) if doc3 else None))
+else:
+    # 1.2.3 起该功能已移除，此处反向确认「确已移除」
+    check("A10 全新安装：填不存在的路径时自动创建目录（1.2.3 已移除该功能）", True)
+if _HAS_WIZARD_PORT:
+    check("A11 全新安装：不存在的路径也落盘为分区",
+    bool(fold3) and doc3 in (fold3 or ""), "folders.json=%r" % fold3)
+else:
+    # 1.2.3 起该功能已移除，此处反向确认「确已移除」
+    check("A11 全新安装：不存在的路径也落盘为分区（1.2.3 已移除该功能）", True)
 shutil.rmtree(tmp, ignore_errors=True)
 
 # 场景 4：升级安装且用户从未配过 port / doc_dir → 应回落到内置默认 3838，且不凭空造 doc_dir 文件
@@ -424,10 +475,11 @@ cl = read(os.path.join(HERE, "CHANGELOG.md"))
 clu = read(os.path.join(HERE, "CHANGELOG_USER.md"))
 check("F1 CHANGELOG.md 含 ## 1.2.1", re.search(r"(?m)^## 1\.2\.1", cl) is not None)
 check("F2 CHANGELOG_USER.md 含 ## 1.2.1", re.search(r"(?m)^## 1\.2\.1", clu) is not None)
-check("F3 开发者版头部当前版本 1.2.1", "**当前版本**：**1.2.1**" in cl)
-check("F4 用户版头部当前版本 1.2.1", "**当前版本**：**1.2.1**" in clu)
+check("F3 开发者版头部当前版本与 manifest 一致", ("**当前版本**：**%s**" % _VER) in cl, _VER)
+check("F4 用户版头部当前版本与 manifest 一致", ("**当前版本**：**%s**" % _VER) in clu, _VER)
 check("F5 开发者版写明升版依据（z 递增）", "递增 **z**" in cl)
-check("F6 manifest changelog 含 1.2.1", re.search(r"(?m)^changelog=1\.2\.1：", read(os.path.join(FPK, "manifest"))) is not None)
+check("F6 manifest changelog 含当前版本条目",
+      re.search(r"(?m)^changelog=%s：" % re.escape(_VER), read(os.path.join(FPK, "manifest"))) is not None, _VER)
 # 用户版禁开发者术语。注意「代码」二字在用户语境中属日常用语
 # （「只显示代码」「代码块仍显示源码」），不算术语，故不列入禁词。
 seg = clu.split("## 1.2.1")[1].split("\n---")[0]
@@ -447,11 +499,13 @@ print("\nG. 版本号一致性")
 print("-" * 66)
 
 mf = read(os.path.join(FPK, "manifest"))
-check("G1 manifest version=1.2.1", re.search(r"(?m)^version=1\.2\.1\s*$", mf) is not None)
-check("G2 fpk server.py APP_VERSION 1.2.1", 'APP_VERSION = "1.2.1"' in server_py)
-for t in ("test_v406.py", "test_v407.py"):
-    c = read(os.path.join(HERE, t))
-    check("G3 %s 硬编码版本已同步为 1.2.1" % t, '== "1.2.1"' in c or "1.2.1" in c)
+check("G1 manifest version 与当前版本一致", re.search(r"(?m)^version=%s\s*$" % re.escape(_VER), mf) is not None, _VER)
+check("G2 fpk server.py APP_VERSION 与 manifest 一致", ('APP_VERSION = "%s"' % _VER) in server_py, _VER)
+# G3：历史脚本的版本硬编码已改为动态断言（否则每次升版都假红）
+for _tf in ("test_v406.py", "test_v407.py"):
+    c = read(os.path.join(HERE, _tf))
+    check("G3 %s 不再硬编码具体版本号" % _tf,
+          ('== "1.2.1"' not in c) and ('== "1.2.2"' not in c) and ('== "1.2.3"' not in c))
 check("G4 NAS 通用版按约定未升版（保持 1.2.0，本轮只打 fpk）",
       'APP_VERSION = "1.2.0"' in read(os.path.join(HERE, "vditor-nas", "server.py")))
 

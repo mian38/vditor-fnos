@@ -3,12 +3,19 @@
 # Copyright (c) 2026 mian38
 # SPDX-License-Identifier: MIT
 """v4.0.7 专项测试：文档信息/删除、保存返回绝对路径、网页标题/图标设置、图标上传、SSH 重置密码脚本。"""
-import os, sys, json, time, tempfile, subprocess, urllib.request, urllib.error, shutil, io, tarfile
+import os, re, sys, json, time, tempfile, subprocess, urllib.request, urllib.error, shutil, io, tarfile
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(BASE, "vditor-fpk", "app")
 PKG = os.path.join(BASE, "vditor-fpk")
 PY = sys.executable
+
+
+def _cur_ver():
+    """当前版本号：从 manifest 读取，避免每次升版都要改断言（历史教训：硬编码必假红）。"""
+    m = re.search(r"(?m)^version\s*=\s*([0-9.]+)\s*$",
+                  io.open(os.path.join(PKG, "manifest"), encoding="utf-8").read())
+    return m.group(1) if m else "?"
 
 tmp = tempfile.mkdtemp(prefix="vd407_")
 docs = os.path.join(tmp, "docs")
@@ -91,7 +98,7 @@ check("versions dir removed", not os.path.isdir(os.path.join(docs, ".vditor_vers
 # 5) 导出配置含 page_title / favicon
 st, raw, hdr = req("GET", "/api/settings/export", cookie=cookie, raw=True)
 exp = json.loads(raw.decode())
-check("export version 1.1.1", exp.get("version") == "1.2.2", str(exp.get("version")))
+check("export version 与 manifest 一致", exp.get("version") == _cur_ver(), str(exp.get("version")))
 check("export has page_title", "page_title" in exp.get("settings", {}), str(exp.get("settings", {}).keys()))
 check("export has favicon", "favicon" in exp.get("settings", {}), str(exp.get("settings", {}).keys()))
 

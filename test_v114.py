@@ -225,10 +225,15 @@ check("server message mentions hyphen",
       "仅含字母 / 数字 / 连字符" in open(os.path.join(APP, "server.py"), encoding="utf-8").read(), "")
 
 # ================= 版本号 =================
-check("APP_VERSION = 1.2.0", 'APP_VERSION = "1.2.0"' in
-      open(os.path.join(APP, "server.py"), encoding="utf-8").read(), "")
-check("manifest version=1.2.0", "version=1.2.0" in
-      open(os.path.join(BASE, "vditor-fpk", "manifest"), encoding="utf-8").read(), "")
+# 动态断言（三方一致 + 不低于基线），避免每次升版假红
+_mf = open(os.path.join(BASE, "vditor-fpk", "manifest"), encoding="utf-8").read()
+_mv = re.search(r"(?m)^version\s*=\s*(\S+)\s*$", _mf)
+_vdef = _mv.group(1) if _mv else None
+_vt = tuple(int(x) for x in _vdef.split(".")) if _vdef else ()
+check("manifest version 可解析且 >= 1.2.0", _vt >= (1, 2, 0), str(_vdef))
+check("APP_VERSION 与 manifest 一致",
+      'APP_VERSION = "%s"' % _vdef in
+      open(os.path.join(APP, "server.py"), encoding="utf-8").read(), str(_vdef))
 
 try:
     p.terminate()
