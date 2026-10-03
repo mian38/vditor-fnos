@@ -22,6 +22,10 @@ fnpack.exe
 *_conversation*.md
 *_devstory*.md
 
+# ===== 内部审计与运维指引（含账号/凭据相关，禁止提交）=====
+COMPLIANCE_AUDIT_*.md
+PUSH_GUIDE.md
+
 # ===== IDE / 编辑器 =====
 .idea/
 .vscode/
