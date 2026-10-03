@@ -193,6 +193,8 @@ python test_pkg.py          # 安装包结构 + 版本
 python test_core.py         # 核心功能端到端
 python test_perf.py         # 大文件读写性能（小/中/大/超大四档）
 python test_frontend.py     # 前端静态一致性（防大文件优化被回退）
+python test_e2e_http.py     # 手段B：真实 HTTP 端到端（模拟浏览器全链路 + gzip 校验）
+python test_stress_largefile.py  # 手段C：四类复杂大文件压力（保存/读回逐字节 + 前端统计路径）
 ```
 
 写 HTTP 测试用例的两条硬规则（踩过坑，请务必遵守）：

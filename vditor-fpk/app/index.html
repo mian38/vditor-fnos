@@ -2902,10 +2902,17 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             theme: isDark ? 'dark' : 'classic',
             icon: 'ant',
             cache: { enable: false },
-            // 字数统计：type='text' 统计正文字符数（不含 Markdown 语法）；after 回调驱动顶栏双口径 + 阅读时间
+            // 字数统计：本项目**不使用** Vditor 内置统计结果（顶栏为自定义双口径，
+            // 且内置计数器已由 CSS `.vditor-counter{display:none}` 隐藏）。
+            //
+            // ⚠️ 但 `type` 仍决定 Vditor 内部的统计成本：
+            //    'text'  → Vditor 会**克隆整个编辑区 DOM** 再取 textContent.length，
+            //              对大文档是纯浪费（结果我们也不显示）；
+            //    'md'    → 只取 Markdown 原文长度，接近 O(1)，无 DOM 操作。
+            // 故此处固定用 'md' 把内部开销降到最低，真实正文统计由 updateCounter() 负责。
             counter: {
                 enable: true,
-                type: 'text',
+                type: 'md',
                 after: function () { scheduleCounter(); }
             },
             outline: { enable: true, position: 'left' },

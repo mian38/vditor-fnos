@@ -50,6 +50,20 @@ CACHE_MAX_AGE = 300                      # 静态资源缓存秒数（配合 ETa
 UPLOAD_MAX_AGE = 31536000                # 上传物按 uuid 命名（内容不变），可长期缓存
 
 
+# ===== HTTP 响应压缩 =====
+# 仅对「文本类」资源启用 gzip：HTML / CSS / JS / JSON / SVG 等压缩率极高
+# （实测 Vditor 的 lute.min.js 3.6MB、echarts.min.js 1MB 可降至约 1/3）；
+# 图片与字体（png / jpg / woff2 / ttf 等）本身已是压缩格式，再压无收益且白耗 CPU，故跳过。
+GZIP_TEXT_EXTS = {
+    ".html", ".htm", ".css", ".js", ".mjs", ".json", ".svg", ".txt", ".md",
+    ".xml", ".yml", ".yaml", ".map",
+}
+# 小于该体积压缩收益不明显，且需额外协商开销
+GZIP_MIN_BYTES = 1024
+# 大于该体积**不压缩**：gzip 需整体读入内存，避免大上传物压缩时造成内存峰值
+GZIP_MAX_BYTES = 8 * 1024 * 1024
+
+
 # 上传物响应策略：可安全内联展示的类型（图片 / 音视频 / PDF）直接返回；
 # 其余（含 html / js / xml 等可执行内容）一律强制下载并加 CSP sandbox，
 # 避免「上传的 HTML 被同源打开 → 执行脚本 → 调用本应用 API」的存储型 XSS。
@@ -188,6 +202,42 @@ def static_headers(fp):
         "Last-Modified": _http_date(st.st_mtime),
         "Cache-Control": "public, max-age=%d" % CACHE_MAX_AGE,
     }
+
+
+# 可被 gzip 压缩的响应类型（按 MIME 前缀判断，避免维护长扩展名清单）
+_GZIP_MIME_PREFIXES = (
+    "text/", "application/javascript", "application/json",
+    "application/xml", "image/svg+xml",
+)
+
+
+def client_accepts_gzip(handler):
+    """客户端是否在请求头里声明支持 gzip 响应。"""
+    ae = (handler.headers.get("Accept-Encoding") or "").lower()
+    return "gzip" in [x.strip() for x in ae.split(",")]
+
+
+def should_gzip(handler, fp, size):
+    """是否值得启用 gzip：客户端支持 + 文本类型 + 体积落在收益区间。
+
+    体积上限（GZIP_MAX_BYTES）是**内存保护**：gzip 需把待压缩数据整体读入，
+    对超大上传物压缩会造成内存峰值，与「保护磁盘/内存」的整体目标一致。
+    """
+    if not client_accepts_gzip(handler):
+        return False
+    if size < GZIP_MIN_BYTES or size > GZIP_MAX_BYTES:
+        return False
+    return guess_mime(fp).lower().startswith(_GZIP_MIME_PREFIXES)
+
+
+def gzip_bytes(data):
+    """标准库 gzip 压缩（零第三方依赖）。"""
+    import gzip as _gz
+    import io as _io
+    buf = _io.BytesIO()
+    with _gz.GzipFile(fileobj=buf, mode="wb", compresslevel=6, mtime=0) as g:
+        g.write(data)
+    return buf.getvalue()
 
 
 def trusted_forwarded_proto(handler):

@@ -44,6 +44,7 @@ import secrets
 import shutil
 import ipaddress
 import threading
+import gzip
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 
@@ -64,11 +65,12 @@ from vd_util import (
     is_static_denied, is_public_static, safe_join,
     parse_multipart, _version_key, _legacy_version_key,
     _folder_note_path, _doc_asset_dir, _in_doc_folder,
+    should_gzip, gzip_bytes, client_accepts_gzip,
 )
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 
 # 超过此体积的文档不再生成「历史版本」快照。
 # 背景：快照机制是每次保存都存一份**全文**。配合默认 60 秒自动保存，
@@ -511,14 +513,18 @@ def build_doc_roots():
             continue
         name = (f.get("name") or "").strip() or (os.path.basename(p.rstrip("/")) or "文档")
         roots.append((name, p))
+    # 显式默认文档目录（VDITOR_DOC_DIR，测试 / 部署覆盖用）：只要设置就始终作为一个分区，
+    # 不能因用户手动添加了其他分区而「被挤掉」（修复：旧逻辑放在 `if not roots:` 内，
+    # 一旦添加了管理文件夹，默认文档目录就会从分区列表里消失）。
+    dd = os.environ.get("VDITOR_DOC_DIR")
+    if dd:
+        roots.append((os.environ.get("VDITOR_DOC_NAME", "我的文档"), dd))
     if not roots:
-        # 回退：单目录（运行时数据 docs 或 BASE_DIR/docs）
-        default = os.environ.get("VDITOR_DOC_DIR")
-        if not default:
-            base = os.environ.get("TRIM_PKGVAR")
-            default = os.path.join(base, "docs") if base else os.path.join(BASE_DIR, "docs")
-        name = os.environ.get("VDITOR_DOC_NAME", "我的文档")
-        roots.append((name, default))
+        # 回退：单目录（运行时数据 docs 或 BASE_DIR/docs）——仅在既无共享路径、
+        # 也无管理文件夹、也未显式指定 VDITOR_DOC_DIR 时才启用
+        base = os.environ.get("TRIM_PKGVAR")
+        default = os.path.join(base, "docs") if base else os.path.join(BASE_DIR, "docs")
+        roots.append(("我的文档", default))
     # 去重（按绝对路径），生成最终分区列表
     out = []
     seen = set()
@@ -779,7 +785,15 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _send_file(self, fp, headers=None):
-        """流式返回文件（不整体读入内存），并按 ETag / Last-Modified 支持 304。"""
+        """返回文件内容，并按 ETag / Last-Modified 支持 304。
+
+        传输优化：对「文本类」资源（html / css / js / json / svg 等）在客户端
+        声明 `Accept-Encoding: gzip` 时改用 gzip 压缩响应，可显著降低首屏
+        传输量（前端资源中 lute.min.js 3.6MB、echarts.min.js 1MB 受益最大）。
+
+        体积上限（GZIP_MAX_BYTES）是**内存保护**：gzip 需把待压缩数据整体读入，
+        对超大上传物压缩会造成内存峰值，故大文件直接走流式路径不压缩。
+        """
         try:
             st = os.stat(fp)
         except OSError:
@@ -790,15 +804,32 @@ class Handler(BaseHTTPRequestHandler):
         lm = h.get("Last-Modified")
         inm = self.headers.get("If-None-Match") or ""
         ims = self.headers.get("If-Modified-Since") or ""
-        if (etag and inm and etag in [x.strip() for x in inm.split(",")]) or \
-           (lm and ims and ims == lm and not inm):
-            self.send_response(304)
-            for k in ("ETag", "Last-Modified", "Cache-Control"):
-                if h.get(k):
-                    self.send_header(k, h[k])
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
+
+        # 仅在值得压缩时启用：文本类型 + 体积落在收益区间 + 客户端支持
+        if should_gzip(self, fp, st.st_size):
+            try:
+                with open(fp, "rb") as f:
+                    raw = f.read()
+                body = gzip_bytes(raw)
+                # 压缩后反而更大（多为已压缩内容）→ 放弃压缩
+                if len(body) < len(raw):
+                    h["Content-Encoding"] = "gzip"
+                    h["Vary"] = "Accept-Encoding"
+                    # 内容编码不同，ETag 必须区分，否则缓存会串味
+                    if etag:
+                        etag = etag[:-1] + '-gzip"'
+                        h["ETag"] = etag
+                    h["Content-Length"] = str(len(body))
+                    self.send_response(200)
+                    for k, v in h.items():
+                        self.send_header(k, v)
+                    self.end_headers()
+                    if self.command != "HEAD":
+                        self.wfile.write(body)
+                    return
+            except (OSError, ValueError):
+                pass   # 压缩失败 → 回退到下面的流式返回
+
         h["Content-Length"] = str(st.st_size)
         self.send_response(200)
         for k, v in h.items():
@@ -865,7 +896,9 @@ class Handler(BaseHTTPRequestHandler):
         proto = trusted_forwarded_proto(self)
         sess = get_session(self)
         roots = []
-        for r in build_doc_roots():
+        # 复用模块级缓存的 DOC_ROOTS：无需每次状态查询都重新遍历分区目录，
+        # 分区变更已由 reload_doc_roots() 负责刷新。
+        for r in DOC_ROOTS:
             p = r.get("path") or ""
             ok = os.path.isdir(p)
             roots.append({
