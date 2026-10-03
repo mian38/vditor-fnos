@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """把 ui_style_v414.css 整体替换进各 index.html 的 <style>…</style> 区块（幂等）。
 
 用脚本而非 Edit 工具：按本项目既有教训，大块替换必须「读-替换-写 + 断言」，

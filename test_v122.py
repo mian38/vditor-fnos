@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """test_v122.py —— 1.2.2 专项测试（自 1.1.1 起的项目约定：只测本轮改动）
 
 覆盖 4 组：

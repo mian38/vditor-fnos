@@ -17,6 +17,8 @@
 - **通用部署相关目录与脚本已彻底移除**：`vditor-nas/`、`nas-template/`、派生脚本
   `make_nas.py`，以及 `releases/vditor-nas-*.tar.gz` 产物，均已从仓库删除。
   通用 Linux / 任意 NAS 的部署改为**直接以 `vditor-fpk/app/` 源码运行**。
+- **自研打包器 `build_fpk.py` 已删除**：交付产物一律由飞牛官方 `fnpack.exe` 构建，
+  该脚本已不在使用（正文中提及它的地方属历史审计记录，保留原文）。
 - **`bump_version.py` 仅同步 fpk**（`manifest` + `vditor-fpk/app/server.py` + 测试脚本）。
 - 本项目 LICENSE 现为**两份**（根目录 + `vditor-fpk/`），内容一致；
   `vditor-fpk/app/vditor/LICENSE` 为上游 Vditor 许可，永不改动。

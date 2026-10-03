@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """1.2.0 专项测试：快捷键按钮与对话框。
 
 覆盖本轮唯一改动——把「关于与帮助」里的快捷键表格改为与「使用指南」并列的按钮 + 弹窗。

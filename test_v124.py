@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """test_v124.py —— 1.2.4 专项测试
 
 本轮改动：设置面板结构重构（选项卡合并/更名/重排/子选项层级整理）、

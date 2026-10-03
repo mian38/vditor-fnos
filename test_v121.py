@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """1.2.1 专项测试：6 项静默失效 bug 修复。
 
 本轮修复全部属于「代码路径存在但被静默吞掉」的类型，界面表现为「点了没反应」且日志无错误，

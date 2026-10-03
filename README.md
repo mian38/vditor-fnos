@@ -163,12 +163,19 @@ cd vditor-nas
 
 ### 构建 fnOS 安装包
 
-`fnpack.exe` 需从[飞牛官方获取](https://www.fnnas.com)，不随本仓库分发。
+`fnpack.exe` 需从[飞牛官方获取](https://www.fnnas.com)，不随本仓库分发。**交付产物一律由官方 `fnpack.exe` 构建**（仓库中不含自研打包器）。
 
 ```bash
 rm -rf vditor-fpk/app/__pycache__
 fnpack.exe build -d vditor-fpk
 ```
+
+> 产物 `com.mian38.vditor.fpk` 输出到**当前工作目录**（不是 `-d` 源目录），需手动重命名归档到 `releases/`。
+>
+> `.fpk` 实为 gzip 压缩的 tar：外层包含 `app.tgz`（即 `app/` 目录内容的 tar.gz）、`LICENSE`、
+> `cmd/`、`config/`、`wizard/`、`manifest`、`ICON.PNG`、`ICON_256.PNG`。
+>
+> 按项目约定，`releases/` 下的构建产物**默认本地保留、不纳入 Git 跟踪**；如需清理请自行确认。
 
 ### 升版本号
 
@@ -196,8 +203,7 @@ python bump_version.py 1.2.6             # 确认后执行
 │       └── vditor/              # Vditor 4.0.0 发行资源
 ├── docs/                    # 文档
 ├── test_*.py                # 回归测试
-├── bump_version.py          # 版本号同步（仅 fpk）
-└── build_fpk.py             # fpk 构建（如有）
+└── bump_version.py          # 版本号同步（仅 fpk）
 ```
 
 ---

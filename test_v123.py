@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright (c) 2026 mian38
+# SPDX-License-Identifier: MIT
 """test_v123.py —— 1.2.3 专项测试
 
 本轮改动：移除安装向导的自定义端口功能（向导简化为单页说明）、
