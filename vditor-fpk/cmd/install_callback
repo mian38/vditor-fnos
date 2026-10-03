@@ -2,11 +2,11 @@
 # cmd/install_callback —— 安装后：读取向导端口与文档目录，写入配置并同步桌面图标端口
 set -u
 
-PORT="${wizard_app_port:-9000}"
+PORT="${wizard_app_port:-3838}"
 
 # 端口合法性校验
 if ! echo "$PORT" | grep -Eq '^[0-9]+$' || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
-  PORT=9000
+  PORT=3838
 fi
 
 # 持久化端口（供 cmd/main 启动使用）
@@ -16,6 +16,20 @@ echo "$PORT" > "${TRIM_PKGETC}/port"
 DOC_DIR="${wizard_doc_dir:-}"
 if [ -n "$DOC_DIR" ]; then
   echo "$DOC_DIR" > "${TRIM_PKGETC}/doc_dir"
+fi
+
+# 向导填写的目录**直接落盘为文档分区**（与「设置 → 文件夹设置」同一份配置文件），
+# 否则该路径只会作为 VDITOR_DOC_DIR 单目录回退生效，不会出现在左侧分区列表中。
+# folders.json 结构： [{"name": 显示名, "path": 绝对路径}, ...]
+DOC_PARTITION_NAME="${wizard_doc_partition_name:-}"
+if [ -n "$DOC_DIR" ] && [ -d "$DOC_DIR" ]; then
+  [ -n "$DOC_PARTITION_NAME" ] || DOC_PARTITION_NAME="我的文档"
+  FOLDERS_JSON="${TRIM_PKGETC}/folders.json"
+  # 已存在同名路径则不重复写入（同路径只保留一条）
+  if ! grep -q "\"path\": *\"$DOC_DIR\"" "$FOLDERS_JSON" 2>/dev/null; then
+    printf '[\n  {\n    "name": "%s",\n    "path": "%s"\n  }\n]\n' \
+      "$DOC_PARTITION_NAME" "$DOC_DIR" > "$FOLDERS_JSON"
+  fi
 fi
 
 # 同步桌面图标访问端口（ui/config 中的 "port" 字段）

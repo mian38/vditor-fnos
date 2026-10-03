@@ -225,9 +225,9 @@ check("server message mentions hyphen",
       "仅含字母 / 数字 / 连字符" in open(os.path.join(APP, "server.py"), encoding="utf-8").read(), "")
 
 # ================= 版本号 =================
-check("APP_VERSION = 1.1.4", 'APP_VERSION = "1.1.4"' in
+check("APP_VERSION = 1.1.5", 'APP_VERSION = "1.1.5"' in
       open(os.path.join(APP, "server.py"), encoding="utf-8").read(), "")
-check("manifest version=1.1.4", "version=1.1.4" in
+check("manifest version=1.1.5", "version=1.1.5" in
       open(os.path.join(BASE, "vditor-fpk", "manifest"), encoding="utf-8").read(), "")
 
 try:

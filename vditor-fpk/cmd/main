@@ -4,7 +4,7 @@ set -u
 
 PID_FILE="${TRIM_PKGVAR}/vditor.pid"
 PORT_FILE="${TRIM_PKGETC}/port"
-PORT="$(cat "$PORT_FILE" 2>/dev/null || echo 9000)"
+PORT="$(cat "$PORT_FILE" 2>/dev/null || echo 3838)"
 APP_DIR="${TRIM_APPDEST}"
 LOG="${TRIM_PKGVAR}/vditor.log"
 

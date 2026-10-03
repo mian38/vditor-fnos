@@ -498,3 +498,63 @@ html[data-theme="dark"] .toast { background: var(--c-bg-fill); border: 1px solid
     .modal-card { padding: 14px; }
     #login-card { padding: 18px; }
 }
+
+/* ================= 1.1.5：设置面板选项卡化 ================= */
+/* 面板顶部横向选项卡导航（文件夹 / 安全 / 版本 / 上传 / 维护 / 外观 / 关于与帮助） */
+.set-tabs {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    border-bottom: 1px solid var(--c-border-2);
+    margin: 0 0 4px; padding: 0 0 8px;
+}
+.set-tabs button {
+    padding: 6px 12px; font-size: var(--fs-sm);
+    border: 1px solid transparent; border-radius: 6px;
+    background: transparent; color: var(--c-text-2);
+    cursor: pointer; white-space: nowrap;
+}
+.set-tabs button:hover { background: var(--c-bg-fill); color: var(--c-text); }
+.set-tabs button.on {
+    background: var(--c-brand); color: #fff; font-weight: 600;
+}
+/* 选项卡面板：默认全部隐藏，仅显示当前选中项 */
+.set-page { display: none; }
+.set-page.on { display: block; }
+/* 面板内子选项卡（帮助 / 快捷键 / 关于） */
+.set-sub { border-top: 1px solid var(--c-border-2); margin-top: 14px; padding-top: 10px; }
+.set-sub:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+.set-sub h4 { margin: 0 0 6px; font-size: var(--fs-md); color: var(--c-text-2); font-weight: 600; }
+
+/* 状态与日志：键值表 */
+.kv-list { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 6px 0 0; }
+.kv-list dt { color: var(--c-text-3); font-size: var(--fs-sm); white-space: nowrap; }
+.kv-list dd {
+    margin: 0; font-size: var(--fs-sm); color: var(--c-text);
+    word-break: break-all; line-height: 1.6;
+}
+.kv-list dd.ok { color: var(--c-success, #1a7f37); }
+.kv-list dd.warn { color: var(--c-danger); }
+
+/* 快捷键表 */
+.kb-list { width: 100%; border-collapse: collapse; margin: 6px 0 0; font-size: var(--fs-sm); }
+.kb-list th, .kb-list td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--c-border-2); }
+.kb-list th { color: var(--c-text-3); font-weight: 600; white-space: nowrap; }
+.kb-list td:first-child { white-space: nowrap; }
+.kb-list kbd {
+    display: inline-block; padding: 1px 6px; margin: 0 1px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: var(--fs-sm); line-height: 1.6;
+    background: var(--c-bg-fill); color: var(--c-text);
+    border: 1px solid var(--c-border-2); border-radius: 4px;
+}
+
+/* 关于与帮助：简介段落 */
+.about-p { margin: 8px 0; line-height: 1.7; font-size: var(--fs-md); }
+.about-p a { color: var(--c-brand); }
+
+/* 会话超时提示弹窗（z-index 高于登录遮罩，确保覆盖） */
+#session-mask .modal-card { width: 400px; text-align: center; }
+#session-mask .sess-icon { font-size: 30px; line-height: 1; margin-bottom: 6px; }
+#session-mask .sess-title { font-size: var(--fs-lg); font-weight: 600; color: var(--c-text); margin: 0 0 6px; }
+#session-mask .sess-desc { font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.6; margin: 0 0 14px; }
+#session-mask .sess-actions { display: flex; gap: 8px; justify-content: center; }
+#session-mask .sess-actions button { margin: 0; }

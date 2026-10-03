@@ -5,12 +5,12 @@
 > **后续发布任何新版本时，需同时更新这两份更新记录。**
 
 - **应用标识**：`com.mian38.vditor`
-- **当前版本**：**1.1.4**（当前主线）
+- **当前版本**：**1.1.5**（当前主线）
 - **归档版本**：**1.2.0beta**（标签 `v1.2.0beta` / 分支 `archive/v1.2.0beta`，不再作为主线维护）
 - **形态**：飞牛 fnOS 官方 `.fpk` 安装包（非 Docker：系统进程直接运行 Python 标准库后端，前端静态托管）
 - **版本体系**：`4.0.x` 为早期 β 迭代线（产物文件名统一带 `-beta` 标识）；自 **1.0** 起进入正式版序列。
 
-> 说明：本文按时间倒序排列，覆盖自首个 `.fpk`（4.0.0）到 1.1.4 的全部版本。
+> 说明：本文按时间倒序排列，覆盖自首个 `.fpk`（4.0.0）到 1.1.5 的全部版本。
 
 ---
 
@@ -115,6 +115,86 @@
 > **排障备查 · `subprocess.PIPE` 会让服务「假死」**：用 `subprocess.PIPE` 接长驻服务输出，管道缓冲区（约 64 KB）写满后服务端会阻塞在写日志调用上，表现为「进程活着（`poll()` 返回 None）但不再应答任何请求」，与「未捕获异常打挂服务」几乎一模一样，极易误判。正确做法：输出一律落文件。本机测试还需 `urllib.request.install_opener(build_opener(ProxyHandler({})))` 绕开环境代理。
 
 ---
+
+## 1.1.5
+
+> 本轮共8 项需求：图表渲染修复（2）、设置面板选项卡化与「状态与日志」（2）、安装引导文档分区落盘、默认端口 3838、会话失效提示、开源合规整改。
+> 代码规模：`server.py` 1,908 → **2,000** 行（80,995 → 84,976 字节）、`index.html` 2,510 → **2,800** 行（127,420 → 147,543 字节）、`ui_style_v414.css` 500 → **560** 行（25,019 → 28,038 字节）。合计 +496 / −31 行。
+
+### 修复 · 图表渲染（CSP `EvalError` 与 Graphviz 源码外露）
+
+**根因一：ECharts 被 CSP 拦下（实测报错）**
+
+- 现象：编辑器内图表报 `echarts render error: EvalError: Evaluating a string as JavaScript violates the following Content Security Policy directive because 'unsafe-eval' is not an allowed source of script: script-src 'self' 'unsafe-inline'`。
+- 根因：ECharts 渲染器在运行时用 `new Function(...)` 动态生成渲染函数（已实测命中 `echarts.min.js`），而 `SEC_HEADERS` 的 `script-src` 只有 `'self' 'unsafe-inline'`，**不含 `'unsafe-eval'`** → 浏览器直接抛 `EvalError`。1.1.4 审计加固时逐项收紧了 CSP，图表即在那时失效。
+- 修复：`script-src` 增加 `'unsafe-eval'`。**缓解边界明确写进代码注释**：`script-src` 仍限定 `'self'`，不放开任何外部脚本来源；`'unsafe-eval'` 只放开「字符串求值」这一项，不影响脚本加载来源。同块`font-src` 补 `'wasm-unsafe-eval'`（供 KaTeX 等可能的 WebAssembly 路径），`script-src` 的放宽是必要且最小范围的。
+
+**根因二：Graphviz 渲染所需的 script 标签从未引入**
+
+- 现象：dot 代码块只原样显示源码，不渲染成图。
+- 根因：Vditor 的 `graphvizRenderAdapter` 通过 `document.getElementById("vditorGraphVizScript")` 读取 Graphviz 胶水脚本的 `src`，再用 `src.replace("viz.js", "full.render.js")` **反推**同目录的 wasm 渲染器，然后 `new Blob(["importScripts('...')"])` + `new Worker(r)` 构造 Worker 并调用 `Viz({worker})`。而 `index.html` **从未引入该标签** → `getElementById` 返回 `null` → 整条渲染链路在第一步就断了（`vditor/dist/js/graphviz/` 下的 `viz.js` 11,468 B 与 `full.render.js` 1,979,941 B 一直都在包内，只是无人引用）。
+- 修复：在 `index.min.js` 之后补`<script id="vditorGraphVizScript" src="/vditor/dist/js/graphviz/viz.js">`，并把上述推导机制写入 HTML 注释，避免后续误删。
+- 静态资源可达性已实测：两个 js 均能匿名GET 到 200（`/vditor/` 前缀已在 `PUBLIC_STATIC_PREFIX` 白名单内，无需额外放行）。
+
+### 新增 · 「关于与帮助」选项卡与设置面板选项卡化
+
+- 设置面板由**单页长表单**改为 **7 个顶级选项卡**：`pg-folders`（文件夹设置）/ `pg-security`（访问控制）/ `pg-version`（历史版本）/ `pg-upload`（上传设置）/ `pg-maint`（维护）/ `pg-appearance`（外观设置）/ `pg-about`（关于与帮助，本版本新增）。切换逻辑收敛为单个 `selectSetPage(id)`，无内容重复。
+- **「关于与帮助」下设 3 个子选项卡**：
+  - **帮助**：沿用原有 `#btn-word-help`（「？ 使用指南」）控件与其事件绑定，**仅迁移位置不改ID**，行为零变化。
+  - **快捷键**：新增 `.kb-list` 表格，共 14 行 / 29 个 `<kbd>`，覆盖编辑器（`Ctrl+S` / `Ctrl+Z` / `Shift+Z` / `Ctrl+B` / `Ctrl+I` / `Ctrl+K` / `Alt+1` / `Alt+2` / `Alt+0` / `Tab` / `Enter`）与本应用（`Ctrl+S` 保存、`Esc` 关闭浮层、`Ctrl+Enter` 保存并关闭）。
+  - **关于本应用**：应用简介 + `.kv-list`（`#about-version` 运行时注入版本号、Vditor 版本 4.0.0、开发人员 mian38、GitHub 仓库地址）。
+  - **开源协议与法律声明**：本项目 MIT、ECharts Apache-2.0、**KaTeX 字体为 SIL OFL 1.1（非 MIT，单独标注）**、免责声明。
+- `openSettings()` 改为每次打开重置回`pg-folders`，避免沿用上次停留的选项卡造成困惑。
+
+### 升级 · 「登录日志」→「状态与日志」
+
+- 新增 `GET /api/status`（需登录）→ `Handler._build_status()`，返回三段**纯只读**信息（不含任何密钥/ 口令 / 哈希）：
+  - `app`：`APP_VERSION`、Python 版本、`sys.platform`、运行时长（新增模块级 `START_TIME`）、监听 host/port、`docRoots` 逐分区的 `exists` / `writable` 检查。
+  - `network`：`client_ip(self)`（已按 `trust_proxy` 口径处理 XFF）、直连 IP、`isLan`、协议（经 `trusted_forwarded_proto`）、`isHttps`、`trustProxy` / `secureCookie` 开关。
+  - `security`：`NEEDS_SETUP`、当前是否有会话、上传上限、版本管理 / 自动保存秒数。另附浏览器侧信息（UA、分辨率、语言、来源、referrer）。
+- 新增 `GET /api/app-log`（需登录）→ `load_app_log(limit=400)`：读`APP_LOG_FILE` 末尾最多 `APP_LOG_MAX_BYTES = 512KB`，**倒序**返回 400 行，文件不存在时回 `exists=False` 而非报错。`APP_LOG_FILE` 优先 `TRIM_PKGVAR/vditor.log`，回退 `BASE_DIR/vditor.log`。
+- 前端：`.kv-list` 列表 + 「刷新状态」按钮 + 「查看应用日志」按钮（`<pre id="app-log-box">`），与原「查看登录日志」**并列**；`dd.ok` / `dd.warn` 两档配色区分正常与异常项。切到 `pg-maint` 时自动 `refreshStatus()`。
+- 新增 `fmtDuration(秒)` 把运行时长渲染为「N 天 M 小时」形式。
+
+### 修复 · 安装引导「文档存储目录」不生效
+
+- 现象：向导自定义路径后，安装完成该路径**不出现在左侧分区列表**中。
+- 根因：向导 `doc_dir` 经 `install_callback` 落盘为 `cmd/main` 的 `VDITOR_DOC_DIR` 环境变量，而 `VDITOR_DOC_DIR` 在 `build_doc_roots()` 的优先级链中只是**最低一档的单目录回退**（`VDITOR_DOC_DIRS` > `TRIM_DATA_SHARE_PATHS` > `load_managed_folders()` >单目录）。当系统数据共享路径或已有 `folders.json` 生效时，该环境变量被完全忽略 → 表现为「配了没用」。
+- 修复：向导新增 `doc_partition_name` 字段（默认「我的文档」），`install_callback` 在目录有效时**直接落盘为文档分区**——写入 `${TRIM_PKGETC}/folders.json`（`[{"name": 显示名, "path": 绝对路径}]`），与「设置 → 文件夹设置」读写的是**同一份配置文件**。已用 `grep` 判重避免重复写入。`doc_dir` 的 tips 同步改为说明「直接作为编辑器左侧的一个文档分区生效」。
+- 端到端实测：`install_callback` 落盘后 `build_doc_roots()` 返回 `[{"id":"测试分区","name":"测试分区","path":"C://tmp//wiz_test//docs"}]`，分区如期出现。
+
+### 修复 · 默认端口 9000 → 3838
+
+- 变更点（8 处）：`server.py` 端口注释、`cfg = {"PORT": "3838"}`、`os.environ.get("VDITOR_PORT", cfg.get("PORT", "3838"))`；`vditor-fpk/manifest` 的 `service_port`；`vditor-fpk/wizard/install` 的 `initValue`；`cmd/install_callback` 端口回退值；`cmd/main` 与 `cmd/upgrade_callback` 的 `|| echo 9000)` 回退；`nas-template/config.env` 的 `PORT=`；`nas-template/install.sh`、`nas-template/README.md`、`README.md` 的全部端口表述。
+- **自定义端口引导自检结论：本来就生效，无需修复**。链路为 `wizard/install` 的 `port` 字段 → `install_callback` 写 `${TRIM_PKGETC}/port` → `cmd/main` 读该文件 → 以 `VDITOR_PORT` 传给 `server.py`；`checkport=false` 亦不会因端口占用而失败。本轮仅统一了回退默认值（`|| echo 3838`）。
+
+### 新增 · 会话超时主动提示
+
+- 现象：一段时间未操作后服务端会话已过期，前端**任何操作都无反应也无反馈**，必须手动刷新网页才能重新登录。
+- 根因：服务端对未认证请求**已正确返回 401 + `{"error":"unauthenticated"}`**，问题纯在前端——各处裸调 `fetch` 后从不检查 `res.status`，401 响应被当作正常结果丢弃，用户界面毫无变化。
+- 修复：包装 `window.fetch`（`installSessionGuard()`），对匹配 `/api/` 的请求：命中 **401** 即调 `showSessionExpired()` 弹出遮罩层，含「因长时间未操作，已退出登录，需要重新登录」文案与「刷新页面并重新登录」按钮（另有「稍后处理」关闭）。`sessionExpiredShown` 保证只弹一次。
+- **豁免名单**：`AUTH_EXEMPT = ['/api/login', '/api/setup', '/api/logout', '/api/auth/check']` —— 这四个接口的 401 属正常业务反馈（如密码错误、尚未初始化），若一并拦截会导致登录页刚打开就弹遮罩。`catch` 分支（网络中断）同样只对非豁免的 API 请求提示。
+
+### 开源合规整改（与功能改动同批交付）
+
+- **许可**：新建根`LICENSE`（MIT，Copyright (c) 2026 mian38，末尾附第三方组件不覆盖声明），并 `cp` 同步到 `vditor-fpk/` / `vditor-nas/` / `nas-template/`（4 份 md5 一致 `fec2e148be348c1747fbdf97a5000b48`）。
+- **SPDX**：17 个 Python 源文件加 `# SPDX-License-Identifier: MIT`（`server.py` / `vd_util.py` / `make_nas.py` / `bump_version.py` / `build_fpk.py` / `check_css_clip.py` + 11 个 `test_*.py`）。**`vditor-fpk/app/vditor/LICENSE` 为上游 B3log 版权，永不改动**（md5 `2b8b72506e88b670cb125015ee285e90` 保持不变）。
+- **第三方许可**：新建 `THIRD_PARTY_NOTICES.md`（15 个组件 + Vditor 版本指纹 + ECharts 的 Apache-2.0 §4(d) NOTICE 保留义务 + KaTeX 字体SIL OFL 1.1 例外）；补`vditor/dist/js/echarts/LICENSE`（Apache-2.0 全文 11,358 B）与 `echarts/NOTICE`（169 B）。
+- **开源文档**：`README.md` / `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md`（Contributor Covenant 2.1 官方原文）/ `SECURITY.md` / `requirements.txt`（零依赖 + 实测标准库 import 清单）/ `.github/` 三件套（PR 模板、bug 报告、feature 请求，均为 YAML Form）。
+- **manifest**：补 `author=mian38` 与 `homepage=https://github.com/mian38/vditor-nas`。
+- **移出版本控制**（磁盘保留）：`.workbuddy/`（4 份 AI 私有记忆，含内部 commit hash）、`fnpack.exe`（3.8 MB 第三方二进制），并`.gitignore` 补 `*.log` / `.idea/` / `.vscode/` / `*.env.local` / `Thumbs.db` / `.DS_Store` / `*~` / `*.bak` 等。
+- 应用本体合规复核结论：SPDX 齐全、上游 LICENSE 未动、5 份第三方许可文件齐全、无硬编码口令、`requirements.txt` 与实际 import 逐条核对一致。
+
+### 验证
+
+- **新建 `test_v115.py` 30/30**（12段：CSP 含 `unsafe-eval`、graphviz 两 js 可访问、设置面板 7 选项卡与 3 子选项卡、`.kb-list` ≥12 行、42 组标签配平、`/api/status` 三段字段与分区可读写、`/api/app-log` 倒序与 `exists`、未登录 401、版本号一致性）。
+- **全量回归全绿**：`test_v115` 30/30、`test_audit114` 189/189、`test_v114` 37/37、`test_v113` 79/79、`test_v406` 12/12、`test_v407` 17/17、`test_v112` 30/30、`test_smoke_pkg` 53/53、`test_smoke_new` 17/17、`test_lan_login` 9/9 —— **合计 473/473**。
+- 产物：`releases/com.mian38.vditor_1.1.5.fpk`（**4,527,135** 字节，md5 `a43b90dbaba074d866e2e81d7ecbbafb`）、`releases/vditor-nas-1.1.5.tar.gz`（**4,507,989** 字节，md5 `5f91455d06ee76e781459a9910b83450`，370 文件 / 27 目录）。
+- fpk 包内校验：外层 22 条目，内层 `app.tgz` 371 文件；`LICENSE` / `echarts/LICENSE` / `echarts/NOTICE` / 上游 `vditor/LICENSE` 四份许可齐备，**无 `__pycache__` 混入**；`APP_VERSION = "1.1.5"`、`service_port=3838`、`author=mian38`、`homepage` 均正确；CSP 含 `unsafe-eval`、`/api/status` 与 `/api/app-log` 路由、`vditorGraphVizScript` 标签、`session-mask` 遮罩、7 个顶级选项卡（`data-page` 共 11 处）全部在包内就位。
+
+> **踩坑备查 · 批量插 SPDX 必须先探测换行符**：`core.autocrlf=true` 但仓库内**换行符混存**（部分文件磁盘上是 LF）。首版脚本硬编码 `split(b"\r\n")`，对 11 个 LF 文件等价于「整文件当一行」，SPDX 被追加到了文件**末尾**（`sys.exit(main())` 之后）。已全部回滚重做，改为先抽样探测 `nl = b"\r\n" if b"\r\n" in raw[:200] else b"\n"`。跨文件批量改文本前务必先确认换行符。
+
+> **踩坑备查 · `manifest` 子串匹配会误判**：`assert "homepage=" not in raw` 会被 `desc=` 值内明文命中，须按行精确匹配 `l.startswith(b"homepage=")`；且行尾可能带 `\r`，比较前要 `split(b"\r\n")`。
 
 ## 1.1.4
 

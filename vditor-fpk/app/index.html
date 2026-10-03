@@ -531,7 +531,6 @@
             </span>
             <div class="top-actions">
                 <span class="user" id="user-label"></span>
-                <button id="btn-word-help" class="ghost" title="使用指南（点击查看本应用功能详解）">?</button>
                 <button id="btn-logout" class="ghost">退出</button>
                 <button id="btn-settings" class="ghost">设置</button>
                 <button id="btn-export-md" class="ghost">导出 .md</button>
@@ -571,14 +570,26 @@
     </div>
 </div>
 
-<!-- 设置面板（合并文件夹设置 / 安全 / 版本 / 维护）-->
+<!-- 设置面板（选项卡：文件夹 / 安全 / 版本 / 上传 / 维护 / 外观 / 关于与帮助）-->
 <div id="settings-mask" class="modal-mask">
     <div id="settings-card" class="modal-card">
         <div class="set-head">
             <h2>设置</h2>
             <button class="close" id="settings-close">×</button>
         </div>
+        <div class="set-tabs" id="set-tabs">
+            <button type="button" class="on" data-page="pg-folders">文件夹</button>
+            <button type="button" data-page="pg-security">安全</button>
+            <button type="button" data-page="pg-version">版本与自动保存</button>
+            <button type="button" data-page="pg-upload">上传</button>
+            <button type="button" data-page="pg-maint">维护</button>
+            <button type="button" data-page="pg-appearance">外观</button>
+            <button type="button" data-page="pg-about">关于与帮助</button>
+        </div>
         <div class="set-body">
+
+        <!-- ===== 选项卡：文件夹 ===== -->
+        <div class="set-page on" id="pg-folders">
             <section class="set-sec">
                 <h3>文件夹设置</h3>
                 <div id="folders-list"></div>
@@ -592,6 +603,10 @@
                 <div id="folders-err"></div>
                 <p class="sub">在此添加 NAS 上的文件夹作为文档分区，各文件夹独立分区、互不混淆。需要在 fnOS 系统的本应用设置「访问权限」中允许访问对应文件夹。<br>同时列出<b>系统默认分区路径</b>：可对其执行「隐藏」（不删除对应目录文件，仅是本应用不再显示），隐藏后可执行「恢复」。</p>
             </section>
+        </div>
+
+        <!-- ===== 选项卡：安全 ===== -->
+        <div class="set-page" id="pg-security">
             <section class="set-sec">
                 <h3>安全设置</h3>
                 <div class="set-pw">
@@ -613,6 +628,10 @@
                     <div id="pw-err"></div>
                 </div>
             </section>
+        </div>
+
+        <!-- ===== 选项卡：版本与自动保存 ===== -->
+        <div class="set-page" id="pg-version">
             <section class="set-sec">
                 <h3>文件版本与自动保存</h3>
                 <label class="set-toggle"><input type="checkbox" id="set-versioning"> 启用文件历史版本（每次手动/自动保存均生成可回溯版本）</label>
@@ -625,6 +644,10 @@
                     <input type="number" id="set-autosave" min="10" max="3600" value="60">
                 </div>
             </section>
+        </div>
+
+        <!-- ===== 选项卡：上传 ===== -->
+        <div class="set-page" id="pg-upload">
             <section class="set-sec">
                 <h3>上传设置</h3>
                 <div class="set-num">
@@ -643,6 +666,10 @@
                     <p class="sub">上传时只有命中黑名单的文件格式会被拒绝，其余格式一律放行（默认已预置可执行文件、脚本等高风险类型，可在下方自由追加或删除）。被拒绝的文件可在下方列表中删除对应条目后重新上传。</p>
                 </div>
             </section>
+        </div>
+
+        <!-- ===== 选项卡：维护 ===== -->
+        <div class="set-page" id="pg-maint">
             <section class="set-sec">
                 <h3>维护</h3>
                 <div class="set-pw">
@@ -661,8 +688,15 @@
                     </div>
                 </div>
                 <div class="set-pw">
-                    <h4>登录日志</h4>
-                    <button class="ghost action" id="btn-view-log">查看登录日志</button>
+                    <h4>状态与日志</h4>
+                    <p class="sub">展示应用当前所处状态（浏览器、网络环境、服务器信息），便于排查问题。</p>
+                    <dl class="kv-list" id="status-list"></dl>
+                    <div class="frow">
+                        <button class="action" id="btn-refresh-status">刷新状态</button>
+                        <button class="ghost action" id="btn-view-app-log">查看应用日志</button>
+                        <button class="ghost action" id="btn-view-log">查看登录日志</button>
+                    </div>
+                    <div id="app-log-box" style="display:none;"></div>
                     <div id="log-box" style="display:none;"></div>
                 </div>
                 <div class="set-pw">
@@ -671,6 +705,10 @@
                     <p class="sub">默认不勾选，在 fnOS 卸载本应用后保留应用数据（登录密码、Web 设置、上传文件、历史版本缓存等），重装后直接恢复。<br>勾选后，卸载时将彻底删除所有应用数据。如果需要全新安装，请勾选此选项后再卸载。<br>您的 Markdown 文档文件始终保留，不受该选项影响。</p>
                 </div>
             </section>
+        </div>
+
+        <!-- ===== 选项卡：外观 ===== -->
+        <div class="set-page" id="pg-appearance">
             <section class="set-sec">
                 <h3>外观设置</h3>
                 <label class="set-toggle"><input type="checkbox" id="set-dark-mode"> 深色模式</label>
@@ -684,9 +722,102 @@
                 <p class="sub">此处仅控制前端网页标题与图标，fnOS 内显示的本应用名与图标不受此处影响。</p>
             </section>
         </div>
+
+        <!-- ===== 选项卡：关于与帮助 ===== -->
+        <div class="set-page" id="pg-about">
+            <section class="set-sec">
+                <h3>关于与帮助</h3>
+
+                <div class="set-sub">
+                    <h4>帮助（使用指南）</h4>
+                    <p class="sub">本应用的完整功能说明与上手指引。</p>
+                    <button id="btn-word-help" class="action" title="使用指南（点击查看本应用功能详解）">？ 使用指南</button>
+                </div>
+
+                <div class="set-sub">
+                    <h4>快捷键</h4>
+                    <p class="sub">本应用与内置编辑器支持的常用快捷键。表格中的按键需在编辑器或本页面获得焦点时使用。</p>
+                    <table class="kb-list">
+                        <thead>
+                            <tr><th>分类</th><th>按键</th><th>作用</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>保存当前文档</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>撤销</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>重做</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>加粗</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>I</kbd></td><td>斜体</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>插入链接</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd></td><td>一级标题</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>2</kbd></td><td>二级标题</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>0</kbd></td><td>正文（无标题）</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Tab</kbd></td><td>源码模式下缩进；列表模式下降级列表项</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Enter</kbd></td><td>列表模式下新建同级列表项</td></tr>
+                            <tr><td>本应用</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>保存当前文档（与应用内「保存」按钮一致）</td></tr>
+                            <tr><td>本应用</td><td><kbd>Esc</kbd></td><td>关闭当前打开的弹窗（设置 / 历史版本 / 使用指南等）</td></tr>
+                            <tr><td>本应用</td><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>在登录页快速进入（等同点击「进入」）</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="set-sub">
+                    <h4>关于本应用</h4>
+                    <p class="about-p">
+                        <b>Vditor 编辑器</b> 是一个运行在 NAS 上的轻量级在线 Markdown 文档工具。
+                        采用非 Docker 部署，由系统进程直接运行；后端仅使用 Python 标准库，
+                        <b>零第三方运行时依赖</b>，文档直接以Markdown 文件形式存放在你指定的 NAS 目录中，
+                        可经 SMB / FTP 直接访问，数据完全自主掌控。
+                    </p>
+                    <dl class="kv-list">
+                        <dt>应用版本</dt><dd id="about-version">—</dd>
+                        <dt>编辑器内核</dt><dd>Vditor 4.0.0（MIT）</dd>
+                        <dt>开发人员</dt><dd>mian38</dd>
+                        <dt>项目地址</dt><dd><a href="https://github.com/mian38/vditor-nas" target="_blank" rel="noopener">github.com/mian38/vditor-nas</a></dd>
+                    </dl>
+                </div>
+
+                <div class="set-sub">
+                    <h4>开源协议与法律声明</h4>
+                    <p class="about-p">
+                        本应用源码采用 <b>MIT 许可</b>，Copyright (c) 2026 mian38。
+                        可自由使用、修改、再分发与商用，但须保留版权声明与许可声明。
+                    </p>
+                    <p class="about-p">
+                        内置编辑器内核 <b>Vditor 4.0.0</b> 由 Vditor 项目（B3log 开源）开发，
+                        同样采用 MIT 许可，版权归其作者所有。
+                    </p>
+                    <p class="about-p">
+                        应用随包分发多个第三方渲染组件，<b>它们各自保留原始许可，不适用本应用的 MIT 许可</b>。
+                        其中 Apache ECharts 采用 <b>Apache-2.0</b>（含 NOTICE 保留义务），
+                        <b>KaTeX 的字体文件采用 SIL OFL 1.1</b>（并非 MIT）。
+                        完整的第三方组件清单、许可与版权归属见项目仓库中的
+                        <code>THIRD_PARTY_NOTICES.md</code>。
+                    </p>
+                    <p class="about-p">
+                        本应用按「现状」提供，不作任何明示或默示担保。
+                        用户自行负责所存内容的合规性与备份；请勿将本应用用于存储涉密或受监管的数据。
+                    </p>
+                </div>
+            </section>
+        </div>
+
         <div class="set-foot">
             <button class="action" id="settings-save">保存设置</button>
             <button class="ghost action" id="settings-close2">关闭</button>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- 会话超时提示（1.1.5）：会话失效时由全局 fetch 拦截器触发 -->
+<div id="session-mask" class="modal-mask" style="display:none;">
+    <div class="modal-card">
+        <div class="sess-icon">🔒</div>
+        <p class="sess-title">已退出登录</p>
+        <p class="sess-desc">因长时间未操作，登录会话已过期。<br>为保障文档安全，应用已自动退出登录，请重新登录后继续使用。</p>
+        <div class="sess-actions">
+            <button class="action" id="btn-session-reload">刷新页面并重新登录</button>
+            <button class="ghost action" id="btn-session-close">稍后处理</button>
         </div>
     </div>
 </div>
@@ -774,6 +905,12 @@
     <div class="toast" id="toast"></div>
 
 <script src="/vditor/dist/index.min.js"></script>
+<!-- Graphviz（dot 图）渲染支持。
+     Vditor 的 graphvizRenderAdapter 会读取 #vditorGraphVizScript 的 src，
+     用 src.replace("viz.js", "full.render.js") 反推出同目录的 full.render.js，
+     再以 Blob + importScripts 构造 Web Worker 后调用 Viz({worker}) 渲染。
+     缺少本标签时 getElementById 返回 null，Graphviz 代码块只会原样显示 dot 源码。 -->
+<script id="vditorGraphVizScript" src="/vditor/dist/js/graphviz/viz.js"></script>
 <!-- 编辑器默认内容：Vditor 官方 demo 预置的 Markdown 教程（原文内嵌） -->
 <script type="text/markdown" id="welcome-md">
 Vditor 是一款**所见即所得**编辑器，支持 *Markdown*。
@@ -1181,6 +1318,46 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         clearTimeout(t._timer);
         t._timer = setTimeout(() => t.classList.remove('show'), 1800);
     }
+
+    // ---------- 会话失效拦截（1.1.5） ----------
+    // 背景：会话超时后，服务端对所有读写接口返回 401。此前前端各处裸调 fetch
+    // 且不检查状态码，操作既无反应也无提示，必须手动刷新页面才能重新登录。
+    // 现包装全局 fetch：一旦命中 401 即弹出会话超时提示，并提供刷新按钮。
+    // 排除项：登录/设置/登出本身返回 401 属正常业务反馈，由各自逻辑处理。
+    const AUTH_EXEMPT = ['/api/login', '/api/setup', '/api/logout', '/api/auth/check'];
+    let sessionExpiredShown = false;
+    function showSessionExpired() {
+        if (sessionExpiredShown) return;
+        sessionExpiredShown = true;
+        document.getElementById('session-mask').style.display = 'flex';
+    }
+    (function installSessionGuard() {
+        const rawFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+            const url = typeof input === 'string' ? input : (input && input.url) || '';
+            // 只拦应用自身的 API 请求，不影响 Vditor 内部第三方资源请求
+            const isApi = /\/api\//.test(url);
+            const exempt = AUTH_EXEMPT.some(u => url.indexOf(u) !== -1);
+            return rawFetch(input, init).then(function (res) {
+                if (isApi && !exempt && res && res.status === 401) {
+                    showSessionExpired();
+                }
+                return res;
+            }).catch(function (err) {
+                // 会话失效时若连接被服务端关闭，同样给出提示，避免"点了没反应"
+                if (isApi && !exempt) showSessionExpired();
+                throw err;
+            });
+        };
+    })();
+    document.addEventListener('DOMContentLoaded', function () {
+        const reload = document.getElementById('btn-session-reload');
+        const close = document.getElementById('btn-session-close');
+        if (reload) reload.addEventListener('click', function () { location.reload(); });
+        if (close) close.addEventListener('click', function () {
+            document.getElementById('session-mask').style.display = 'none';
+        });
+    });
 
     let vditor = null;
     let currentRoot = null;     // 当前打开文件所属分区 id
@@ -1785,6 +1962,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         loadSettings();
         refreshFolders();
         document.getElementById('settings-mask').style.display = 'flex';
+        // 每次打开回到首个选项卡，避免停留在上次的「状态与日志」等页
+        if (typeof selectSetPage === 'function') selectSetPage('pg-folders');
     }
     function closeSettings() {
         document.getElementById('settings-mask').style.display = 'none';
@@ -2448,6 +2627,117 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         document.getElementById('pw-change').addEventListener('click', changePassword);
         document.getElementById('btn-backup').addEventListener('click', doBackup);
         document.getElementById('btn-view-log').addEventListener('click', viewLog);
+
+        // ---------- 1.1.5：设置面板选项卡 ----------
+        (function setupSetTabs() {
+            const tabs = document.getElementById('set-tabs');
+            if (!tabs) return;
+            tabs.addEventListener('click', function (e) {
+                const btn = e.target.closest('button[data-page]');
+                if (!btn) return;
+                selectSetPage(btn.getAttribute('data-page'));
+            });
+        })();
+        function selectSetPage(pageId) {
+            document.querySelectorAll('#set-tabs button[data-page]').forEach(b => {
+                b.classList.toggle('on', b.getAttribute('data-page') === pageId);
+            });
+            document.querySelectorAll('#settings-card .set-page').forEach(p => {
+                p.classList.toggle('on', p.id === pageId);
+            });
+            // 切到「维护」时自动刷新状态，便于随时查看最新运行状况
+            if (pageId === 'pg-maint') refreshStatus();
+        }
+
+        // ---------- 1.1.5：应用状态 ----------
+        function fmtDuration(sec) {
+            sec = Math.max(0, parseInt(sec || 0, 10));
+            const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600),
+                  m = Math.floor((sec % 3600) / 60);
+            if (d) return d + ' 天 ' + h + ' 小时';
+            if (h) return h + ' 小时 ' + m + ' 分';
+            if (m) return m + ' 分 ' + (sec % 60) + ' 秒';
+            return sec + ' 秒';
+        }
+        function kv(dl, k, v, cls) {
+            const dt = document.createElement('dt'); dt.textContent = k;
+            const dd = document.createElement('dd'); dd.textContent = v;
+            if (cls) dd.className = cls;
+            dl.appendChild(dt); dl.appendChild(dd);
+        }
+        function refreshStatus() {
+            const dl = document.getElementById('status-list');
+            if (!dl) return;
+            dl.innerHTML = '';
+            kv(dl, '状态', '读取中…');
+            fetch('/api/status').then(r => r.json()).then(d => {
+                dl.innerHTML = '';
+                if (d.error) { kv(dl, '状态', '读取失败：' + d.error, 'warn'); return; }
+                const a = d.app || {}, n = d.network || {}, s = d.security || {};
+
+                kv(dl, '应用版本', a.version || '—');
+                kv(dl, '运行状态', '运行中（已运行 ' + fmtDuration(a.uptime) + '）', 'ok');
+                kv(dl, '监听地址', (a.host || '0.0.0.0') + ' : ' + (a.port || '—'));
+                kv(dl, '运行环境', 'Python ' + (a.python || '—') + ' / ' + (a.platform || '—'));
+
+                kv(dl, '浏览器', navigator.userAgent || '—');
+                kv(dl, '屏幕分辨率', window.screen.width + ' × ' + window.screen.height +
+                   '（缩放 ' + (window.devicePixelRatio || 1) + 'x）');
+                kv(dl, '显示语言', navigator.language || '—');
+                kv(dl, '网络协议', (n.proto || 'http') + (n.isHttps ? '（已加密）' : '（未加密）'),
+                   n.isHttps ? 'ok' : 'warn');
+                kv(dl, '访问来源', n.isLan ? '局域网' : '外部网络', n.isLan ? 'ok' : 'warn');
+                kv(dl, '客户端 IP', (n.clientIp || '—') + (n.clientIp !== n.directIp ? '（经代理，原始 ' + n.directIp + '）' : ''));
+                kv(dl, '信任反向代理', n.trustProxy ? '已开启' : '未开启');
+                kv(dl, 'Cookie Secure', n.secureCookie ? '已开启' : '未开启');
+                kv(dl, '登录会话', s.hasSession ? '有效' : '已失效', s.hasSession ? 'ok' : 'warn');
+                kv(dl, '上传大小上限', (s.maxUploadMb || '—') + ' MB');
+                kv(dl, '历史版本', s.versioning ? '已开启' : '未开启');
+                kv(dl, '自动保存间隔', (s.autosaveSec || '—') + ' 秒');
+                kv(dl, '日志文件', d.logFile || '—');
+
+                (a.docRoots || []).forEach(r => {
+                    kv(dl, '分区：' + (r.name || '(未命名)'),
+                       r.path + '　' + (!r.exists ? '目录不存在' : (r.writable ? '可读写' : '只读')),
+                       r.exists && r.writable ? 'ok' : 'warn');
+                });
+            }).catch(() => {
+                dl.innerHTML = '';
+                kv(dl, '状态', '读取失败，请检查网络连接', 'warn');
+            });
+        }
+
+        // ---------- 1.1.5：应用运行日志 ----------
+        function viewAppLog() {
+            const box = document.getElementById('app-log-box');
+            box.style.display = 'block';
+            box.innerHTML = '<div class="logitem"><span class="lt">加载中…</span></div>';
+            fetch('/api/app-log').then(r => r.json()).then(d => {
+                if (!d.exists) {
+                    box.innerHTML = '<div class="logitem"><span class="lt">未找到应用日志文件。' +
+                        '该文件由 fnOS 部署时自动生成（路径 ' + escapeHtml(d.path || '未知') +
+                        '）；若你是手动运行 python3 server.py 启动，则日志输出到终端，不会生成此文件。</span></div>';
+                    return;
+                }
+                const lines = d.lines || [];
+                const head = '<div class="logitem"><span class="lt">共 ' + lines.length +
+                    ' 行' + (d.truncated ? '（仅显示末尾部分）' : '') +
+                    '，文件大小 ' + d.size + ' 字节</span></div>';
+                if (!lines.length) { box.innerHTML = head + '<div class="logitem"><span class="lt">日志为空</span></div>'; return; }
+                box.innerHTML = head + lines.map(ln =>
+                    '<div class="logitem"><span class="lip">' + escapeHtml(ln) + '</span></div>').join('');
+            }).catch(() => {
+                box.innerHTML = '<div class="logitem"><span class="lt">读取日志失败</span></div>';
+            });
+        }
+
+        document.getElementById('btn-refresh-status').addEventListener('click', refreshStatus);
+        document.getElementById('btn-view-app-log').addEventListener('click', viewAppLog);
+        // 「?」（使用指南）控件已移入设置 → 关于与帮助 → 帮助（沿用原 id，事件绑定见上）
+        fetch('/api/status').then(r => r.json()).then(d => {
+            const el = document.getElementById('about-version');
+            if (el && d.app) el.textContent = d.app.version;
+        }).catch(() => {});
         document.getElementById('btn-export-config').addEventListener('click', exportConfig);
         document.getElementById('btn-import-config').addEventListener('click', () => document.getElementById('import-config-file').click());
         document.getElementById('import-config-file').addEventListener('change', importConfig);

@@ -18,7 +18,7 @@ Vditor NAS 轻量服务器（安全增强版 · 多分区）
 用法:
     python3 server.py
 环境变量:
-    VDITOR_PORT        监听端口 (默认 9000)
+    VDITOR_PORT        监听端口 (默认 3838)
     VDITOR_HOST        监听地址 (默认 0.0.0.0)
     VDITOR_DOC_DIRS    多分区定义: 名称::路径,名称::路径 (优先)
     VDITOR_DOC_DIR     单目录回退 (默认 docs)
@@ -68,13 +68,16 @@ from vd_util import (
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.1.4"
+APP_VERSION = "1.1.5"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# 进程启动时刻（用于「状态与日志」展示运行时长）
+START_TIME = time.time()
+
 # ---------------- 配置 ----------------
 def load_config():
-    cfg = {"PORT": "9000", "HOST": "0.0.0.0"}
+    cfg = {"PORT": "3838", "HOST": "0.0.0.0"}
     env_file = os.path.join(BASE_DIR, "config.env")
     if os.path.isfile(env_file):
         with open(env_file, "r", encoding="utf-8") as f:
@@ -84,7 +87,7 @@ def load_config():
                     continue
                 k, v = line.split("=", 1)
                 cfg[k.strip()] = v.strip().strip('"').strip("'")
-    port = int(os.environ.get("VDITOR_PORT", cfg.get("PORT", "9000")))
+    port = int(os.environ.get("VDITOR_PORT", cfg.get("PORT", "3838")))
     host = os.environ.get("VDITOR_HOST", cfg.get("HOST", "0.0.0.0"))
     return host, port
 
@@ -331,6 +334,36 @@ def load_login_log(limit=200):
         return entries[-limit:][::-1]  # 倒序（最新在前）
     except Exception:
         return []
+
+
+# ---------------- 应用运行日志（1.1.5） ----------------
+# fnOS 部署下由 cmd/main 把 server.py 的 stdout/stderr 重定向到
+# ${TRIM_PKGVAR}/vditor.log；非 fnOS 部署（手动 python3 server.py）无此文件，
+# 此时接口返回 exists=False，前端据此提示"未找到日志文件"。
+APP_LOG_FILE = os.path.join(os.environ.get("TRIM_PKGVAR", ""), "vditor.log") \
+    if os.environ.get("TRIM_PKGVAR") else os.path.join(BASE_DIR, "vditor.log")
+APP_LOG_MAX_BYTES = 512 * 1024  # 最多读取末尾 512 KB，避免大日志拖慢响应
+
+
+def load_app_log(limit=400):
+    """读取应用运行日志末尾若干行。文件不存在时返回 exists=False。"""
+    info = {"exists": False, "path": APP_LOG_FILE, "lines": [], "size": 0, "truncated": False}
+    try:
+        if not os.path.isfile(APP_LOG_FILE):
+            return info
+        info["size"] = os.path.getsize(APP_LOG_FILE)
+        with open(APP_LOG_FILE, "rb") as f:
+            if info["size"] > APP_LOG_MAX_BYTES:
+                f.seek(-APP_LOG_MAX_BYTES, os.SEEK_END)
+                info["truncated"] = True
+            raw = f.read()
+        text = raw.decode("utf-8", "replace")
+        lines = [ln for ln in text.splitlines()]
+        info["lines"] = lines[-limit:][::-1]  # 倒序（最新在上）
+        info["exists"] = True
+        return info
+    except Exception:
+        return info
 
 def get_session(handler):
     _sweep_sessions()
@@ -664,8 +697,13 @@ SEC_HEADERS = {
         # 允许外链图片（图床等），否则外部图片会被浏览器 CSP 拦截无法显示
         "img-src 'self' data: blob: https: http:; "
         "style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; "
+        # 'unsafe-eval' 必需：① ECharts 渲染器用 new Function 动态生成函数；
+        # ② Graphviz 渲染用 Blob + importScripts 构造 Web Worker。
+        # 去掉这两项图表全部无法渲染（实测 echarts 直接抛 EvalError）。
+        # 缓解措施：script-src 仍限定 'self'，不放开任何外部脚本来源。
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
         "font-src 'self' data:; "
+        # 'wasm-unsafe-eval' 供 KaTeX 等可能用 WebAssembly 的渲染路径
         "connect-src 'self'"
     ),
 }
@@ -785,6 +823,52 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _build_status(self):
+        """汇总应用当前所处状态（1.1.5「状态与日志」子选项卡用）。
+
+        全部为**只读**信息，不含任何密钥、口令或哈希；供用户排查问题。
+        """
+        direct = self.client_address[0]
+        lan = is_private_ip(direct)
+        proto = trusted_forwarded_proto(self)
+        sess = get_session(self)
+        roots = []
+        for r in build_doc_roots():
+            p = r.get("path") or ""
+            ok = os.path.isdir(p)
+            roots.append({
+                "name": r.get("name") or "", "path": p, "exists": ok,
+                "writable": bool(ok and os.access(p, os.W_OK)),
+            })
+        return {
+            "app": {
+                "version": APP_VERSION,
+                "python": sys.version.split()[0],
+                "platform": sys.platform,
+                "uptime": int(time.time() - START_TIME),
+                "port": PORT,
+                "host": HOST,
+                "docRoots": roots,
+            },
+            "network": {
+                "clientIp": client_ip(self),
+                "directIp": direct,
+                "isLan": lan,
+                "proto": proto,
+                "isHttps": proto == "https",
+                "trustProxy": bool(SETTINGS.get("trust_proxy")),
+                "secureCookie": bool(SETTINGS.get("secure_cookie")),
+            },
+            "security": {
+                "needsSetup": NEEDS_SETUP,
+                "hasSession": sess is not None,
+                "maxUploadMb": SETTINGS.get("upload_max_mb"),
+                "versioning": SETTINGS.get("versioning"),
+                "autosaveSec": SETTINGS.get("autosave_sec"),
+            },
+            "logFile": APP_LOG_FILE,
+        }
+
     # ---------------- GET ----------------
     def do_GET(self):
         self._pending_cookie = None
@@ -826,6 +910,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/login-log":
             if not self._require_auth(): return
             self._send_json({"entries": load_login_log()})
+            return
+        if path == "/api/app-log":
+            if not self._require_auth(): return
+            self._send_json(load_app_log())
+            return
+        if path == "/api/status":
+            if not self._require_auth(): return
+            self._send_json(self._build_status())
             return
         if path == "/api/versions":
             if not self._require_auth(): return

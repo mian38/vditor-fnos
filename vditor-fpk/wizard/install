@@ -6,7 +6,7 @@
         "type": "text",
         "field": "app_port",
         "label": "浏览器访问端口",
-        "initValue": "9000",
+        "initValue": "3838",
         "rules": [
           { "required": true, "message": "请输入端口" },
           { "pattern": "^[0-9]+$", "message": "端口必须为数字" },
@@ -15,13 +15,19 @@
       },
       {
         "type": "tips",
-        "helpText": "该端口用于浏览器访问 Vditor 编辑器。安装完成后，请视需要在 fnOS 「设置→安全/防火墙」中放行此 TCP 端口。"
+        "helpText": "该端口用于浏览器访问 Vditor 编辑器。安装完成后，请视需要在 fnOS「设置→安全/防火墙」中放行此 TCP 端口。"
       }
     ]
   },
   {
     "stepTitle": "文档存储文件夹",
     "items": [
+      {
+        "type": "text",
+        "field": "doc_partition_name",
+        "label": "分区显示名（可留空）",
+        "initValue": "我的文档"
+      },
       {
         "type": "text",
         "field": "doc_dir",
@@ -32,7 +38,7 @@
       },
       {
         "type": "tips",
-        "helpText": "Vditor 编辑器应用将把此目录作为默认文档分区。需填写绝对路径（例：/vol1/1000/vditor）。<br><br>默认留空，即使用默认目录（/vol&lt;安装本应用的存储空间编号&gt;/@appshare/vditor-docs）。<br><br>若在此自定义目录，需要在 fnOS 系统应用设置中允许本应用访问对应文件夹。<br><br>安装完成后也可在编辑器「设置→文件夹设置」中按绝对路径添加 NAS 上其他目录，并允许本应用访问对应文件夹。"
+        "helpText": "此处填写的目录会<b>直接作为编辑器左侧的一个文档分区</b>生效，与「设置 → 文件夹设置」中添加的分区完全等价（显示名 + 绝对路径两项）。<br><br>默认留空，即使用默认目录（/vol&lt;安装本应用的存储空间编号&gt;/@appshare/vditor-docs），并以默认名称显示为分区。<br><br>若在此自定义目录，需要在 fnOS 系统应用设置中允许本应用访问对应文件夹。<br><br>安装完成后也可在「设置 → 文件夹设置」中继续按绝对路径添加 NAS 上其他目录。"
       }
     ]
   }

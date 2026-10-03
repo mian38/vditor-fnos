@@ -50,5 +50,7 @@ git checkout v1.1.4 -- vditor-fpk/app/server.py
 
 | 文件 | 字节 | md5 |
 | --- | --- | --- |
+| `com.mian38.vditor_1.1.5.fpk` | 4,527,135 | `a43b90dbaba074d866e2e81d7ecbbafb` |
+| `vditor-nas-1.1.5.tar.gz` | 4,507,989 | `5f91455d06ee76e781459a9910b83450` |
 | `com.mian38.vditor_1.1.4.fpk` | 4,516,769 | `30a2d3fcecb592bc2a3bf587b8fea22d` |
 | `vditor-nas-1.1.4.tar.gz` | 4,470,136 | `4bf5fdc1ac6b3a0ac38cce064df6688c` |

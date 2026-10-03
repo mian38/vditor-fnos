@@ -2,7 +2,7 @@
 # Vditor NAS 安装脚本（飞牛 FnOS / 任意 systemd Linux，无需 Docker）
 # 用法:
 #   sudo bash install.sh                 # 默认装到 /opt/vditor-nas，交互输入端口
-#   sudo bash install.sh /opt/vditor-nas 9000   # 指定目录与端口
+#   sudo bash install.sh /opt/vditor-nas 3838   # 指定目录与端口
 set -e
 
 SRC="$(cd "$(dirname "$0")" && pwd)"

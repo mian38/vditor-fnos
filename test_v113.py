@@ -322,11 +322,11 @@ check("normalize strips dots/case", normalize_ext_list(" .EXE , dll ") == ["exe"
 check("normalize dedupes", normalize_ext_list("exe,exe,EXE") == ["exe"], "")
 check("empty blacklist denies nothing", is_denied_upload("x.exe", "") == "", "")
 
-# 版本号已升到 1.1.4
+# 版本号已升到 1.1.5
 server_py = open(os.path.join(APP, "server.py"), encoding="utf-8").read()
 manifest = open(os.path.join(BASE, "vditor-fpk", "manifest"), encoding="utf-8").read()
-check("APP_VERSION = 1.1.4", 'APP_VERSION = "1.1.4"' in server_py, "")
-check("manifest version=1.1.4", "version=1.1.4" in manifest, "")
+check("APP_VERSION = 1.1.5", 'APP_VERSION = "1.1.5"' in server_py, "")
+check("manifest version=1.1.5", "version=1.1.5" in manifest, "")
 
 for p in (pA, pB, pC):
     try:
