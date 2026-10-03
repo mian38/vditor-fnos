@@ -63,6 +63,8 @@ MUST = [
     ("overflow-x: hidden;", "内容区关闭横向滚动（overflow-y:auto 会隐式开启 overflow-x）"),
     (".set-sub h3 {", "子选项标题用 h3（1.2.4 起子选项升级为第一层标题）"),
     ('.set-sub:first-of-type { border-top: none;', "首个子选项无分隔线"),
+    # ↓ 1.2.5 新增：信息对话框按钮行窄屏可左右滑动（缺此项则窄屏下最左「历史版本」被遮挡）
+    ("#doc-info-card .set-foot", "信息对话框按钮行窄屏可左右滑动"),
 ]
 GONE = ["#2f6bff", "#3a3f47", "#e54848", "#f0f2f5", "#f3f4f6", "#1f2329"]
 

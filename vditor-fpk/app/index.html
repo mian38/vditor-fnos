@@ -307,6 +307,14 @@
             display: flex; gap: 8px; justify-content: flex-end;
             border-top: 1px solid var(--c-border-2); padding-top: 14px;
         }
+        /* 1.2.5：信息对话框按钮行在窄屏下可左右滑动，避免最左「历史版本」被遮挡（复用顶栏 overflow-x:auto 方案） */
+        @media screen and (max-width: 560px) {
+            #doc-info-card .set-foot {
+                overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap;
+                justify-content: flex-start; flex-wrap: nowrap;
+            }
+            #doc-info-card .set-foot button { flex: 0 0 auto; }
+        }
         #pw-err, #folders-err, #upload-deny-err { color: var(--c-danger); font-size: var(--fs-sm); margin-top: 8px; min-height: 14px; }
         /* 校验通过时的一句绿色提示，与上面的错误提示同位置、同字号，颜色区分 */
         #upload-deny-err.ok { color: var(--c-text-3); }
@@ -803,6 +811,7 @@
                     <p class="sub">默认勾选。从 X-Forwarded-For 取真实客户端 IP，用于判断网络环境、登录日志显示、防爆破计数与会话绑定。需经反向代理和内网穿透访问时建议开启。</p>
                     <label class="set-toggle"><input type="checkbox" id="set-secure-cookie"> 强制 Cookie Secure 标记</label>
                     <p class="sub">默认勾选。强制通过 HTTPS 传输登录凭证，避免 HTTP 明文被抓包窃取。外网访问时建议保持开启，需自行解决 HTTPS 访问环境，局域网直连 HTTP 可正常访问，不受影响。关闭后，公网 HTTP 也可正常登录使用，但安全性降低。</p>
+                    <p class="sub">本应用为<b>纯 HTTP 服务，不提供 HTTPS</b>，请勿使用 https:// 直接访问。出于安全考虑，<b>暂不支持以 公网IP/域名:3838 的形式在公网直接访问</b>。如需在公网环境使用，请通过<b>反向代理 / 内网穿透</b>在公网侧终止 HTTPS，再由代理以 HTTP 转发到本应用（并开启上方两项安全选项）。</p>
                 </div>
                 <div class="set-sub">
                     <h3>修改登录密码</h3>
@@ -995,12 +1004,16 @@
                 <h2>文档信息</h2>
                 <button class="close" id="doc-info-close">×</button>
             </div>
-            <div class="sub" id="doc-info-path"></div>
-            <div class="sub" id="doc-info-abs"></div>
-            <div class="sub" id="doc-info-meta"></div>
+            <dl class="kv-list" id="doc-info-list">
+                <dt>相对路径</dt><dd id="doc-info-path"></dd>
+                <dt>绝对路径</dt><dd id="doc-info-abs"></dd>
+                <dt>大小</dt><dd id="doc-info-size"></dd>
+                <dt>修改时间</dt><dd id="doc-info-mtime"></dd>
+                <dt>历史版本数</dt><dd id="doc-info-versions"></dd>
+            </dl>
             <div class="set-foot">
                 <button class="ghost action" id="btn-history">历史版本</button>
-                <button class="danger action" id="doc-info-delete">删除文档（含全部历史版本）</button>
+                <button class="ghost action" id="doc-info-delete">删除文档（含全部历史版本）</button>
                 <button class="ghost action" id="doc-info-close2">关闭</button>
             </div>
         </div>
@@ -1035,6 +1048,7 @@
 
                 <p class="g-h">七、账号与访问</p>
                 <p>首次进入需设置管理员密码，之后凭密码访问。忘记密码：请在 fnOS 终端中执行命令 <code>vditor reset-password</code>，按指引重置密码。</p>
+                <p><b>访问方式</b>：本应用默认使用 <b>3838 端口</b>，在局域网内通过 <b>局域网IP:3838</b> 访问（将 IP 换成本机局域网 IP）。本应用为纯 HTTP 服务，不提供 HTTPS，<b>请勿用 https:// 直接访问</b>。出于安全考虑，暂不支持以 公网IP/域名:3838 在公网直接访问；如需暴露至公网，请使用反向代理 / 内网穿透等方案，并在前置代理处启用 HTTPS。</p>
 
                 <p class="g-h">八、字数统计（顶栏）</p>
                 <p><b>正文</b>：渲染后读者实际看到的文字数（不含 Markdown 标记）；<b>含语法</b>：Markdown 源文件字符数（磁盘实际大小）；<b>预计阅读时间</b>：正文字数 ÷ 400（字/分钟，向上取整），仅作粗略参考。</p>
@@ -1701,15 +1715,18 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
     // ---------- 通用确认对话框 ----------
     let _confirmCb = null;
-    function showConfirm(title, msg, onOk) {
+    let _confirmCancel = null;
+    function showConfirm(title, msg, onOk, onCancel) {
         document.getElementById('confirm-title').textContent = title;
         document.getElementById('confirm-msg').textContent = msg;
-        _confirmCb = onOk;
+        _confirmCb = onOk || null;
+        _confirmCancel = onCancel || null;
         document.getElementById('confirm-mask').style.display = 'flex';
     }
     function hideConfirm() {
         document.getElementById('confirm-mask').style.display = 'none';
         _confirmCb = null;
+        _confirmCancel = null;
     }
 
     // ---------- 外观应用（标题 / 图标）----------
@@ -1893,12 +1910,11 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             .then(r => r.json()).then(d => {
                 if (d.error) { toast('获取信息失败：' + d.error); return; }
                 if (!d.exists) { toast('文件不存在'); return; }
-                document.getElementById('doc-info-path').textContent = '相对路径：' + d.path;
-                document.getElementById('doc-info-abs').textContent = '绝对路径：' + d.abspath;
-                const kb = (d.size / 1024).toFixed(2);
-                const dt = new Date(d.mtime * 1000).toLocaleString();
-                document.getElementById('doc-info-meta').textContent =
-                    '大小：' + kb + ' KB · 修改时间：' + dt + ' · 历史版本数：' + d.version_count;
+                document.getElementById('doc-info-path').textContent = d.path;
+                document.getElementById('doc-info-abs').textContent = d.abspath;
+                document.getElementById('doc-info-size').textContent = (d.size / 1024).toFixed(2) + ' KB';
+                document.getElementById('doc-info-mtime').textContent = new Date(d.mtime * 1000).toLocaleString();
+                document.getElementById('doc-info-versions').textContent = d.version_count;
                 document.getElementById('doc-info-mask').style.display = 'flex';
             }).catch(() => toast('获取信息失败'));
     }
@@ -2007,7 +2023,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     }
 
     function newFile(rootId, rootName) {
-        const raw = window.prompt('在分区「' + (rootName || rootId) + '」中新建文件名（将统一保存为 .md）：', '未命名文档.md');
+        const raw = window.prompt('在分区「' + (rootName || rootId) + '」中新建文件名（将统一保存为 .md）：', '未命名文档');
         if (raw === null) return;
         const name = sanitizeName(raw);
         fetch('/api/new', {
@@ -2027,7 +2043,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
     function saveToNas(silent) {
         if (!currentPath) {
-            const raw = window.prompt('尚未选择文件，请输入要保存的文件名（.md）：', '未命名文档.md');
+            const raw = window.prompt('尚未选择文件，请输入要保存的文件名（.md）：', '未命名文档');
             if (raw === null) return;
             const name = sanitizeName(raw);
             const rootId = currentRoot || firstRootId;
@@ -2776,15 +2792,17 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         document.getElementById('btn-upload-favicon').addEventListener('click', uploadFavicon);
         const dmBox = document.getElementById('set-dark-mode');
         if (dmBox) dmBox.addEventListener('change', function () { applyTheme(this.checked ? 'dark' : 'light'); });
-        // 安全开关默认开启，手动关闭需二次确认
+        // 安全开关默认开启，手动关闭需二次确认（与删除文档 / 退出登录 / 导入备份统一使用自定义确认框）
         function attachSecurityConfirm(id, name) {
             const box = document.getElementById(id);
             if (!box) return;
             box.addEventListener('change', function () {
                 if (!this.checked) {
-                    if (!confirm('确定要关闭「' + name + '」吗？\n关闭后将降低安全性（外网访问建议保持开启）。')) {
-                        this.checked = true; // 取消则恢复勾选
-                    }
+                    const el = this;
+                    showConfirm('关闭安全选项',
+                        '确定要关闭「' + name + '」吗？关闭后将降低安全性（外网访问建议保持开启）。',
+                        null,                                  // 确认关闭：保持未勾选，由「保存设置」落盘
+                        function () { el.checked = true; });   // 取消：恢复勾选
                 }
             });
         }
@@ -3012,7 +3030,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     document.getElementById('confirm-ok').addEventListener('click', () => {
         const cb = _confirmCb; hideConfirm(); if (cb) cb();
     });
-    document.getElementById('confirm-cancel').addEventListener('click', hideConfirm);
+    document.getElementById('confirm-cancel').addEventListener('click', function () {
+        const cc = _confirmCancel; hideConfirm(); if (cc) cc();
+    });
 
     // 浏览器端快捷键适配
     document.addEventListener('keydown', function(e) {
@@ -3036,7 +3056,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // 若日后新增弹窗入栈，务必先用 node+vm 确认该 close 符号在顶层可见（见 test_v121.py）。
         if (e.key === 'Escape') {
             const layers = [
-                { mask: 'confirm-mask',   close: hideConfirm },
+                { mask: 'confirm-mask',   close: function () { const cc = _confirmCancel; hideConfirm(); if (cc) cc(); } },
                 { mask: 'doc-info-mask',  close: closeDocInfo },
                 { mask: 'history-mask',   close: closeHistory },
                 { mask: 'word-help-mask', close: function () { document.getElementById('word-help-mask').style.display = 'none'; } },
