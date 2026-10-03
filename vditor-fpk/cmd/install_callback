@@ -33,9 +33,33 @@ if [ -n "$DOC_DIR" ] && [ -d "$DOC_DIR" ]; then
 fi
 
 # 同步桌面图标访问端口（ui/config 中的 "port" 字段）
-CFG="${TRIM_APPDEST}/ui/config"
-if [ -f "$CFG" ]; then
-  sed -i "s/\"port\"[[:space:]]*:[[:space:]]*\"[0-9]*\"/\"port\": \"$PORT\"/" "$CFG"
+# 注意路径：ui 目录在应用私有目录**内部**（fnOS 安装后 app/ 被解包到 TRIM_APPDEST，
+# 即 ui/ 与 server.py 同级），因此这里用 TRIM_APPDEST 即为正确路径；
+# 但为兼容个别环境把 ui 放在 TRIM_APPDEST 之外的情况，两处都尝试一次。
+sync_icon_port() {
+  for CFG in "${TRIM_APPDEST}/ui/config" "${TRIM_APPDEST}/app/ui/config"; do
+    if [ -f "$CFG" ]; then
+      if sed -i "s/\"port\"[[:space:]]*:[[:space:]]*\"[0-9]*\"/\"port\": \"$PORT\"/" "$CFG" 2>/dev/null; then
+        SYNCED="$SYNCED $CFG"
+      fi
+    fi
+  done
+}
+SYNCED=""
+sync_icon_port
+if [ -n "$SYNCED" ]; then
+  echo "桌面图标端口已同步为 $PORT：$SYNCED"
+else
+  echo "警告：未找到 ui/config，桌面图标端口可能仍为默认值 $PORT。" >&2
+  echo "如桌面图标打不开，请手动检查应用目录下的 ui/config 中 \"port\" 字段是否为 $PORT。" >&2
+fi
+
+# 端口被占用检测：提前告知，避免安装完成后「图标跳转过去却打不开」
+# （服务实际监听的端口由 cmd/main 读取本文件决定，此处只做提示，不阻断安装）
+if command -v ss >/dev/null 2>&1; then
+  if ss -ltn 2>/dev/null | grep -qE "[:.]$PORT[[:space:]]"; then
+    echo "提示：端口 $PORT 当前已被占用。若安装后无法访问，请更换端口或在应用中心停止占用该端口的服务。" >&2
+  fi
 fi
 
 # 建立终端命令 vditor：
@@ -55,6 +79,20 @@ if [ -f "$TARGET" ]; then
   done
 else
   echo "警告：未找到 $TARGET，终端命令 vditor 未建立；可后续通过 usr-local-linker 自动软链到 /usr/local/bin。" >&2
+fi
+
+# ---------- 确保新端口真正生效 ----------
+# fnOS 的执行顺序不保证「先跑本回调、再启动服务」：若服务已用manifest 默认端口
+# 启动过，那么本回调写入的 port 文件不会被读到，表现为「图标跳到自定义端口却打不开、
+# 仍需用默认端口访问」。因此这里主动重启一次服务，让 cmd/main 重新读取 port 文件。
+# 失败不阻断安装（应用中心通常还会在安装流程末尾自行拉起一次服务）。
+echo "端口配置已写入 ${TRIM_PKGETC}/port（值：$PORT），正在重启服务以应用该端口…"
+"${TRIM_APPDEST}/cmd/main" stop >/dev/null 2>&1 || true
+sleep 1
+if "${TRIM_APPDEST}/cmd/main" start >/dev/null 2>&1; then
+  echo "服务已按端口 $PORT 重启完成。"
+else
+  echo "提示：自动重启未成功（不影响安装）。若访问端口不正确，请在 fnOS 应用中心停止后重新启动本应用。" >&2
 fi
 
 exit 0

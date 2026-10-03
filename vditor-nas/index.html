@@ -507,6 +507,94 @@
             .modal-card { padding: 14px; }
             #login-card { padding: 18px; }
         }
+
+        /* ================= 1.1.5：设置面板选项卡化 ================= */
+        /* 面板顶部横向选项卡导航（文件夹 / 安全 / 版本 / 上传 / 维护 / 外观 / 关于与帮助） */
+        .set-tabs {
+            display: flex; flex-wrap: wrap; gap: 4px;
+            border-bottom: 1px solid var(--c-border-2);
+            margin: 0 0 4px; padding: 0 0 8px;
+        }
+        .set-tabs button {
+            padding: 6px 12px; font-size: var(--fs-sm);
+            border: 1px solid transparent; border-radius: 6px;
+            background: transparent; color: var(--c-text-2);
+            cursor: pointer; white-space: nowrap;
+        }
+        .set-tabs button:hover { background: var(--c-bg-fill); color: var(--c-text); }
+        .set-tabs button.on {
+            background: var(--c-brand); color: #fff; font-weight: 600;
+        }
+        /* 选项卡面板：默认全部隐藏，仅显示当前选中项 */
+        .set-page { display: none; }
+        .set-page.on { display: block; }
+        /* 面板内子选项卡（帮助 / 快捷键 / 关于） */
+        .set-sub { border-top: 1px solid var(--c-border-2); margin-top: 14px; padding-top: 10px; }
+        .set-sub:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+        .set-sub h4 { margin: 0 0 6px; font-size: var(--fs-md); color: var(--c-text-2); font-weight: 600; }
+
+        /* 状态与日志：键值表 */
+        .kv-list { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 6px 0 0; }
+        .kv-list dt { color: var(--c-text-3); font-size: var(--fs-sm); white-space: nowrap; }
+        .kv-list dd {
+            margin: 0; font-size: var(--fs-sm); color: var(--c-text);
+            word-break: break-all; line-height: 1.6;
+        }
+        .kv-list dd.ok { color: var(--c-success, #1a7f37); }
+        .kv-list dd.warn { color: var(--c-danger); }
+
+        /* 状态与日志：可折叠面板。
+           外观沿用登录日志面板（.log-box），并保证长文本换行、不横向溢出。 */
+        .log-panel { margin-top: 10px; }
+        .log-box {
+            max-height: 260px; overflow-y: auto; overflow-x: hidden;
+            border: 1px solid var(--c-border-2); border-radius: var(--r); background: #fff;
+        }
+        .log-box .logitem {
+            display: flex; gap: 10px; font-size: var(--fs-sm); padding: 7px 10px;
+            border-bottom: 1px solid var(--c-border-2);
+        }
+        .log-box .logitem:last-child { border-bottom: none; }
+        .log-box .logitem .lt { color: var(--c-text-3); flex: 0 0 auto; }
+        /* 日志正文（.lip）承载超长行：允许任意位置断行，并压缩为可伸缩列，
+           否则长行会撑出横向滚动条。 */
+        .log-box .logitem .lip {
+            color: var(--c-text-2); margin-left: auto;
+            min-width: 0; flex: 1 1 auto;
+            white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere;
+            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+            line-height: 1.6;
+        }
+        html[data-theme="dark"] .log-box { background: var(--c-bg-fill); }
+        /* 状态/日志按钮的选中态：与选项卡选中态保持同一套视觉语言 */
+        .set-pw button.action.on {
+            background: var(--c-brand); color: #fff; border-color: var(--c-brand);
+        }
+
+        /* 快捷键表 */
+        .kb-list { width: 100%; border-collapse: collapse; margin: 6px 0 0; font-size: var(--fs-sm); }
+        .kb-list th, .kb-list td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--c-border-2); }
+        .kb-list th { color: var(--c-text-3); font-weight: 600; white-space: nowrap; }
+        .kb-list td:first-child { white-space: nowrap; }
+        .kb-list kbd {
+            display: inline-block; padding: 1px 6px; margin: 0 1px;
+            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+            font-size: var(--fs-sm); line-height: 1.6;
+            background: var(--c-bg-fill); color: var(--c-text);
+            border: 1px solid var(--c-border-2); border-radius: 4px;
+        }
+
+        /* 关于与帮助：简介段落 */
+        .about-p { margin: 8px 0; line-height: 1.7; font-size: var(--fs-md); }
+        .about-p a { color: var(--c-brand); }
+
+        /* 会话超时提示弹窗（z-index 高于登录遮罩，确保覆盖） */
+        #session-mask .modal-card { width: 400px; text-align: center; }
+        #session-mask .sess-icon { font-size: 30px; line-height: 1; margin-bottom: 6px; }
+        #session-mask .sess-title { font-size: var(--fs-lg); font-weight: 600; color: var(--c-text); margin: 0 0 6px; }
+        #session-mask .sess-desc { font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.6; margin: 0 0 14px; }
+        #session-mask .sess-actions { display: flex; gap: 8px; justify-content: center; }
+        #session-mask .sess-actions button { margin: 0; }
     </style>
 </head>
 <body>
@@ -535,7 +623,6 @@
                 <button id="btn-settings" class="ghost">设置</button>
                 <button id="btn-export-md" class="ghost">导出 .md</button>
                 <button id="btn-export-html" class="ghost">导出 HTML</button>
-                <button id="btn-history" class="ghost">历史版本</button>
                 <button id="btn-doc-info" class="ghost">信息</button>
                 <button id="btn-theme" class="ghost" title="切换浅色 / 暗黑模式">🌙</button>
                 <button id="btn-save">保存</button>
@@ -689,15 +776,22 @@
                 </div>
                 <div class="set-pw">
                     <h4>状态与日志</h4>
-                    <p class="sub">展示应用当前所处状态（浏览器、网络环境、服务器信息），便于排查问题。</p>
-                    <dl class="kv-list" id="status-list"></dl>
+                    <p class="sub">查看应用当前所处状态（浏览器、网络环境、服务器信息）与运行日志，便于排查问题。点击按钮展开对应面板，再次点击收回；打开新面板时会自动收回先前展开的。</p>
                     <div class="frow">
-                        <button class="action" id="btn-refresh-status">刷新状态</button>
-                        <button class="ghost action" id="btn-view-app-log">查看应用日志</button>
-                        <button class="ghost action" id="btn-view-log">查看登录日志</button>
+                        <button class="action" id="btn-refresh-status" data-logpanel="status">应用状态</button>
+                        <button class="ghost action" id="btn-view-app-log" data-logpanel="applog">查看应用日志</button>
+                        <button class="ghost action" id="btn-view-log" data-logpanel="loginlog">查看登录日志</button>
+                        <button class="ghost action" id="btn-refresh-current">刷新</button>
                     </div>
-                    <div id="app-log-box" style="display:none;"></div>
-                    <div id="log-box" style="display:none;"></div>
+                    <div class="log-panel" id="status-panel" style="display:none;">
+                        <dl class="kv-list" id="status-list"></dl>
+                    </div>
+                    <div class="log-panel" id="app-log-panel" style="display:none;">
+                        <div class="log-box" id="app-log-box"></div>
+                    </div>
+                    <div class="log-panel" id="login-log-panel" style="display:none;">
+                        <div class="log-box" id="log-box"></div>
+                    </div>
                 </div>
                 <div class="set-pw">
                     <h4>卸载时的应用数据处理</h4>
@@ -742,7 +836,7 @@
                             <tr><th>分类</th><th>按键</th><th>作用</th></tr>
                         </thead>
                         <tbody>
-                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>保存当前文档</td></tr>
+                            <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>保存当前文档（在本应用任意位置均生效，与「保存」按钮一致）</td></tr>
                             <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>撤销</td></tr>
                             <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>重做</td></tr>
                             <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>加粗</td></tr>
@@ -753,11 +847,11 @@
                             <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>0</kbd></td><td>正文（无标题）</td></tr>
                             <tr><td>编辑器</td><td><kbd>Tab</kbd></td><td>源码模式下缩进；列表模式下降级列表项</td></tr>
                             <tr><td>编辑器</td><td><kbd>Enter</kbd></td><td>列表模式下新建同级列表项</td></tr>
-                            <tr><td>本应用</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>保存当前文档（与应用内「保存」按钮一致）</td></tr>
-                            <tr><td>本应用</td><td><kbd>Esc</kbd></td><td>关闭当前打开的弹窗（设置 / 历史版本 / 使用指南等）</td></tr>
-                            <tr><td>本应用</td><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>在登录页快速进入（等同点击「进入」）</td></tr>
+                            <tr><td>本应用</td><td><kbd>Esc</kbd></td><td>关闭当前打开的弹窗（设置 / 信息 / 历史版本 / 使用指南 / 快捷键 / 确认框等），效果等同各弹窗右上角的关闭按钮</td></tr>
+                            <tr><td>本应用</td><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>在登录页快速进入（等同点击「进入」按钮）；<b>在编辑器内不生效</b>，编辑器中请用 <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存</td></tr>
                         </tbody>
                     </table>
+                    <p class="sub">说明：macOS 上请将 <kbd>Ctrl</kbd> 替换为 <kbd>Cmd</kbd>（<kbd>⌘</kbd>）。</p>
                 </div>
 
                 <div class="set-sub">
@@ -860,6 +954,7 @@
             <div class="sub" id="doc-info-abs"></div>
             <div class="sub" id="doc-info-meta"></div>
             <div class="set-foot">
+                <button class="ghost action" id="btn-history">历史版本</button>
                 <button class="danger action" id="doc-info-delete">删除文档（含全部历史版本）</button>
                 <button class="ghost action" id="doc-info-close2">关闭</button>
             </div>
@@ -882,16 +977,16 @@
                 <p>左侧按「分区」列出各 NAS 文件夹下的 Markdown 文件，选文件即打开。分区（即文档存放位置）在「设置 → 文件夹设置」中添加与管理；顶栏「«」按钮可折叠 / 展开左侧文档栏。</p>
 
                 <p class="g-h">三、保存与自动保存</p>
-                <p>编辑后点右上角「保存」即可存盘，内容也会按设置的间隔 <b>自动保存</b>。自动保存间隔、是否保留历史版本在「设置 → 文件版本与自动保存」中配置。</p>
+                <p>编辑后点右上角「保存」即可存盘，内容也会按设置的间隔 <b>自动保存</b>。自动保存间隔、是否保留历史版本在「设置 → 版本与自动保存」中配置。</p>
 
                 <p class="g-h">四、历史版本</p>
-                <p>点「历史版本」可查看每次保存的快照，支持 <b>对比差异、恢复、删除</b>；每个文件保留的最大版本数可在设置中调整（1–200）。</p>
+                <p>点顶栏「信息」按钮，在弹出的「文档信息」对话框中点<b>「历史版本」</b>即可查看每次保存的快照，支持 <b>对比差异、恢复、删除</b>；每个文件保留的最大版本数可在设置中调整（1–200）。</p>
 
                 <p class="g-h">五、导出</p>
                 <p>顶栏「导出 .md / 导出 HTML」导出当前文档：若该文档文件夹内还有图片 / 音频等<b>其它文件</b>，会自动把整个文件夹打包为 zip 一起导出，否则只导出单文件。「设置 → 维护」里还有「导出备份（配置 + 文档）」与「导出 / 导入配置（JSON）」，用于迁移与容灾。</p>
 
                 <p class="g-h">六、设置</p>
-                <p><b>文件夹设置</b>：添加 NAS 文件夹作为分区，可隐藏 / 恢复系统默认分区。<br><b>安全设置</b>：修改密码、信任反向代理、强制 Cookie Secure。<br><b>文件版本与自动保存</b>：历史版本开关与保留数量、自动保存间隔。<br><b>维护</b>：导出 / 导入备份（配置 + 文档）、导出 / 导入配置（JSON）、查看登录日志，以及「卸载时是否清除软件数据」。<br><b>外观设置</b>：暗黑模式、网页标题、网页图标（浏览器标签页）。</p>
+                <p>顶栏「设置」打开设置面板，顶部为选项卡：<br><b>文件夹设置</b>：添加 NAS 文件夹作为分区，可隐藏 / 恢复系统默认分区。<br><b>安全设置</b>：修改密码、信任反向代理、强制 Cookie Secure。<br><b>版本与自动保存</b>：历史版本开关与保留数量、自动保存间隔。<br><b>上传</b>：上传大小上限与格式黑名单。<br><b>维护</b>：导出 / 导入备份（配置 + 文档）、导出 / 导入配置（JSON）、「状态与日志」（应用状态 / 应用日志 / 登录日志），以及「卸载时是否清除软件数据」。<br><b>外观</b>：暗黑模式、网页标题、网页图标（浏览器标签页）。<br><b>关于与帮助</b>：使用指南、快捷键一览、开源协议与法律声明。</p>
 
                 <p class="g-h">七、账号与访问</p>
                 <p>首次进入需设置管理员密码，之后凭密码访问。忘记密码：请在 fnOS 终端中执行命令 <code>vditor reset-password</code>，按指引重置密码。</p>
@@ -2180,10 +2275,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         const p = n => (n < 10 ? '0' + n : '' + n);
         return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
     }
-    function viewLog() {
-        const box = document.getElementById('log-box');
-        box.style.display = 'block';
-        box.innerHTML = '<div class="logitem"><span class="lt">加载中…</span></div>';
+        function viewLog() {
+            const box = document.getElementById('log-box');
+            box.innerHTML = '<div class="logitem"><span class="lt">加载中…</span></div>';
         fetch('/api/login-log').then(r => r.json()).then(d => {
             const entries = d.entries || [];
             if (!entries.length) { box.innerHTML = '<div class="logitem"><span class="lt">暂无登录记录</span></div>'; return; }
@@ -2587,7 +2681,12 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         document.getElementById('btn-logout').addEventListener('click', doLogout);
         document.getElementById('btn-settings').addEventListener('click', openSettings);
         document.getElementById('btn-save').addEventListener('click', () => saveToNas(false));
-        document.getElementById('btn-history').addEventListener('click', openHistory);
+        // 「历史版本」按钮已移入「信息」对话框（顶栏入口已移除）；
+        // 打开历史版本前先关闭信息对话框，避免两层弹窗叠压。
+        document.getElementById('btn-history').addEventListener('click', function () {
+            closeDocInfo();
+            openHistory();
+        });
         document.getElementById('btn-export-md').addEventListener('click', () => exportDoc('md'));
         document.getElementById('btn-export-html').addEventListener('click', () => exportDoc('html'));
 
@@ -2626,9 +2725,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         document.getElementById('folder-add').addEventListener('click', addFolder);
         document.getElementById('pw-change').addEventListener('click', changePassword);
         document.getElementById('btn-backup').addEventListener('click', doBackup);
-        document.getElementById('btn-view-log').addEventListener('click', viewLog);
+        // 「查看登录日志」等三个状态/日志按钮统一由 toggleLogPanel 接管（见下方）
 
-        // ---------- 1.1.5：设置面板选项卡 ----------
+        // ---------- 设置面板选项卡 ----------
         (function setupSetTabs() {
             const tabs = document.getElementById('set-tabs');
             if (!tabs) return;
@@ -2638,15 +2737,20 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 selectSetPage(btn.getAttribute('data-page'));
             });
         })();
+        /** 切换设置选项卡：仅显示目标页，其余页一律隐藏。
+         *  同时显式写 style.display，不单靠 CSS 类——即便样式表未加载也能正确切换，
+         *  避免出现「所有设置项堆叠在一起」的情况。 */
         function selectSetPage(pageId) {
             document.querySelectorAll('#set-tabs button[data-page]').forEach(b => {
                 b.classList.toggle('on', b.getAttribute('data-page') === pageId);
             });
             document.querySelectorAll('#settings-card .set-page').forEach(p => {
-                p.classList.toggle('on', p.id === pageId);
+                const on = (p.id === pageId);
+                p.classList.toggle('on', on);
+                p.style.display = on ? 'block' : 'none';
             });
-            // 切到「维护」时自动刷新状态，便于随时查看最新运行状况
-            if (pageId === 'pg-maint') refreshStatus();
+            // 离开「维护」时收回状态/日志面板，避免下次进入时残留上次的展开项
+            if (pageId !== 'pg-maint' && typeof closeLogPanels === 'function') closeLogPanels();
         }
 
         // ---------- 1.1.5：应用状态 ----------
@@ -2710,7 +2814,6 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // ---------- 1.1.5：应用运行日志 ----------
         function viewAppLog() {
             const box = document.getElementById('app-log-box');
-            box.style.display = 'block';
             box.innerHTML = '<div class="logitem"><span class="lt">加载中…</span></div>';
             fetch('/api/app-log').then(r => r.json()).then(d => {
                 if (!d.exists) {
@@ -2731,8 +2834,40 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             });
         }
 
-        document.getElementById('btn-refresh-status').addEventListener('click', refreshStatus);
-        document.getElementById('btn-view-app-log').addEventListener('click', viewAppLog);
+        // ---------- 状态与日志：四个按钮 + 互斥展开面板 ----------
+        // 当前展开的面板 id（null = 全部收回）。再次点击同一按钮即收回。
+        let currentLogPanel = null;
+        const LOG_PANEL_LOADER = { status: refreshStatus, applog: viewAppLog, loginlog: viewLog };
+        function toggleLogPanel(name) {
+            if (currentLogPanel === name) { closeLogPanels(); return; }
+            closeLogPanels();                 // 打开新面板前先收回先前展开的
+            currentLogPanel = name;
+            const panel = document.getElementById(name + '-panel');
+            if (panel) panel.style.display = 'block';
+            // 当前按钮呈选中态
+            document.querySelectorAll('[data-logpanel]').forEach(b => {
+                b.classList.toggle('on', b.getAttribute('data-logpanel') === name);
+            });
+            (LOG_PANEL_LOADER[name] || function () {})();
+        }
+        function closeLogPanels() {
+            currentLogPanel = null;
+            ['status', 'applog', 'loginlog'].forEach(n => {
+                const p = document.getElementById(n + '-panel');
+                if (p) p.style.display = 'none';
+            });
+            document.querySelectorAll('[data-logpanel]').forEach(b => b.classList.remove('on'));
+        }
+        /** 「刷新」：刷新当前展开的面板；未展开任何面板时，默认展开应用状态。 */
+        function refreshCurrentPanel() {
+            if (!currentLogPanel) { toggleLogPanel('status'); return; }
+            (LOG_PANEL_LOADER[currentLogPanel] || function () {})();
+        }
+        document.querySelectorAll('[data-logpanel]').forEach(b => {
+            b.addEventListener('click', () => toggleLogPanel(b.getAttribute('data-logpanel')));
+        });
+        document.getElementById('btn-refresh-current').addEventListener('click', refreshCurrentPanel);
+        // 离开「维护」选项卡时收回面板，避免下次打开时残留上次的展开项
         // 「?」（使用指南）控件已移入设置 → 关于与帮助 → 帮助（沿用原 id，事件绑定见上）
         fetch('/api/status').then(r => r.json()).then(d => {
             const el = document.getElementById('about-version');
@@ -2761,8 +2896,13 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
     // 登录按钮事件
     document.getElementById('login-btn').addEventListener('click', doAuth);
-    document.getElementById('login-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doAuth(); });
-    document.getElementById('setup-pw2').addEventListener('keydown', e => { if (e.key === 'Enter') doAuth(); });
+    // 登录 / 首次设置：Enter 与 Ctrl+Enter 均直接进入（Ctrl+Enter 在快捷键表中已列出）
+    document.getElementById('login-pw').addEventListener('keydown', e => {
+        if (e.key === 'Enter') doAuth();
+    });
+    document.getElementById('setup-pw2').addEventListener('keydown', e => {
+        if (e.key === 'Enter') doAuth();
+    });
 
     // 手机端抽屉背景：点击关闭
     const sbBackdrop = document.getElementById('sidebar-backdrop');
@@ -2784,11 +2924,20 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             saveToNas(false);
             return false;
         }
-        // Esc：关闭设置 / 历史版本弹层（不影响登录层）
+        // Esc：关闭当前最上层的弹窗，效果等同各弹窗右上角的关闭按钮。
+        // 顺序按「后打开的先关」排列；登录层与遮罩背景不属于弹窗，不受Esc 影响。
         if (e.key === 'Escape') {
-            if (document.getElementById('confirm-mask').style.display === 'flex') hideConfirm();
-            else if (document.getElementById('settings-mask').style.display === 'flex') closeSettings();
-            else if (document.getElementById('history-mask').style.display === 'flex') closeHistory();
+            const layers = [
+                { mask: 'confirm-mask',   close: hideConfirm },
+                { mask: 'doc-info-mask',  close: closeDocInfo },
+                { mask: 'history-mask',   close: closeHistory },
+                { mask: 'word-help-mask', close: function () { document.getElementById('word-help-mask').style.display = 'none'; } },
+                { mask: 'settings-mask',  close: closeSettings },
+            ];
+            for (const L of layers) {
+                const m = document.getElementById(L.mask);
+                if (m && m.style.display === 'flex') { L.close(); return; }
+            }
         }
     }, true);
 

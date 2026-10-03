@@ -189,12 +189,69 @@
 
 - **新建 `test_v115.py` 30/30**（12段：CSP 含 `unsafe-eval`、graphviz 两 js 可访问、设置面板 7 选项卡与 3 子选项卡、`.kb-list` ≥12 行、42 组标签配平、`/api/status` 三段字段与分区可读写、`/api/app-log` 倒序与 `exists`、未登录 401、版本号一致性）。
 - **全量回归全绿**：`test_v115` 30/30、`test_audit114` 189/189、`test_v114` 37/37、`test_v113` 79/79、`test_v406` 12/12、`test_v407` 17/17、`test_v112` 30/30、`test_smoke_pkg` 53/53、`test_smoke_new` 17/17、`test_lan_login` 9/9 —— **合计 473/473**。
-- 产物：`releases/com.mian38.vditor_1.1.5.fpk`（**4,527,135** 字节，md5 `a43b90dbaba074d866e2e81d7ecbbafb`）、`releases/vditor-nas-1.1.5.tar.gz`（**4,507,989** 字节，md5 `5f91455d06ee76e781459a9910b83450`，370 文件 / 27 目录）。
+- 产物：`releases/com.mian38.vditor_1.1.5.fpk`（**4,528,715** 字节，md5 `15533afab67b97d5525f8f8ad5fb7482`）、`releases/vditor-nas-1.1.5.tar.gz`（**4,510,005** 字节，md5 `54dac40e13178ec1ea7231fe7c38b78e`，370 文件 / 27 目录）。
 - fpk 包内校验：外层 22 条目，内层 `app.tgz` 371 文件；`LICENSE` / `echarts/LICENSE` / `echarts/NOTICE` / 上游 `vditor/LICENSE` 四份许可齐备，**无 `__pycache__` 混入**；`APP_VERSION = "1.1.5"`、`service_port=3838`、`author=mian38`、`homepage` 均正确；CSP 含 `unsafe-eval`、`/api/status` 与 `/api/app-log` 路由、`vditorGraphVizScript` 标签、`session-mask` 遮罩、7 个顶级选项卡（`data-page` 共 11 处）全部在包内就位。
 
 > **踩坑备查 · 批量插 SPDX 必须先探测换行符**：`core.autocrlf=true` 但仓库内**换行符混存**（部分文件磁盘上是 LF）。首版脚本硬编码 `split(b"\r\n")`，对 11 个 LF 文件等价于「整文件当一行」，SPDX 被追加到了文件**末尾**（`sys.exit(main())` 之后）。已全部回滚重做，改为先抽样探测 `nl = b"\r\n" if b"\r\n" in raw[:200] else b"\n"`。跨文件批量改文本前务必先确认换行符。
 
 > **踩坑备查 · `manifest` 子串匹配会误判**：`assert "homepage=" not in raw` 会被 `desc=` 值内明文命中，须按行精确匹配 `l.startswith(b"homepage=")`；且行尾可能带 `\r`，比较前要 `split(b"\r\n")`。
+
+### 二次修订（同版本内，版本号不变）
+
+> 1.1.5 首发后收到 7 项反馈，本节记录修订内容。**版本号仍为 1.1.5，不升版。**
+
+**修复 · 安装向导自定义端口不生效**
+
+- 现象：向导填自定义端口（如 9000）后，桌面图标跳过去打不开，实际仍需用默认端口访问。
+- 根因一：`app/ui/config` 的 `"port"` 硬编码为 `9000`，**从未随默认端口一起更新过**（默认端口已改为 3838，此处漏改）。
+- 根因二（更关键）：fnOS **不保证「先跑 `install_callback`、再启动服务」**。若服务已用 manifest 默认端口启动过，本回调写入的 `port` 文件不会被 `cmd/main` 读到 → 服务仍监听旧端口，而图标已指向新端口 → 「跳转过去打不开」。
+- 修复：
+  - `app/ui/config` 的 `"port"` 改为 `3838`，与 `server.py` / `manifest` 对齐。
+  - `install_callback` 改为**两处路径都尝试**（`${TRIM_APPDEST}/ui/config` 与 `${TRIM_APPDEST}/app/ui/config`），并回显同步结果；找不到文件时给出可执行告警而非静默跳过。
+  - `install_callback` 末尾**主动重启服务**（`cmd/main stop` → `cmd/main start`），确保 `cmd/main` 重新读取 `port` 文件。这是根因二的正解，失败不阻断安装。
+  - `install_callback` / `cmd/main` 均增加**端口占用预检**（`ss -ltn`）：安装时提示、启动失败时给出「端口已被占用，请停止占用服务或重装改端口」的具体原因，不再只报「启动失败」。
+  - `upgrade_callback` 同步改为两处路径。
+
+**修复 · 设置选项卡点击不切换、所有设置项堆叠**
+
+- 根因：**1.1.5 新增的 CSS 从未注入 index.html**——`ui_style_v414.css` 已改，但 `apply_style_v414` 脚本没跑，内联 `<style>` 仍是 1.1.4 旧版，**缺 `.set-page { display: none; }`**。所有面板因此全部可见，切换时只改 class 不改可见性，看起来就是「点了没反应」。
+- 修复：运行 `apply_style_v414` 同步样式；并给该脚本的 `MUST` 断言补 8 条（含 `.set-page { display: none; }`、`.set-page.on`、`.set-tabs button.on`、`.log-box .logitem .lip` 等），**缺任何一条即报错**，防止再次漏注入。
+- 加固：`selectSetPage()` 除切换 class 外**显式写 `style.display`**，即便样式表未加载也能正确切换。
+
+**重构 · 状态与日志**
+
+- 由「常驻状态表 + 三个平铺按钮」改为**四个按钮 + 互斥展开面板**：`应用状态` / `查看应用日志` / `查看登录日志` / `刷新`。
+- 交互：点击展开对应面板，**再次点击收回**；打开新面板时**自动收回**先前展开的；「刷新」只刷新**当前展开**的面板，未展开时默认展开应用状态。离开「维护」选项卡时自动全部收回。
+- 三个面板容器改为 `.log-panel` + `.log-box` 结构，**外观与登录日志面板完全一致**。
+
+**优化 · UI 风格统一**
+
+- 新增 `.log-box` / `.log-panel` 规则，外观复用登录日志面板（同样的边框、圆角、行高、`.logitem` 样式）。
+- **防溢出**：日志正文 `.lip` 加 `white-space: pre-wrap` + `word-break: break-all` + `overflow-wrap: anywhere`，配合 `min-width: 0` 压缩为可伸缩列；容器加 `overflow-x: hidden`。长行日志不再撑出横向滚动条，也不会溢出设置界面。
+- 状态/日志按钮的选中态 `.set-pw button.action.on` 复用选项卡选中态的视觉语言（主色底 + 白字）；深色模式同步适配。
+
+**更改 · 「历史版本」按钮迁移**
+
+- 从顶栏移除；移入「**信息**」对话框内，位置在「删除文档（含全部历史版本）」旁、「关闭」前。
+- 点击时先关闭信息对话框再打开历史版本，避免两层弹窗叠压。事件绑定与 `openHistory` 逻辑不变。
+
+**规范 · 快捷键**
+
+- 按键统一使用 `<kbd>` 语义标签，并补 `<thead>` 语义表头。
+- **删除重复的 Ctrl+S**：原表把「保存」在「编辑器」与「本应用」两类下各列一次，实际是同一个全局拦截（`document.addEventListener('keydown', ..., true)` 捕获阶段），已合并为一条并注明「在本应用任意位置均生效」。
+- **补充 Ctrl+Enter 适用场景**：明确为「**在登录页快速进入；在编辑器内不生效**，编辑器中请用 Ctrl+S 保存」。
+- **Esc 覆盖全部对话框**：原实现只关 `confirm` / `settings` / `history` 三个，**「信息」「使用指南」按 Esc 无效**。改为**栈序通用关闭器**，按 `confirm → doc-info → history → word-help → settings` 关闭最上层可见弹窗，效果等同右上角关闭按钮。登录层与遮罩背景不受影响。
+- 补 macOS 说明（Ctrl 替换为 Cmd）。
+- **其余快捷键自查结论**：`Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+B` / `Ctrl+I` / `Ctrl+K` / `Ctrl+Alt+1/2/0` / `Tab` / `Enter` 均由 **Vditor 内置**处理，本应用未 intercept，实现在编辑器内生效；`Ctrl+S` 由本应用捕获阶段拦截，优先级高于 Vditor；登录框与确认框的 `Enter` 已绑定。**唯一补齐的缺口**是登录页此前无显式 `Ctrl+Enter` 路径，现已补上。
+
+**验证**
+
+- **新建 `test_v115b.py` 107/107**（8 段：A 端口引导 16 项、B 选项卡 13 项、C 状态与日志 15 项、D UI 风格 11 项、E 历史版本迁移 6 项、F 快捷键规范 17 项、G 标签配平与结构 10 项、H 派生副本一致性 5 项）。
+- **全量回归 583 项全绿**：`test_v115b` 107 / `test_v115` 30 / `test_audit114` 189 / `test_v114` 37 / `test_v113` 79 / `test_v406` 12 / `test_v407` 17 / `test_v112` 30 / `test_smoke_pkg` 53 / `test_smoke_new` 17 / `test_lan_login` 9。
+
+> **踩坑备查 · 改 CSS 后必须跑 `apply_style_v414`**：`ui_style_v414.css` 只是**样式源**，`index.html` 内联的是**快照**。改源文件而不跑脚本 = 改动完全不生效，且不会有任何报错。本轮已把关键规则加入 `MUST` 断言，脚本会显式报「含 xxx（缺此项则所有设置项堆叠）」。
+
+> **踩坑备查 · 子串匹配会误判 HTML 断言**：判断「Ctrl+S 只列一次」时，用 `'Ctrl</kbd>+<kbd>S' in r[1]` 会把 `Ctrl+Shift+Z`（重做）一并命中（`Ctrl` + `S` 前缀相同），产生假失败。须用 `re.match(r"^<kbd>Ctrl</kbd>\+<kbd>S</kbd>$", ...)` 锚定整列。**与 1.1.4 记的「CSS 胜负靠特异性不靠顺序」同源：写断言要锚定完整语义，不能靠子串包含。**
 
 ## 1.1.4
 
