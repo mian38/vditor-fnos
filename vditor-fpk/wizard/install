@@ -4,7 +4,7 @@
     "items": [
       {
         "type": "text",
-        "field": "app_port",
+        "field": "wizard_app_port",
         "label": "浏览器访问端口",
         "initValue": "3838",
         "rules": [
@@ -15,7 +15,7 @@
       },
       {
         "type": "tips",
-        "helpText": "该端口用于浏览器访问 Vditor 编辑器。安装完成后，请视需要在 fnOS「设置→安全/防火墙」中放行此 TCP 端口。"
+        "helpText": "该端口用于浏览器访问 Vditor 编辑器，安装完成后桌面图标会自动同步为该端口。如需从外网访问，请视需要在 fnOS「设置→安全/防火墙」中放行此 TCP 端口。"
       }
     ]
   },
@@ -23,22 +23,8 @@
     "stepTitle": "文档存储文件夹",
     "items": [
       {
-        "type": "text",
-        "field": "doc_partition_name",
-        "label": "分区显示名（可留空）",
-        "initValue": "我的文档"
-      },
-      {
-        "type": "text",
-        "field": "doc_dir",
-        "label": "Markdown 文档存储目录（绝对路径，可留空）",
-        "rules": [
-          { "pattern": "^(/.*)?$", "message": "请填写绝对路径，例如 /vol1/1000/vditor-docs（或留空使用默认目录）" }
-        ]
-      },
-      {
         "type": "tips",
-        "helpText": "此处填写的目录会<b>直接作为编辑器左侧的一个文档分区</b>生效，与「设置 → 文件夹设置」中添加的分区完全等价（显示名 + 绝对路径两项）。<br><br>默认留空，即使用默认目录（/vol&lt;安装本应用的存储空间编号&gt;/@appshare/vditor-docs），并以默认名称显示为分区。<br><br>若在此自定义目录，需要在 fnOS 系统应用设置中允许本应用访问对应文件夹。<br><br>安装完成后也可在「设置 → 文件夹设置」中继续按绝对路径添加 NAS 上其他目录。"
+        "helpText": "本应用以 <b>/vol&lt;n&gt;/@appshare/vditor-docs（n 为安装本应用的存储空间序号）</b> 为默认文档分区，支持在应用右上角「设置 → 文件夹」中隐藏。<br><br><b>如有需要，在安装完成后，请打开应用右上角「设置 → 文件夹」，在那里自定义添加 NAS 上已有的目录作为文档分区（支持添加多个且互相独立、支持自定义分区显示名称）。</b><br><br>若要自定义目录，需同时在 fnOS 系统「应用中心 → 已安装 → Vditor 编辑器 → 访问权限」中授权对应目录。"
       }
     ]
   }

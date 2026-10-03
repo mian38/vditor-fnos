@@ -2,11 +2,31 @@
 # cmd/install_callback —— 安装后：读取向导端口与文档目录，写入配置并同步桌面图标端口
 set -u
 
+# ============ 诊断输出（1.2.2 新增） ============
+# 背景：本脚本曾因「向导变量名与读取名不一致」长期静默失效——wizard/install 里
+# field 写的是 app_port，fnOS 注入的环境变量也叫 app_port（**环境变量名 = field 原名，
+# 系统不会自动补 wizard_ 前缀**，见官方文档《用户向导》/《环境变量》），
+# 而本脚本读的是 wizard_app_port → 恒为空 → 端口被静默回退成默认值 3838。
+# 这次排查最费时的就是「日志里看不到任何变量」，所以先把环境变量全量落盘，
+# 今后再出问题只需用户回传这一段即可定位，不必来回试探。
+LOGF="${TRIM_TEMP_LOGFILE:-/dev/null}"
+{
+  echo "=== vditor install_callback 诊断 ==="
+  echo "TRIM_APP_STATUS=${TRIM_APP_STATUS:-<空>}"
+  echo "TRIM_PKGETC=${TRIM_PKGETC:-<空>}"
+  echo "TRIM_APPDEST=${TRIM_APPDEST:-<空>}"
+  echo "app_port=${app_port:-<未注入>}"
+  echo "wizard_app_port=${wizard_app_port:-<未注入>}"
+  echo "doc_dir=${doc_dir:-<未注入>}"
+  echo "wizard_doc_dir=${wizard_doc_dir:-<未注入>}"
+  echo "---- 全部环境变量 ----"
+  env | sort
+} >> "$LOGF" 2>/dev/null || true
+
 # ============ 升级安装 vs 全新安装 ============
 # fnOS 的安装向导**只在全新安装时出现**。升级安装时 install_callback 照常执行，
-# 但 wizard_* 环境变量全部为空。此时若直接 `${wizard_app_port:-3838}` 这样的回退，
-# 会把用户上一轮安装时填写的端口 / 文档目录**静默覆写为默认值**，
-# 表现为「我明明在向导里填了 5555，升级后却又变回 3838」。
+# 但向导环境变量全部为空。此时若直接 `${wizard_app_port:-3838}` 这样的回退，
+# 会把用户上一轮安装时填写的端口 / 文档目录**静默覆写为默认值**...
 # 因此统一采用三级取值：向导变量 → 已有配置文件 → 内置默认值。
 
 CONFIG_DIR="${TRIM_PKGETC}"
@@ -15,7 +35,11 @@ DOC_DIR_FILE="${CONFIG_DIR}/doc_dir"
 FOLDERS_JSON="${CONFIG_DIR}/folders.json"
 
 # 端口：向导变量优先；为空（升级）则沿用已有 port 文件；都没有才用默认 3838。
-WIZARD_PORT="${wizard_app_port:-}"
+# 双读兜底：同时兼容带前缀与不带前缀两种注入写法。
+#   fnOS 官方文档明确「收集到的值会成为同名环境变量」，wizard_ 只是命名建议；
+#   但个别环境/版本是否存在前缀注入尚未在真机确认过，故两种都读，谁有值用谁。
+#   嵌套 ${a:-${b:-}} 在 POSIX sh / bash 下均合法。
+WIZARD_PORT="${wizard_app_port:-${app_port:-}}"
 if [ -z "$WIZARD_PORT" ] && [ -f "$PORT_FILE" ]; then
   WIZARD_PORT="$(tr -d '[:space:]' < "$PORT_FILE" 2>/dev/null || true)"
 fi
@@ -26,12 +50,61 @@ if ! echo "$PORT" | grep -Eq '^[0-9]+$' || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65
   PORT=3838
 fi
 
+# 端口被占用检测（1.2.2：由「仅提示」改为「硬校验中止」）。
+# 此前只 echo 一行提示就继续装，用户装完才发现图标跳过去打不开，
+# 排查成本远高于安装时直接拦下。install_callback 以非零退出可中止安装，
+# 官方文档说明 TRIM_TEMP_LOGFILE 的内容会展示给用户，故文案需自包含（含重试指引）。
+#
+# 必须做多路兜底：只判 command -v ss 的话，目标系统一旦没有 ss（精简环境 / 容器 /
+# 某些 NAS 固件），整段校验会被静默跳过——正是本项目反复吃过的「静默失效」套路。
+# 三条路径任一可用即生效；都不可用时明确告警，不假装校验通过。
+port_in_use() {
+  P="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn 2>/dev/null | grep -qE "[:.]${P}[[:space:]]" && return 0
+    return 1
+  fi
+  if command -v netstat >/dev/null 2>&1 && netstat -ltn 2>/dev/null | head -3 | grep -qiE 'LISTEN|Proto'; then
+    netstat -ltn 2>/dev/null | grep -qE "[:.]${P}[[:space:]]" && return 0
+    return 1
+  fi
+  # 最后兜底：直接读 /proc/net/tcp{,6} 的本地地址列（HEX:HEX，端口为十六进制）
+  # 注意不能只判 [ -r ]：某些环境（如 Git Bash / WSL 兼容层 / 容器）会提供**伪 /proc**，
+  # 文件可读但内容不是 Linux netlink 格式，grep 恒不匹配 → 端口占用被静默漏判。
+  # 故必须先校验首行特征（sl 字段 + 十六进制本地地址），再用 grep 判占用。
+  if [ -r /proc/net/tcp ] && head -1 /proc/net/tcp 2>/dev/null | grep -qE '^[[:space:]]*[0-9]+:[[:space:]]'; then
+    HEXP="$(printf '%04X' "$P")"
+    if grep -qiE ":[0-9A-F]*${HEXP}[[:space:]]" /proc/net/tcp 2>/dev/null; then return 0; fi
+    if [ -r /proc/net/tcp6 ] && grep -qiE ":[0-9A-F]*${HEXP}[[:space:]]" /proc/net/tcp6 2>/dev/null; then return 0; fi
+    return 1
+  fi
+  return 2   # 无任何可用探测手段
+}
+
+RC=0
+port_in_use "$PORT" || RC=$?
+if [ "$RC" -eq 0 ]; then
+  {
+    echo "端口 $PORT 已被其它进程占用，安装已中止。"
+    echo "请返回上一步重新安装，并改用一个未被占用的端口（建议 1024-65535，例如 6666、8080）。"
+    echo "若该端口确由本应用自己占用（重新安装场景），可先在 fnOS 应用中心停止本应用后重试。"
+  } > "$LOGF"
+  exit 1
+elif [ "$RC" -eq 2 ]; then
+  {
+    echo "提示：当前系统缺少 ss / netstat，无法自动检测端口 $PORT 是否被占用。"
+    echo "若安装完成后无法访问，请在 fnOS 应用中心停止本应用，检查该端口是否被其它服务占用后重试。"
+  } >> "$LOGF"
+fi
+
 # 持久化端口（供 cmd/main 启动使用）
 echo "$PORT" > "$PORT_FILE"
 
 # 文档存储目录：向导变量优先；为空（升级）则沿用已有 doc_dir 文件；都没有则保持不写，
 # 由 cmd/main 回退到应用私有目录（${TRIM_PKGVAR}/docs）。
-DOC_DIR="${wizard_doc_dir:-}"
+# 1.2.2 起安装向导已不再提供该字段（改为提示用户到「设置 → 文件夹」中添加），
+# 故新装时此段自然不执行；此处保留是为了兼容旧安装/升级路径下已有的 doc_dir 文件。
+DOC_DIR="${wizard_doc_dir:-${doc_dir:-}}"
 if [ -z "$DOC_DIR" ] && [ -f "$DOC_DIR_FILE" ]; then
   DOC_DIR="$(tr -d '\r\n' < "$DOC_DIR_FILE" 2>/dev/null || true)"
 fi
@@ -84,14 +157,6 @@ if [ -n "$SYNCED" ]; then
 else
   echo "警告：未找到 ui/config，桌面图标端口可能仍为默认值 $PORT。" >&2
   echo "如桌面图标打不开，请手动检查应用目录下的 ui/config 中 \"port\" 字段是否为 $PORT。" >&2
-fi
-
-# 端口被占用检测：提前告知，避免安装完成后「图标跳转过去却打不开」
-# （服务实际监听的端口由 cmd/main 读取本文件决定，此处只做提示，不阻断安装）
-if command -v ss >/dev/null 2>&1; then
-  if ss -ltn 2>/dev/null | grep -qE "[:.]$PORT[[:space:]]"; then
-    echo "提示：端口 $PORT 当前已被占用。若安装后无法访问，请更换端口或在应用中心停止占用该端口的服务。" >&2
-  fi
 fi
 
 # 建立终端命令 vditor：

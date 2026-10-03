@@ -50,6 +50,14 @@ MUST = [
      "快捷键表固定列宽布局（缺 table-layout 则窄屏下长说明列会把表格撑出弹窗）"),
     ("#kb-help-mask .kb-list th:nth-child(1)", "快捷键弹窗极窄屏隐藏分类列"),
     ("#kb-help-mask .help-body .sub", "快捷键弹窗内 macOS 提示段落样式"),
+    # ↓ 1.2.2 新增：设置对话框滚动行为（标题栏/选项卡栏固定，仅内容区滚动）
+    # 这三条构成一组，缺任一条都会让标题栏或选项卡栏跟着内容滚走：
+    #   #settings-card overflow:hidden  → 卡片本身不滚（否则整体滚动，标题栏会消失）
+    #   flex:none                        → 头部与选项卡不参与弹性压缩
+    #   .set-body overflow-y:auto        → 滚动只发生在内容区
+    ("#settings-card {", "设置卡片改为纵向 flex 布局（滚动行为修复入口）"),
+    ("#settings-card .set-head,", "设置对话框标题栏固定不滚动"),
+    ("#settings-card .set-body {", "设置对话框仅内容区滚动（对齐使用指南 help-body）"),
 ]
 GONE = ["#2f6bff", "#3a3f47", "#e54848", "#f0f2f5", "#f3f4f6", "#1f2329"]
 

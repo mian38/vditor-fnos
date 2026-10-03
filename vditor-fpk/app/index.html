@@ -226,6 +226,28 @@
         }
         .set-head .close:hover { color: var(--c-brand); border-color: var(--c-brand); }
 
+        /* ---------------- 1.2.2：设置对话框滚动行为 ----------------
+         * 问题：.modal-card 统一带 overflow-y:auto + max-height:86vh，
+         *      导致设置对话框的标题栏（.set-head）与选项卡栏（.set-tabs）
+         *      会随内容一起滚出视口——切到长内容页（如「关于与帮助」）时，
+         *      用户无法看到自己当前在哪个选项卡，且关闭按钮也会滚走。
+         * 方案：把设置卡片改为纵向 flex 布局，卡片本身不再滚动（overflow:hidden），
+         *      仅 .set-body 承担滚动；.set-head / .set-tabs 以 flex:none 固定不缩放。
+         *      这与「使用指南」对话框的结构完全同构——那边是 .modal-card 不滚、
+         *      .help-body { max-height:70vh; overflow:auto } 只滚内容。
+         */
+        #settings-card {
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        #settings-card .set-head,
+        #settings-card .set-tabs { flex: none; }
+        #settings-card .set-body {
+            flex: 1 1 auto; min-height: 0;
+            max-height: 70vh; overflow-y: auto;
+            /* 独立滚动容器：避免滚动条紧贴选项卡栏下边框，视觉上留一道呼吸位 */
+            padding-right: 2px;
+        }
+
         /* ---------------- 设置面板：区块与控件统一 ---------------- */
         .set-sec { border-top: 1px solid var(--c-border-2); padding: 16px 0; }
         .set-sec:first-of-type { border-top: none; }
@@ -702,7 +724,7 @@
                     <button id="folder-add">添加文件夹</button>
                 </div>
                 <div id="folders-err"></div>
-                <p class="sub">在此添加 NAS 上的文件夹作为文档分区，各文件夹独立分区、互不混淆。需要在 fnOS 系统的本应用设置「访问权限」中允许访问对应文件夹。<br>同时列出<b>系统默认分区路径</b>：可对其执行「隐藏」（不删除对应目录文件，仅是本应用不再显示），隐藏后可执行「恢复」。</p>
+                <p class="sub">在此添加 NAS 上已有的目录作为文档分区，各文件夹独立分区、互不混淆。<br>若要自定义目录，需同时在 fnOS 系统「应用中心 → 已安装 → Vditor 编辑器 → 访问权限」中授权对应目录。<br>同时列出<b>系统默认分区路径</b>：可对其执行「隐藏」（不删除对应目录文件，仅是本应用不再显示），隐藏后可执行「恢复」。</p>
             </section>
         </div>
 

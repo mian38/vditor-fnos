@@ -68,7 +68,7 @@ from vd_util import (
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
