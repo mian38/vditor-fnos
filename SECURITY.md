@@ -125,14 +125,23 @@
 > **关于「本应用不提供 HTTPS」**：`https://公网IP:3838` 直连**在任何配置下都不可用**，
 > 这与是否开启 `secure_cookie` 无关——后者只影响 Cookie 是否携带 `Secure` 标记、以及是否放行公网 HTTP。
 
-### 关于 X-Forwarded-Proto 的已知边界
+### 关于 X-Forwarded-Proto 的信任边界
 
-启用 `secure_cookie` 后，HTTP 登录会被拒绝，但当前实现**无条件信任
-`X-Forwarded-Proto: https`**。若攻击者能直接构造该请求头且不经过可信代理，
-可能绕过 HTTP 限制。更严格的方案需要维护可信代理白名单，当前版本尚未实现。
+`X-Forwarded-Proto` **仅在直连来源为私有 / 回环网段时**才被采纳
+（见 `vd_util.trusted_forwarded_proto()` 中的 `is_private_ip()` 判定）——
+即只有确实经由本机或局域网反向代理转发过来的请求才生效，
+公网直连请求即使伪造该头也不会被采信。
 
-因此：**不要在无 HTTPS 的公网环境中启用 `secure_cookie` 后就认为万事大吉**，
-请确保前置代理会正确覆盖而非透传客户端传入的 `X-Forwarded-*` 头。
+在 `VDITOR_TRUST_PROXY_STRICT=1` 严格模式下，`X-Forwarded-For` 也仅在直连来源为私有网段时才被采纳。
+
+**仍然存在的边界**：若你的反向代理与本应用部署在**同一个局域网**且监听所有网卡，
+则来自局域网的任意客户端都可以构造 `X-Forwarded-Proto` / `X-Forwarded-For` 头。
+因此请确保：
+
+1. 前置代理会**覆盖**（而非透传）客户端传入的 `X-Forwarded-*` 头；
+2. 反向代理不要直接暴露到公网——公网侧应由其自身终止 HTTPS 并做访问控制。
+
+更严格的方案（可信代理白名单）当前版本尚未实现。
 
 ---
 

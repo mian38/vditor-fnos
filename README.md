@@ -187,11 +187,11 @@ fnpack.exe build -d vditor-fpk
 ### 升版本号
 
 版本号存于 fpk 两处（`vditor-fpk/manifest` + `vditor-fpk/app/server.py`），
-`bump_version.py` 会一次性同步这两处；测试脚本动态读取版本，无硬编码：
+`tools/bump_version.py` 会一次性同步这两处；测试脚本动态读取版本，无硬编码：
 
 ```bash
-python bump_version.py 1.2.6 --dry-run   # 先预览
-python bump_version.py 1.2.6             # 确认后执行
+python3 tools/bump_version.py 1.2.6 --dry-run   # 先预览
+python3 tools/bump_version.py 1.2.6             # 确认后执行
 ```
 
 ---
@@ -209,26 +209,47 @@ python bump_version.py 1.2.6             # 确认后执行
 │       ├── ui/                  # 前端资源
 │       └── vditor/              # Vditor 4.0.0 发行资源
 ├── docs/                    # 文档
-├── test_*.py                # 回归测试（5 个文件，见「开发与测试」）
-└── bump_version.py          # 版本号同步（仅 manifest + server.py 两处）
+├── tests/                   # 全部回归测试（统一入口 run_all.py）
+└── tools/                   # 开发辅助脚本（版本号同步、性能路径检查）
 ```
 
 ---
 
 ## 开发与测试
 
-测试脚本自带计数器，**直接运行即可**（不依赖 pytest）：
+所有测试集中在 **`tests/`** 目录，用统一入口执行（自带计数器，不依赖 pytest）：
 
 ```bash
-python test_version.py      # 版本号一致性
-python test_security.py     # 安全/正确性原语
-python test_cli.py          # 生命周期脚本语法
-python test_pkg.py          # 安装包结构 + 版本
-python test_core.py         # 核心功能端到端
-python test_perf.py         # 大文件读写性能（小/中/大/超大四档）
-python test_frontend.py     # 前端静态一致性（防大文件优化被回退）
-python test_e2e_http.py     # 手段B：真实 HTTP 端到端（模拟浏览器全链路 + gzip 校验）
-python test_stress_largefile.py  # 手段C：四类复杂大文件压力（保存/读回逐字节 + 前端统计路径）
+python3 tests/run_all.py            # 核心套件（约 4 分钟）
+python3 tests/run_all.py --all      # 含大文件压力测试（较慢）
+python3 tests/run_all.py --list     # 列出全部用例及说明
+```
+
+也可以单独运行某个用例：
+
+```bash
+python3 tests/test_version.py        # 版本号一致性
+python3 tests/test_security.py      # 安全/正确性原语
+python3 tests/test_cli.py           # 生命周期脚本语法
+python3 tests/test_pkg.py           # 安装包结构 + 版本
+python3 tests/test_frontend.py      # 前端静态一致性 + 工具栏裁剪防护
+python3 tests/test_v141_net.py      # IPv6 双栈 / 公网访问策略 / 单分区 / 绑定隔离
+node    tests/test_rawmode_v14.js   # 纯文本模式解耦 / 渲染模式（vm 驱动真实脚本）
+python3 tests/test_core.py          # 核心功能端到端
+python3 tests/test_e2e_http.py      # 真实 HTTP 端到端（模拟浏览器全链路 + gzip 校验）
+python3 tests/test_perf.py          # 大文件读写性能（小/中/大/超大四档）
+python3 tests/test_stress_largefile.py  # 四类复杂大文件压力（逐字节 + 前端统计路径）
+```
+
+> **贡献约定**：新增测试请放进 `tests/` 并在 `tests/run_all.py` 的 `CASES` 中登记，
+> 不要在仓库根目录或 `vditor-fpk/` 下另建 `test_*.py` —— 散落的测试无法被统一执行，
+> 重构时也容易漏跑。CI（`.github/workflows/ci.yml`）同样只调用 `tests/run_all.py`。
+
+开发辅助脚本：
+
+```bash
+python3 tools/bump_version.py 1.2.6 --dry-run   # 版本号同步（仅 manifest + server.py 两处）
+node    tools/perf_frontend_check.js             # 字数统计路径性能抽检
 ```
 
 约定：自 1.1.1 起只对**本轮修改**做定向测试，不再全量回归。

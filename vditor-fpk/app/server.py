@@ -62,7 +62,7 @@ from vd_util import (
     _FILES_CACHE, _FILES_TTL, _UPLOAD_INDEX, _UPLOAD_INDEX_TTL,
     upload_headers, static_headers, trusted_forwarded_proto,
     invalidate_files_cache, invalidate_upload_index,
-    is_private_ip, ip_version_of, slugify, collect_share_paths, guess_mime,
+    is_private_ip, ip_version_of, slugify, guess_mime,
     is_static_denied, is_public_static, safe_join,
     parse_multipart, _version_key, _legacy_version_key,
     _folder_note_path, _doc_asset_dir, _in_doc_folder,

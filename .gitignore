@@ -2,13 +2,11 @@
 *.fpk
 *.pyc
 __pycache__/
-.audit_backup/
 .verify_pkg/
-.audit_full.txt
-# 归档目录体积大，源码快照用 Git 历史替代
-archive/_tmp_split/
-archive/**/app/
-archive/**/vditor/
+
+# 历史版本快照：体积大（115MB）且源码可用 Git 历史还原，不随仓库分发。
+# 本地保留供回溯，仓库侧只保留必要的说明（见 ARCHIVE.md）。
+archive/
 
 # ===== 第三方可执行文件（需从飞牛官方获取，不随仓库分发）=====
 fnpack.exe
@@ -53,3 +51,10 @@ desktop.ini
 .env
 *.env.local
 config.local.*
+
+# ===== 本地工作产物（开发时保留，不对外开源）=====
+# 审计前的临时备份（仅本地回滚用）
+_audit_backup/
+# 审计/评审/诊断类说明文档：由 AI 与开发过程产生，非仓库必需，随工作区保留即可。
+# 故不放在仓库根目录，也不进入 git —— 避免误导外部读者、泄露内部实现细节。
+_local_docs/

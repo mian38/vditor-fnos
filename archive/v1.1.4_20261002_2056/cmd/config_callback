@@ -1,4 +1,0 @@
-#!/bin/bash
-# cmd/config_callback —— 配置后（无配置向导，留空）
-set -u
-exit 0

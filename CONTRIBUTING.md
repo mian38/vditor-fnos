@@ -186,15 +186,22 @@ chore(1.1.4): 版本号统一更新
 **测试脚本自带计数器，直接运行，不需要 pytest**：
 
 ```bash
-python test_version.py      # 版本号一致性
-python test_security.py     # 安全/正确性原语
-python test_cli.py          # 生命周期脚本语法
-python test_pkg.py          # 安装包结构 + 版本
-python test_core.py         # 核心功能端到端
-python test_perf.py         # 大文件读写性能（小/中/大/超大四档）
-python test_frontend.py     # 前端静态一致性（防大文件优化被回退）
-python test_e2e_http.py     # 手段B：真实 HTTP 端到端（模拟浏览器全链路 + gzip 校验）
-python test_stress_largefile.py  # 手段C：四类复杂大文件压力（保存/读回逐字节 + 前端统计路径）
+python3 tests/run_all.py            # 核心套件统一入口（约 4 分钟）
+python3 tests/run_all.py --all      # 含大文件压力测试
+python3 tests/run_all.py --list     # 列出全部用例
+
+# 单个用例（均在 tests/ 下）
+python3 tests/test_version.py       # 版本号一致性
+python3 tests/test_security.py     # 安全/正确性原语
+python3 tests/test_cli.py          # 生命周期脚本语法
+python3 tests/test_pkg.py          # 安装包结构 + 版本
+python3 tests/test_frontend.py     # 前端静态一致性 + 工具栏裁剪防护
+python3 tests/test_v141_net.py     # IPv6 / 公网策略 / 单分区 / 绑定隔离
+node    tests/test_rawmode_v14.js  # 纯文本模式与渲染模式
+python3 tests/test_core.py         # 核心功能端到端
+python3 tests/test_e2e_http.py     # 真实 HTTP 端到端
+python3 tests/test_perf.py         # 大文件读写性能
+python3 tests/test_stress_largefile.py  # 复杂大文件压力
 ```
 
 写 HTTP 测试用例的两条硬规则（踩过坑，请务必遵守）：

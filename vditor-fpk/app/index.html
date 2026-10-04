@@ -1770,8 +1770,6 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         if (host) host.innerHTML = '';
     }
 
-    function isRawMode() { return rawMode; }
-
     // 手动切换纯文本 / 富文本。1.4.2 起该按钮同时承载「临时态」：
     // 切换只影响当前文档 + 本次会话（不写盘），刷新后回到「设置 → 渲染模式」的默认行为。
     // 切回富文本时若文档过大，先二次确认（渲染可能明显卡顿）。
@@ -1967,22 +1965,6 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // 超大文本：正则在百万字符上仍有可观成本，直接用原文估算（字数会略高，但不再卡顿）
         if (md.length > COUNT_FAST_CHARS) return md;
         return stripMarkdown(md);
-    }
-    // 兜底实现：按当前模式取内容节点的可见文本（并跳过隐藏节点）
-    function domVisibleText() {
-        const ed = vditor && vditor.vditor;
-        const mode = (ed && ed.currentMode) || 'ir';
-        const prefer = { sv: '.vditor-preview', wysiwyg: '.vditor-wysiwyg', ir: '.vditor-ir' }[mode] || '.vditor-ir';
-        const order = [prefer, '.vditor-ir', '.vditor-wysiwyg', '.vditor-preview'];
-        for (let i = 0; i < order.length; i++) {
-            const el = document.querySelector(order[i]);
-            if (!el) continue;
-            const cs = window.getComputedStyle(el);
-            if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-            const text = el.innerText || '';
-            if (text.trim()) return text;
-        }
-        return '';
     }
     let _wcTimer = null;
     function scheduleCounter() {          // 防抖：输入时避免频繁重排
@@ -3042,6 +3024,20 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         }, true);
     }
 
+    // ---------- 事件绑定的分组执行器（1.4.3 新增）----------
+    // 为什么需要：initEditorAndFiles() 曾把 30+ 个 addEventListener 写在一个函数体内且**无 try 隔离**，
+    // 任何一处抛错都会中断整个函数，导致**其后的所有绑定全部未挂载**——表现为
+    // 「多个控件同时失灵」，且很难定位到真正的元凶（1.4.2→1.4.3 的线上事故即是如此）。
+    // 改为按「顶栏 / 设置面板 / 对话框 / 状态与日志」分组，每组独立 try/catch：
+    // 一组失败只影响该组，其余控件照常可用；错误信息带上分组名，便于排查。
+    function bindGroup(name, fn) {
+        try {
+            fn();
+        } catch (e) {
+            console.error('[init] 「' + name + '」绑定失败：', e);
+        }
+    }
+
     // ---------- 初始化 ----------
     function initEditorAndFiles() {
         const isDark = (document.documentElement.getAttribute('data-theme') === 'dark');
@@ -3224,7 +3220,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         }
 
         // 首次启动构建富文本引擎（默认载入小体积教程，无压力）
-        createVditor();
+        // 独立 try：富文本引擎构建失败不应阻断后续所有事件绑定（1.4.3 事故的结构性教训）。
+        // 失败时编辑器区域为空，但设置、对话框、导出等其余功能仍可正常使用。
+        bindGroup('富文本引擎初始化', function () { createVditor(); });
         // 非安全上下文下录音不可用，说明原因（浏览器安全策略，非应用缺陷；仅启动提示一次）
         if (!canRecord) {
             toast('录音不可用：浏览器仅在 HTTPS 或 localhost 下开放麦克风，当前为 HTTP 访问');
@@ -3246,26 +3244,35 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             syncRenderModeUI();
         })();
 
-        document.getElementById('btn-toggle-side').addEventListener('click', toggleSidebar);
-        document.getElementById('btn-logout').addEventListener('click', doLogout);
-        document.getElementById('btn-settings').addEventListener('click', openSettings);
-        document.getElementById('btn-save').addEventListener('click', () => saveToNas(false));
-        // 「历史版本」按钮已移入「信息」对话框（顶栏入口已移除）；
-        // 打开历史版本前先关闭信息对话框，避免两层弹窗叠压。
-        document.getElementById('btn-history').addEventListener('click', function () {
-            closeDocInfo();
-            openHistory();
+        bindGroup('顶栏', function () {
+            document.getElementById('btn-toggle-side').addEventListener('click', toggleSidebar);
+            document.getElementById('btn-logout').addEventListener('click', doLogout);
+            document.getElementById('btn-settings').addEventListener('click', openSettings);
+            document.getElementById('btn-save').addEventListener('click', () => saveToNas(false));
+            // 「历史版本」按钮已移入「信息」对话框（顶栏入口已移除）；
+            // 打开历史版本前先关闭信息对话框，避免两层弹窗叠压。
+            document.getElementById('btn-history').addEventListener('click', function () {
+                closeDocInfo();
+                openHistory();
+            });
+            document.getElementById('btn-export-md').addEventListener('click', () => exportDoc('md'));
+            document.getElementById('btn-export-html').addEventListener('click', () => exportDoc('html'));
+            document.getElementById('btn-doc-info').addEventListener('click', openDocInfo);
+            document.getElementById('btn-raw-mode').addEventListener('click', toggleRawMode);
+            document.getElementById('btn-theme').addEventListener('click', function () {
+                applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+            });
         });
-        document.getElementById('btn-export-md').addEventListener('click', () => exportDoc('md'));
-        document.getElementById('btn-export-html').addEventListener('click', () => exportDoc('html'));
 
         // 设置面板事件
-        document.getElementById('settings-close').addEventListener('click', closeSettings);
-        document.getElementById('settings-close2').addEventListener('click', closeSettings);
-        document.getElementById('settings-save').addEventListener('click', saveSettings);
-        document.getElementById('btn-upload-favicon').addEventListener('click', uploadFavicon);
-        const dmBox = document.getElementById('set-dark-mode');
-        if (dmBox) dmBox.addEventListener('change', function () { applyTheme(this.checked ? 'dark' : 'light'); });
+        bindGroup('设置面板', function () {
+            document.getElementById('settings-close').addEventListener('click', closeSettings);
+            document.getElementById('settings-close2').addEventListener('click', closeSettings);
+            document.getElementById('settings-save').addEventListener('click', saveSettings);
+            document.getElementById('btn-upload-favicon').addEventListener('click', uploadFavicon);
+            const dmBox = document.getElementById('set-dark-mode');
+            if (dmBox) dmBox.addEventListener('change', function () { applyTheme(this.checked ? 'dark' : 'light'); });
+        });
         // 安全开关默认开启，手动关闭需二次确认（与删除文档 / 退出登录 / 导入备份统一使用自定义确认框）
         // 1.4.1：每个开关使用**各自的**风险文案（不再共用一句泛化提示），
         // 且提示「取消」为推荐选择——二次确认框的取消按钮已置为主色蓝。
@@ -3298,30 +3305,26 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             '这一事实；请通过反向代理 / 内网穿透实现 HTTPS 访问。\n\n' +
             '建议保持开启（取消本次操作）。如你不理解此处的说明，请保持开启。如确需关闭，请确认你已了解上述风险。');
         bindDenyUI();
-        document.getElementById('btn-doc-info').addEventListener('click', openDocInfo);
-        document.getElementById('btn-raw-mode').addEventListener('click', toggleRawMode);
-        updateRawModeBtn();
-        document.getElementById('btn-theme').addEventListener('click', function () {
-            applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+        bindGroup('纯文本模式按钮状态', function () { updateRawModeBtn(); });
+        // 注：btn-doc-info / btn-raw-mode / btn-theme 已并入上方「顶栏」分组，此处不再重复绑定。
+        // 字数统计说明 / 快捷键 / 文档信息 / 分区 / 密码 / 备份 —— 归为一组
+        bindGroup('对话框', function () {
+            document.getElementById('btn-word-help').addEventListener('click', () => { document.getElementById('word-help-mask').style.display = 'flex'; });
+            document.getElementById('word-help-close').addEventListener('click', () => { document.getElementById('word-help-mask').style.display = 'none'; });
+            // 快捷键对话框（1.2.0）：与「使用指南」同一入口层级、同一 modal-card 组件；
+            // 交互保持一致——关闭按钮、ESC（见下方 layers 栈）、点击遮罩空白处关闭。
+            document.getElementById('btn-kb-help').addEventListener('click', function () { document.getElementById('kb-help-mask').style.display = 'flex'; });
+            document.getElementById('kb-help-close').addEventListener('click', function () { document.getElementById('kb-help-mask').style.display = 'none'; });
+            document.getElementById('kb-help-mask').addEventListener('click', function (e) {
+                if (e.target === this) document.getElementById('kb-help-mask').style.display = 'none';
+            });
+            document.getElementById('doc-info-close').addEventListener('click', closeDocInfo);
+            document.getElementById('doc-info-close2').addEventListener('click', closeDocInfo);
+            document.getElementById('doc-info-delete').addEventListener('click', deleteCurrentDoc);
+            document.getElementById('folder-add').addEventListener('click', addFolder);
+            document.getElementById('pw-change').addEventListener('click', changePassword);
+            document.getElementById('btn-backup').addEventListener('click', doBackup);
         });
-        // 字数统计说明
-        document.getElementById('btn-word-help').addEventListener('click', () => { document.getElementById('word-help-mask').style.display = 'flex'; });
-        document.getElementById('word-help-close').addEventListener('click', () => { document.getElementById('word-help-mask').style.display = 'none'; });
-        // 快捷键对话框（1.2.0）：与「使用指南」同一入口层级、同一 modal-card 组件；
-        // 交互保持一致——关闭按钮、ESC（见下方 layers 栈）、点击遮罩空白处关闭。
-        function openKbHelp() { document.getElementById('kb-help-mask').style.display = 'flex'; }
-        function closeKbHelp() { document.getElementById('kb-help-mask').style.display = 'none'; }
-        document.getElementById('btn-kb-help').addEventListener('click', openKbHelp);
-        document.getElementById('kb-help-close').addEventListener('click', closeKbHelp);
-        document.getElementById('kb-help-mask').addEventListener('click', function (e) {
-            if (e.target === this) closeKbHelp();   // 仅点击遮罩本身（而非卡片内部）才关闭
-        });
-        document.getElementById('doc-info-close').addEventListener('click', closeDocInfo);
-        document.getElementById('doc-info-close2').addEventListener('click', closeDocInfo);
-        document.getElementById('doc-info-delete').addEventListener('click', deleteCurrentDoc);
-        document.getElementById('folder-add').addEventListener('click', addFolder);
-        document.getElementById('pw-change').addEventListener('click', changePassword);
-        document.getElementById('btn-backup').addEventListener('click', doBackup);
         // 「查看登录日志」等三个状态/日志按钮统一由 toggleLogPanel 接管（见下方）
 
         // ---------- 设置面板选项卡 ----------
@@ -3487,14 +3490,15 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             const el = document.getElementById('about-version');
             if (el && d.app) el.textContent = d.app.version;
         }).catch(() => {});
-        document.getElementById('btn-export-config').addEventListener('click', exportConfig);
-        document.getElementById('btn-import-config').addEventListener('click', () => document.getElementById('import-config-file').click());
-        document.getElementById('import-config-file').addEventListener('change', importConfig);
-        document.getElementById('btn-restore-backup').addEventListener('click', () => document.getElementById('restore-backup-file').click());
-        document.getElementById('restore-backup-file').addEventListener('change', restoreBackup);
-
-        // 历史版本弹层关闭
-        document.getElementById('history-close').addEventListener('click', closeHistory);
+        bindGroup('配置与历史版本', function () {
+            document.getElementById('btn-export-config').addEventListener('click', exportConfig);
+            document.getElementById('btn-import-config').addEventListener('click', () => document.getElementById('import-config-file').click());
+            document.getElementById('import-config-file').addEventListener('change', importConfig);
+            document.getElementById('btn-restore-backup').addEventListener('click', () => document.getElementById('restore-backup-file').click());
+            document.getElementById('restore-backup-file').addEventListener('change', restoreBackup);
+            // 历史版本弹层关闭
+            document.getElementById('history-close').addEventListener('click', closeHistory);
+        });
 
         // 自动保存：按设置间隔（默认 60 秒），每轮读取最新值以动态生效
         (function scheduleAutosave() {
