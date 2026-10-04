@@ -211,6 +211,28 @@
         .modal-card .danger { background: var(--c-danger); color: #fff; }
         .modal-card .danger:hover { background: var(--c-danger-hover); }
 
+        /* ---- 二次确认对话框按钮（1.4.1）：取消为主色蓝，确认置白 ----
+           设计意图：二次确认的本质是「劝退」——引导用户别继续。
+           故把「取消」做成醒目的主色蓝（默认视线落点 = 安全一侧），
+           「确认」降级为白底描边（次级），从视觉上不鼓励点击。
+           应用内所有二次确认共用 confirm-mask，故此处一次改动全量生效。 */
+        #confirm-mask #confirm-cancel {
+            background: var(--c-brand); color: #fff; border-color: var(--c-brand);
+        }
+        #confirm-mask #confirm-cancel:hover {
+            background: var(--c-brand-hover); color: #fff; border-color: var(--c-brand-hover);
+        }
+        #confirm-mask #confirm-ok {
+            background: #fff; color: var(--c-text-2); border-color: var(--c-border);
+        }
+        #confirm-mask #confirm-ok:hover {
+            background: #fff; color: var(--c-text); border-color: var(--c-border);
+        }
+        /* 确认框正文支持换行：二次确认的风险说明常含多段落（\n\n 分段），
+           而 showConfirm 用 textContent 赋值（天然转义，避免 XSS），
+           故需 white-space:pre-line 才能让换行生效。 */
+        #confirm-msg { white-space: pre-line; line-height: 1.65; }
+
         /* ---------------- 通用控件：输入框 ---------------- */
         #login-card input,
         .set-num input,
@@ -299,6 +321,24 @@
         .set-sec h3 { margin: 0 0 8px; font-size: var(--fs-lg); color: var(--c-text); font-weight: 600; }
         .set-sec h4 { margin: 14px 0 6px; font-size: var(--fs-md); color: var(--c-text-2); font-weight: 600; }
         .set-sec .sub { margin: 0 0 10px; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.6; }
+        /* 风险提示段（1.4.1）：用于安全相关的免责 / 风险告知，视觉上区别于普通说明文字。
+           浅底 + 左侧警示色条，在深浅色下均保持可读（用 color-mix 随主题变色）。 */
+        .set-sec .sub-warn {
+            padding: 10px 12px;
+            border-left: 3px solid var(--c-danger);
+            border-radius: 0 var(--r) var(--r) 0;
+            background: color-mix(in srgb, var(--c-danger) 8%, transparent);
+            color: var(--c-text-2);
+        }
+        .set-sec .sub-warn b { color: var(--c-danger); }
+        .set-sec .sub code,
+        .set-sec .sub-warn code {
+            padding: 1px 5px; border-radius: 4px;
+            background: var(--c-bg-fill, #f3f4f6);
+            color: var(--c-text-2);
+            font-family: Consolas, Menlo, monospace; font-size: 0.92em;
+            overflow-wrap: anywhere;
+        }
         /* 统一所有字段标签（开关型 label 由 .set-toggle 自行定义，子选项块内的也须排除） */
         .set-sec label:not(.set-toggle),
         .set-num label,
@@ -309,6 +349,21 @@
         .set-toggle {
             display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-md);
             color: var(--c-text); margin: 8px 0; cursor: pointer; line-height: 1.5;
+        }
+        /* ---- 分段单选控件（1.4.1 渲染模式三态用）----
+           与 checkbox 列表风格保持一致：容器 flex，选中项填主色。 */
+        .set-seg {
+            display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px;
+        }
+        .set-seg .seg {
+            font-family: inherit; font-size: var(--fs-sm); line-height: 1.4;
+            padding: 7px 14px; border-radius: var(--r); cursor: pointer;
+            border: 1px solid var(--c-border); background: #fff; color: var(--c-text-2);
+            transition: background-color .15s, border-color .15s, color .15s;
+        }
+        .set-seg .seg:hover { color: var(--c-brand); border-color: var(--c-brand); }
+        .set-seg .seg[aria-checked="true"] {
+            background: var(--c-brand); color: #fff; border-color: var(--c-brand);
         }
         .set-toggle input { accent-color: var(--c-brand); width: 14px; height: 14px; margin: 3px 0 0; flex: 0 0 auto; }
         .set-num { margin: 12px 0; }
@@ -811,6 +866,23 @@
         <div class="set-page" id="pg-file">
             <section class="set-sec">
                 <div class="set-sub">
+                    <h3>渲染模式（1.4.1）</h3>
+                    <div class="set-seg" id="set-render-mode" role="radiogroup" aria-label="默认渲染模式">
+                        <button type="button" class="seg" data-v="auto" role="radio" aria-checked="true">自动（推荐）</button>
+                        <button type="button" class="seg" data-v="rich" role="radio" aria-checked="false">始终富文本</button>
+                        <button type="button" class="seg" data-v="raw" role="radio" aria-checked="false">始终纯文本</button>
+                    </div>
+                    <p class="sub" id="set-render-mode-desc"></p>
+                    <p class="sub">本项为<b>默认行为</b>，保存后长期生效。若只想临时切换当前文档的渲染模式（不改变本设置），请用顶栏的「纯文本 / 富文本」切换按钮，或在下方使用临时态。</p>
+                    <div class="frow">
+                        <button class="ghost action" id="btn-once-raw" type="button">仅本次用纯文本</button>
+                        <button class="ghost action" id="btn-once-rich" type="button">仅本次用富文本</button>
+                        <button class="ghost action" id="btn-once-reset" type="button" hidden>恢复默认行为</button>
+                    </div>
+                    <p class="sub">临时态<b>仅在本次会话（页面不刷新）内生效</b>，不会写入配置；刷新页面后自动回到上方「默认行为」。适用于「这一次想快点改大文档」之类的临时需求。</p>
+                    <p class="sub sub-warn"><b>⚠️ 关于「始终富文本」</b>：对超大文档（如 15MB 对话记录、含大量代码块的日志）强制使用富文本渲染，<b>可能造成浏览器长时间卡顿甚至无响应</b>。若遇卡顿，请改回「自动」或「始终纯文本」，或使用顶栏切换按钮。</p>
+                </div>
+                <div class="set-sub">
                     <h3>文件版本与自动保存</h3>
                     <label class="set-toggle"><input type="checkbox" id="set-versioning"> 启用文件历史版本（每次手动/自动保存均生成可回溯版本）</label>
                     <div class="set-num">
@@ -849,10 +921,12 @@
                 <div class="set-sub">
                     <h3>网络访问安全</h3>
                     <label class="set-toggle"><input type="checkbox" id="set-trust-proxy"> 信任反向代理</label>
-                    <p class="sub">默认勾选。从 X-Forwarded-For 取真实客户端 IP，用于判断网络环境、登录日志显示、防爆破计数与会话绑定。需经反向代理和内网穿透访问时建议开启。</p>
+                    <p class="sub">默认勾选。从 <b>X-Forwarded-For</b> 取真实客户端 IP，用于判断网络环境、登录日志显示、防爆破计数与会话绑定。仅在确实经由反向代理 / 内网穿透访问时才应开启；直连访问时开启会让他人可伪造该头，进而影响上述判定。</p>
                     <label class="set-toggle"><input type="checkbox" id="set-secure-cookie"> 强制 Cookie Secure 标记</label>
-                    <p class="sub">默认勾选。强制通过 HTTPS 传输登录凭证，避免 HTTP 明文被抓包窃取。外网访问时建议保持开启，需自行解决 HTTPS 访问环境，局域网直连 HTTP 可正常访问，不受影响。关闭后，公网 HTTP 也可正常登录使用，但安全性降低。</p>
-                    <p class="sub">本应用为<b>纯 HTTP 服务，不提供 HTTPS</b>，请勿使用 https:// 直接访问。出于安全考虑，<b>暂不支持以 公网IP/域名:3838 的形式在公网直接访问</b>。如需在公网环境使用，请通过<b>反向代理 / 内网穿透</b>在公网侧终止 HTTPS，再由代理以 HTTP 转发到本应用（并开启上方两项安全选项）。</p>
+                    <p class="sub">默认勾选。开启后，<b>公网 HTTP 连接（如 <code>http://公网IP:3838</code>）将被拒绝访问</b>，避免 HTTP 明文在公网中被抓包窃取。局域网 HTTP 连接（如 <code>http://局域网IP:3838</code>）可正常访问，不受影响。关闭后，公网 HTTP 连接也可正常访问，但<b>登录密码、文档内容等以明文传输</b>，更易被第三方截获，<b>安全性显著降低，强烈不建议这么做</b>。</p>
+                    <p class="sub">本应用本身为<b>纯 HTTP 服务，不提供 HTTPS</b>，无法使用 <code>https://公网IP:3838</code> 直连访问（这与是否开启 Cookie Secure 无关）。如需通过 HTTPS 连接访问，请通过<b>反向代理 / 内网穿透</b>等方案实现 HTTPS，并务必开启上方两项安全选项。</p>
+                    <p class="sub"><b>支持 IPv4 与 IPv6</b>：服务同时监听 IPv4 与 IPv6，<code>http://局域网IPv6:3838</code>（形如 <code>http://[fd00::1]:3838</code>，注意 IPv6 地址需用方括号包裹）与公网 IPv6 均可访问；域名解析到 IPv6（AAAA 记录）时亦可正常访问。</p>
+                    <p class="sub sub-warn"><b>⚠️ 风险自负</b>：关闭「强制 Cookie Secure 标记」后，任何能访问到本服务地址的人，都可能截获你的<b>登录密码与全部文档内容</b>（含通过公网 IPv6 域名访问的场景）。请务必确认所处网络环境可信，并优先采用反向代理 / 内网穿透 + HTTPS 的方式；开发者不对由此产生的任何数据泄露或损失承担责任。</p>
                 </div>
                 <div class="set-sub">
                     <h3>修改登录密码</h3>
@@ -1031,13 +1105,17 @@
     </div>
 
 <!-- 通用确认对话框 -->
+<!-- 1.4.1：二次确认的本质是「劝退」——引导用户取消。因此**取消**为主色（醒目蓝），
+     **确认**置白（次级描边），使默认视线落在安全的一侧。
+     应用内所有二次确认（网页安全、删除文档、退出登录、导入备份、关闭安全选项等）共用本组件，
+     故此处改一次即全量生效，无需逐个调整。 -->
 <div id="confirm-mask" class="modal-mask">
     <div class="modal-card" style="width:360px;">
         <h2 id="confirm-title">确认</h2>
         <p class="sub" id="confirm-msg"></p>
         <div class="set-foot">
-            <button class="action" id="confirm-ok">确认</button>
             <button class="ghost action" id="confirm-cancel">取消</button>
+            <button class="ghost action" id="confirm-ok">确认</button>
         </div>
     </div>
 </div>
@@ -1093,7 +1171,8 @@
 
                 <p class="g-h">七、账号与访问</p>
                 <p>首次进入需设置管理员密码，之后凭密码访问。忘记密码：请在 fnOS 终端中执行命令 <code>vditor reset-password</code>，按指引重置密码。</p>
-                <p><b>访问方式</b>：本应用默认使用 <b>3838 端口</b>，在局域网内通过 <b>局域网IP:3838</b> 访问（将 IP 换成本机局域网 IP）。本应用为纯 HTTP 服务，不提供 HTTPS，<b>请勿用 https:// 直接访问</b>。出于安全考虑，暂不支持以 公网IP/域名:3838 在公网直接访问；如需暴露至公网，请使用反向代理 / 内网穿透等方案，并在前置代理处启用 HTTPS。</p>
+                <p><b>访问方式</b>：本应用默认使用 <b>3838 端口</b>，在局域网内通过 <b>http://局域网IP:3838</b> 访问（将 IP 换成本机局域网 IP）。<b>同时监听 IPv4 与 IPv6</b>：局域网 IPv6 用 <b>http://[局域网IPv6]:3838</b> 访问（IPv6 地址需用方括号包裹）；使用 DDNS 域名且解析到 IPv6（AAAA 记录）时同样可正常访问。本应用为纯 HTTP 服务、不提供 HTTPS，<b>无法用 https:// 直接访问</b>（这与是否开启 Cookie Secure 无关）。</p>
+                <p><b>公网访问与风险</b>：安装后<b>默认禁止</b>以 公网IP/域名:3838 的形式从公网直接访问（公网 IPv4 与公网 IPv6 均在内）。如确需公网访问，请在「设置 → 安全 → 网络访问安全」中<b>关闭「强制 Cookie Secure 标记」</b>；关闭后公网 HTTP 可正常访问，但<b>登录密码与全部文档内容以明文传输</b>，易被第三方截获，<b>安全性显著降低，强烈不建议这么做</b>，请自行评估并承担相应风险。<b>更推荐使用反向代理 / 内网穿透，在公网侧启用 HTTPS 后再转发到本应用</b>（此时请保持「强制 Cookie Secure 标记」与「信任反向代理」两项开启）。</p>
 
                 <p class="g-h">八、字数统计（顶栏）</p>
                 <p><b>正文</b>：渲染后读者实际看到的文字数（不含 Markdown 标记）；<b>含语法</b>：Markdown 源文件字符数（磁盘实际大小）；<b>预计阅读时间</b>：正文字数 ÷ 400（字/分钟，向上取整），仅作粗略参考。</p>
@@ -1617,6 +1696,37 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     // 故阈值放宽到 200 万字符（约 2MB）：2MB 以内仍做精确剥离以保证字数准确，
     // 仅超大型文档（如 15MB 对话记录）才退化为原文估算，换取绝对流畅。
     const COUNT_FAST_CHARS = 2000000;
+
+    // ---------- 1.4.1 默认渲染模式（三态）+ 临时态 ----------
+    // 「默认行为」持久化于 settings.json（render_mode: auto/rich/raw）；
+    // 「临时态」仅存于内存，页面刷新即失效，绝不写盘。
+    let renderModeSetting = 'auto';   // 来自服务端的持久化默认行为
+    let renderModeOnce = null;        // 临时态：'rich' / 'raw' / null（null=未设置）
+    const RENDER_MODE_DESC = {
+        auto: '按文档大小自动决定：超过约 30 万字符（300KB）的文档自动使用纯文本模式，其余使用富文本。（推荐）',
+        rich: '始终使用富文本渲染。适合以小文档为主的场景；对超大文档可能造成浏览器长时间卡顿甚至无响应。',
+        raw: '始终使用纯文本模式（不渲染，直接编辑 Markdown 原文）。打开任何文档都跳过富文本渲染，加载最快，但看不到排版效果。'
+    };
+    // 当前生效的渲染模式（考虑临时态优先）
+    function effectiveRenderMode() {
+        return renderModeOnce || renderModeSetting || 'auto';
+    }
+    // 依据「当前生效模式 + 文档大小」判定本次打开应使用哪种模式
+    function decideRenderMode(contentLen) {
+        const m = effectiveRenderMode();
+        if (m === 'raw') return 'raw';
+        if (m === 'rich') return 'rich';
+        return (contentLen > RAW_AUTO_CHARS) ? 'raw' : 'rich';   // auto
+    }
+    // 进入纯文本模式时的提示文案：说明「为什么」进入（自动 / 临时态 / 默认设置），
+    // 避免用户看到模式被切换却一头雾水。
+    function wantRawReason(contentLen) {
+        const m = effectiveRenderMode();
+        const size = fmtSize(contentLen);
+        if (renderModeOnce === 'raw') return '已按临时设置使用纯文本模式' + (contentLen ? '（' + size + '）' : '');
+        if (renderModeSetting === 'raw') return '已按设置「始终纯文本」使用纯文本模式' + (contentLen ? '（' + size + '）' : '');
+        return '文件较大（' + size + '），已切换纯文本模式以保证流畅';
+    }
 
     // ---------- 1.4 解耦：Vditor 惰性构建 / 销毁 ----------
     // 纯文本模式（尤其超大文档）下不保留 Vditor 实例：编辑 15MB 级文档时零富文本负担。
@@ -2227,10 +2337,14 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 document.querySelectorAll('#file-list li').forEach(li => {
                     li.classList.toggle('active', li.dataset.root === currentRoot && li.dataset.path === currentPath);
                 });
-                // 大文件分级：超过阈值切纯文本模式，规避 ir 渲染卡死
-                const big = content.length > RAW_AUTO_CHARS;
-                if (big) {
-                    if (!rawMode) enterRawMode('文件较大（' + fmtSize(content.length) + '），已切换纯文本模式以保证流畅', content.length);
+                // 渲染模式判定（1.4.1）：由 decideRenderMode() 统一决定，
+                // 口径 = 临时态 > 持久化默认行为（auto 时再按文档大小自动分级）。
+                const wantRaw = decideRenderMode(content.length) === 'raw';
+                const modeChanged = wantRaw !== rawMode;
+                if (wantRaw) {
+                    if (!rawMode) {
+                        enterRawMode(wantRawReason(content.length), content.length);
+                    }
                 } else if (rawMode) {
                     leaveRawMode();
                 }
@@ -2241,7 +2355,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                     setContent(content);
                     dirty = false;
                     scheduleCounter();
-                    if (big) {
+                    if (wantRaw) {
                         const t1 = (window.performance && performance.now) ? performance.now() : Date.now();
                         toast('已载入 ' + fmtSize(content.length) + '（纯文本模式），耗时 ' + Math.round(t1 - t0) + ' ms');
                     }
@@ -2388,6 +2502,56 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         setToggleTitle(false, false);
     }
 
+    // ---------- 1.4.1 渲染模式设置（三态 + 临时态）----------
+    function currentSegValue() {
+        const on = document.querySelector('#set-render-mode .seg[aria-checked="true"]');
+        return on ? on.dataset.v : renderModeSetting;
+    }
+    // 同步分段控件选中态 + 说明文案 + 临时态按钮的可见性
+    function syncRenderModeUI() {
+        document.querySelectorAll('#set-render-mode .seg').forEach(b => {
+            b.setAttribute('aria-checked', b.dataset.v === renderModeSetting ? 'true' : 'false');
+        });
+        const desc = document.getElementById('set-render-mode-desc');
+        if (desc) {
+            desc.textContent = RENDER_MODE_DESC[renderModeSetting] || '';
+            if (renderModeOnce) {
+                desc.textContent += '（当前已被临时态覆盖：' +
+                    (renderModeOnce === 'raw' ? '仅本次用纯文本' : '仅本次用富文本') + '）';
+            }
+        }
+        const reset = document.getElementById('btn-once-reset');
+        if (reset) reset.hidden = !renderModeOnce;
+    }
+    // 临时态：切到指定模式并**立即作用于当前文档**（无需重新打开）
+    function applyRenderModeOnce(mode) {
+        renderModeOnce = mode;
+        syncRenderModeUI();
+        if (!currentPath) { toast('当前没有打开的文档'); return; }
+        const len = (getContent() || '').length;
+        if (mode === 'raw') {
+            if (rawMode) { toast('已处于纯文本模式'); return; }
+            enterRawMode('已按临时设置切换到纯文本模式（本次会话有效）', len);
+        } else {
+            if (!rawMode) { toast('已处于富文本模式'); return; }
+            if (len > RAW_AUTO_CHARS) {
+                showConfirm('切回富文本',
+                    '当前文档 ' + fmtSize(len) + '，恢复富文本渲染可能明显卡顿。确定切换吗？',
+                    () => { exitRawMode(); updateRawModeBtn(); });
+                // 无论确认与否，临时态都已生效（体现在后续打开的文档上）
+                return;
+            }
+            exitRawMode();
+        }
+        updateRawModeBtn();
+    }
+    function clearRenderModeOnce() {
+        renderModeOnce = null;
+        syncRenderModeUI();
+        toast('已恢复为默认行为（' +
+            (renderModeSetting === 'auto' ? '自动' : renderModeSetting === 'rich' ? '始终富文本' : '始终纯文本') + '）');
+    }
+
     // ---------- 设置面板 ----------
     function openSettings() {
         loadSettings();
@@ -2408,6 +2572,10 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             document.getElementById('set-versioning').checked = SETTINGS_UI.versioning !== false;
             document.getElementById('set-max-versions').value = SETTINGS_UI.max_versions || 50;
             document.getElementById('set-autosave').value = autoSaveSec;
+            // 1.4.1 渲染模式：服务端值 → 分段控件选中态
+            renderModeSetting = (['auto', 'rich', 'raw'].indexOf(SETTINGS_UI.render_mode) >= 0)
+                ? SETTINGS_UI.render_mode : 'auto';
+            syncRenderModeUI();
             document.getElementById('set-page-title').value = SETTINGS_UI.page_title || '';
             document.getElementById('set-clear-on-uninstall').checked = !!SETTINGS_UI.clear_on_uninstall;
             document.getElementById('set-upload-max').value = SETTINGS_UI.upload_max_mb || 256;
@@ -2429,6 +2597,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             trust_proxy: document.getElementById('set-trust-proxy').checked,
             secure_cookie: document.getElementById('set-secure-cookie').checked,
             versioning: document.getElementById('set-versioning').checked,
+            render_mode: currentSegValue(),
             max_versions: parseInt(document.getElementById('set-max-versions').value, 10) || 50,
             autosave_interval: parseInt(document.getElementById('set-autosave').value, 10) || 60,
             page_title: (document.getElementById('set-page-title').value || '').trim(),
@@ -2442,6 +2611,11 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             if (!d.ok) { toast('保存失败'); denyFeedback((d && d.error) || '保存失败'); return; }
             SETTINGS_UI = d.settings || SETTINGS_UI;
             autoSaveSec = SETTINGS_UI.autosave_interval || 60;
+            // 1.4.1：渲染模式以服务端回写为准（可能被归一化），同步刷新控件与提示
+            if (['auto', 'rich', 'raw'].indexOf(SETTINGS_UI.render_mode) >= 0) {
+                renderModeSetting = SETTINGS_UI.render_mode;
+            }
+            syncRenderModeUI();
             // 以服务端回写的结果为准重建黑名单，保证 UI 与实际生效一致
             UPLOAD_DENY_LIST = denyParse(SETTINGS_UI.upload_deny || '').good;
             renderDenyList();
@@ -3037,6 +3211,26 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // 暴露给纯文本模式「切回富文本」时的惰性重建（闭包捕获 isDark / canRecord / ZH_CN_I18N）
         _buildVditorImpl = createVditor;
 
+        // ---------- 1.4.1 渲染模式：三态分段控件 + 临时态按钮 ----------
+        (function bindRenderMode() {
+            const segBox = document.getElementById('set-render-mode');
+            if (segBox) {
+                segBox.addEventListener('click', function (e) {
+                    const b = e.target.closest ? e.target.closest('.seg') : null;
+                    if (!b || !b.dataset.v) return;
+                    renderModeSetting = b.dataset.v;   // 仅改待保存值，点「保存设置」才落盘
+                    syncRenderModeUI();
+                });
+            }
+            const onRaw = document.getElementById('btn-once-raw');
+            const onRich = document.getElementById('btn-once-rich');
+            const onReset = document.getElementById('btn-once-reset');
+            if (onRaw) onRaw.addEventListener('click', () => applyRenderModeOnce('raw'));
+            if (onRich) onRich.addEventListener('click', () => applyRenderModeOnce('rich'));
+            if (onReset) onReset.addEventListener('click', clearRenderModeOnce);
+            syncRenderModeUI();
+        })();
+
         document.getElementById('btn-toggle-side').addEventListener('click', toggleSidebar);
         document.getElementById('btn-logout').addEventListener('click', doLogout);
         document.getElementById('btn-settings').addEventListener('click', openSettings);
@@ -3058,21 +3252,33 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         const dmBox = document.getElementById('set-dark-mode');
         if (dmBox) dmBox.addEventListener('change', function () { applyTheme(this.checked ? 'dark' : 'light'); });
         // 安全开关默认开启，手动关闭需二次确认（与删除文档 / 退出登录 / 导入备份统一使用自定义确认框）
-        function attachSecurityConfirm(id, name) {
+        // 1.4.1：每个开关使用**各自的**风险文案（不再共用一句泛化提示），
+        // 且提示「取消」为推荐选择——二次确认框的取消按钮已置为主色蓝。
+        // 参数：id、选项名、关闭后的具体风险说明。
+        function attachSecurityConfirm(id, name, risk) {
             const box = document.getElementById(id);
             if (!box) return;
             box.addEventListener('change', function () {
                 if (!this.checked) {
                     const el = this;
                     showConfirm('关闭安全选项',
-                        '确定要关闭「' + name + '」吗？关闭后将降低安全性（外网访问建议保持开启）。',
+                        '确定要关闭「' + name + '」吗？\n\n' + risk +
+                        '\n\n建议保持开启（取消本次操作）。如确需关闭，请确认你已了解上述风险。',
                         null,                                  // 确认关闭：保持未勾选，由「保存设置」落盘
                         function () { el.checked = true; });   // 取消：恢复勾选
                 }
             });
         }
-        attachSecurityConfirm('set-trust-proxy', '信任反向代理');
-        attachSecurityConfirm('set-secure-cookie', '强制 Cookie Secure 标记');
+        attachSecurityConfirm('set-trust-proxy', '信任反向代理',            '关闭后，若你仍经反向代理 / 内网穿透访问，本应用将取到代理的 IP 而非你的真实 IP，' +
+            '导致：登录日志中的来源 IP 不准、防暴力破解的锁定计数对同一攻击者失效、' +
+            '会话绑定与网络环境判断（是否局域网）出现偏差。');
+        attachSecurityConfirm('set-secure-cookie', '强制 Cookie Secure 标记',
+            '关闭后，公网 HTTP 连接（含公网 IPv4 / 公网 IPv6，如 http://公网IP:3838 或 http://[公网IPv6]:3838）' +
+            '将可正常访问本应用。代价是：登录密码与全部文档内容均以**明文**在网络上传输，' +
+            '同一网络中的任何人、乃至链路上的中间设备都可能截获并窃取这些内容，' +
+            '安全性显著降低，强烈不建议这么做。\n\n' +
+            '注意：本应用为纯 HTTP 服务、不提供 HTTPS，是否开启本选项都不影响「无法用 https:// 直连」这一事实；' +
+            '如需加密访问，请通过反向代理 / 内网穿透在公网侧终止 HTTPS。');
         bindDenyUI();
         document.getElementById('btn-doc-info').addEventListener('click', openDocInfo);
         document.getElementById('btn-raw-mode').addEventListener('click', toggleRawMode);
@@ -3170,7 +3376,11 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 kv(dl, '访问来源',
                    n.isLan ? '局域网' : (viaProxy ? '外部网络（经代理 / 内网穿透）' : '外部网络'),
                    n.isLan ? 'ok' : 'warn');
-                kv(dl, '客户端 IP', (n.clientIp || '—') + (viaProxy ? '（经代理，直连来源 ' + n.directIp + '）' : ''));
+                // 1.4.1：标出地址族，便于确认 IPv6（含公网 IPv6 / DDNS 的 AAAA 记录）访问是否生效。
+                const vLabel = n.ipVersion === 6 ? 'IPv6' : (n.ipVersion === 4 ? 'IPv4' : '');
+                kv(dl, '客户端 IP', (n.clientIp || '—') + (vLabel ? '（' + vLabel + '）' : '') +
+                   (viaProxy ? '（经代理，直连来源 ' + n.directIp + '）' : ''));
+                kv(dl, '监听地址', (d.host || '—') + ':' + (d.port || '—') + '（IPv4 / IPv6 双栈）');
                 kv(dl, '信任反向代理', n.trustProxy ? '已开启' : '未开启');
                 kv(dl, 'Cookie Secure', n.secureCookie ? '已开启' : '未开启');
                 kv(dl, '登录会话', s.hasSession ? '有效' : '已失效', s.hasSession ? 'ok' : 'warn');

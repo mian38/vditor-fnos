@@ -28,17 +28,25 @@ start() {
 
   # 文档根目录：优先取历史 doc_dir 文件（1.2.2 及更早版本由安装向导写入，1.2.3 起不再写入，
   # 故新装时该文件不存在），否则用应用私有目录下的 docs。
+  # 文档分区（1.4.1 起为单系统分区）：
+  #   唯一系统分区固定为 /vol1/@appshare/vditor-docs（由 fnOS 依 config/resource 的
+  #   data-share(vditor-docs) 挂载），故**不再**通过 VDITOR_DOC_DIR 注入
+  #   ${TRIM_PKGVAR}/docs —— 那会额外产生第二个系统分区，与单分区设计冲突。
+  #   升级前若使用过应用私有目录（@appdata/.../docs），其中的文件本版本不迁移、不处理；
+  #   如需继续使用，可在「设置 → 分区」中手动把该目录添加为自建分区。
   DOC_DIR_FILE="${TRIM_PKGETC}/doc_dir"
-  DOC_DIR="$(cat "$DOC_DIR_FILE" 2>/dev/null || true)"
-  if [ -z "$DOC_DIR" ]; then DOC_DIR="${TRIM_PKGVAR}/docs"; fi
-  mkdir -p "$DOC_DIR"
+  LEGACY_DOC_DIR="$(cat "$DOC_DIR_FILE" 2>/dev/null || true)"
+  SYSTEM_DOC_DIR="/vol1/@appshare/vditor-docs"
+  # 兜底：该目录尚未挂载时先建好，避免服务启动后分区不存在。
+  if [ ! -d "$SYSTEM_DOC_DIR" ]; then
+    mkdir -p "$SYSTEM_DOC_DIR" 2>/dev/null || true
+  fi
 
-  # 文档分区：优先使用飞牛“访问权限”授权目录(TRIM_DATA_SHARE_PATHS)与 data-share 声明共享目录；
-  # 亦可用 VDITOR_DOC_DIRS(名称::路径,逗号分隔) 显式指定多个可访问文件夹。
+  # 网络：HOST 默认 0.0.0.0，server.py 会将其提升为 IPv6 双栈监听（`::` + IPV6_V6ONLY=0），
+  # 从而同时接受 IPv4 与 IPv6 连接（局域网 IPv6 与公网 IPv6 均可达）。
   # VDITOR_CONFIG 指向 etc 目录，密码哈希(pwhash)持久化于此，重启不丢失。
   VDITOR_PORT="$PORT" \
   VDITOR_UPLOAD_DIR="${TRIM_PKGVAR}/uploads" \
-  VDITOR_DOC_DIR="$DOC_DIR" \
   VDITOR_CONFIG="${TRIM_PKGETC}" \
     "$PY" "$APP_DIR/server.py" >>"$LOG" 2>&1 &
   newpid=$!

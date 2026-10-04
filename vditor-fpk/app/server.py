@@ -43,6 +43,7 @@ import hashlib
 import secrets
 import shutil
 import ipaddress
+import socket
 import threading
 import gzip
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -61,7 +62,7 @@ from vd_util import (
     _FILES_CACHE, _FILES_TTL, _UPLOAD_INDEX, _UPLOAD_INDEX_TTL,
     upload_headers, static_headers, trusted_forwarded_proto,
     invalidate_files_cache, invalidate_upload_index,
-    is_private_ip, slugify, collect_share_paths, guess_mime,
+    is_private_ip, ip_version_of, slugify, collect_share_paths, guess_mime,
     is_static_denied, is_public_static, safe_join,
     parse_multipart, _version_key, _legacy_version_key,
     _folder_note_path, _doc_asset_dir, _in_doc_folder,
@@ -70,7 +71,7 @@ from vd_util import (
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 
 # 超过此体积的文档不再生成「历史版本」快照。
 # 背景：快照机制是每次保存都存一份**全文**。配合默认 60 秒自动保存，
@@ -85,6 +86,9 @@ START_TIME = time.time()
 
 # ---------------- 配置 ----------------
 def load_config():
+    # HOST 默认 "0.0.0.0"：在 make_server() 中该值会被提升为 IPv6 双栈监听（`::` + V6ONLY=0），
+    # 从而同时覆盖 IPv4 与 IPv6（含局域网 ULA / fe80:: 与公网 IPv6）。
+    # 如需强制仅 IPv4，可设 VDITOR_HOST 或 config.env 的 HOST 为一个具体 IPv4 地址。
     cfg = {"PORT": "3838", "HOST": "0.0.0.0"}
     env_file = os.path.join(BASE_DIR, "config.env")
     if os.path.isfile(env_file):
@@ -123,6 +127,7 @@ DEFAULT_SETTINGS = {
     "trust_proxy": _bool_default_true("VDITOR_TRUST_PROXY"),  # 信任 X-Forwarded-For 取真实客户端 IP（默认开启）
     "secure_cookie": _bool_default_true("VDITOR_SECURE_COOKIE"),  # 强制 Cookie 带 Secure（全站 HTTPS，默认开启）
     "autosave_interval": 60,   # 自动保存间隔（秒），默认 1 分钟
+    "render_mode": "auto",     # 默认渲染模式：auto=按大小自动 / rich=始终富文本 / raw=始终纯文本
     "versioning": True,        # 是否启用文件历史版本
     "max_versions": 50,        # 每个文件保留的最大历史版本数
     "page_title": "Vditor 在线 Markdown 编辑器",  # 网页标题
@@ -132,6 +137,8 @@ DEFAULT_SETTINGS = {
     "upload_deny": DEFAULT_UPLOAD_DENY,  # 不允许上传的文件扩展名黑名单（逗号分隔；默认放行其余全部）
     "upload_accept": "",       # 【已废弃·仅降级兼容】1.1.2 的白名单字段，1.1.3 起不再参与校验
 }
+
+RENDER_MODES = ("auto", "rich", "raw")   # 1.4.1 默认渲染模式取值
 
 def load_settings():
     s = dict(DEFAULT_SETTINGS)
@@ -161,6 +168,10 @@ def load_settings():
     s["secure_cookie"] = bool(s.get("secure_cookie"))
     s["versioning"] = bool(s.get("versioning", True))
     s["clear_on_uninstall"] = bool(s.get("clear_on_uninstall"))
+    # 默认渲染模式（1.4.1）：非法值一律回落 auto，绝不让脏值进入决策路径
+    # （前端 openFile 依赖它决定是否进纯文本，脏值会导致模式判断异常）。
+    if s.get("render_mode") not in RENDER_MODES:
+        s["render_mode"] = "auto"
     try:
         s["upload_max_mb"] = min(512, max(1, int(float(s.get("upload_max_mb") or 256))))
     except Exception:
@@ -485,7 +496,24 @@ def save_managed_folders(lst):
         return False
 
 
+SYSTEM_SHARE_DIR = "/vol1/@appshare/vditor-docs"   # 1.4.1：唯一系统分区（应用自身数据共享目录）
+
+
 def build_doc_roots():
+    """构建文档分区列表（1.4.1 起为**单系统分区**）。
+
+    决策：系统分区固定为 `/vol1/@appshare/vditor-docs`，不再把
+    「访问权限授权目录 / data-share 声明 / 分享路径文件」自动并入为系统分区。
+    理由：多来源自动发现会随用户在 fnOS 中调整授权而增减分区，导致同一文档
+    出现在不同分区、影响定位与备份范围；分区语义应当稳定可预期。
+
+    仍然保留：
+      · `VDITOR_DOC_DIRS` 显式多分区（部署 / 测试覆盖用，优先级最高）；
+      · WebUI「设置 → 分区」中用户手动添加的目录（属**用户自建**分区，非系统分区）。
+
+    ⚠️ 其它系统分区中若存在历史文件，本版本**不做迁移、不做处理、不去理会**；
+    如需使用其中内容，用户可自行在「设置 → 分区」中手动添加该目录。
+    """
     roots = []
     dirs_env = os.environ.get("VDITOR_DOC_DIRS", "").strip()
     if dirs_env:
@@ -503,28 +531,38 @@ def build_doc_roots():
             if path:
                 roots.append((name, path))
     else:
-        # 飞牛：访问权限/共享工作区/手动配置目录
-        for name, path in collect_share_paths():
-            roots.append((name, path))
-    # 应用内手动管理文件夹（WebUI 中添加，持久化）始终并入
+        # 唯一系统分区：应用自身的数据共享目录。
+        # 该目录由 fnOS 按 config/resource 的 data-share(vditor-docs) 挂载到 /vol1/@appshare。
+        # ⚠️ 仅当它**确实存在**时才作为分区加入：不存在说明 fnOS 尚未挂载（如未授权 /
+        #   非 fnOS 环境 / 测试环境），此时不应凭空 makedirs 造出一个空分区，
+        #   否则会凭空多出一个空分区并排在真实分区之前。
+        if os.path.isdir(SYSTEM_SHARE_DIR):
+            roots.append(("我的文档", SYSTEM_SHARE_DIR))
+    # 应用内手动管理文件夹（WebUI 中添加，持久化）始终并入（属用户自建分区）
+    managed = []
     for f in load_managed_folders():
         p = (f.get("path") or "").strip()
         if not p:
             continue
         name = (f.get("name") or "").strip() or (os.path.basename(p.rstrip("/")) or "文档")
-        roots.append((name, p))
-    # 显式默认文档目录（VDITOR_DOC_DIR，测试 / 部署覆盖用）：只要设置就始终作为一个分区，
-    # 不能因用户手动添加了其他分区而「被挤掉」（修复：旧逻辑放在 `if not roots:` 内，
-    # 一旦添加了管理文件夹，默认文档目录就会从分区列表里消失）。
+        managed.append((name, p))
+    # 显式默认文档目录（VDITOR_DOC_DIR，测试 / 部署覆盖用）。
+    # 设置时**取代系统分区**（而非与之并存），但**不影响用户自建分区**——
+    # 这样「指定了哪个目录作默认」与「我手动加的分区」互不干扰。
+    # 1.3.1 曾写成「只要设置就始终加入」以修复「添加管理文件夹后默认分区消失」；
+    # 1.4.1 起因系统分区已固定为 SYSTEM_SHARE_DIR、不再依赖 collect_share_paths，
+    # 该场景不复存在，故收敛为「取代系统分区」。
     dd = os.environ.get("VDITOR_DOC_DIR")
     if dd:
-        roots.append((os.environ.get("VDITOR_DOC_NAME", "我的文档"), dd))
-    if not roots:
-        # 回退：单目录（运行时数据 docs 或 BASE_DIR/docs）——仅在既无共享路径、
-        # 也无管理文件夹、也未显式指定 VDITOR_DOC_DIR 时才启用
-        base = os.environ.get("TRIM_PKGVAR")
-        default = os.path.join(base, "docs") if base else os.path.join(BASE_DIR, "docs")
-        roots.append(("我的文档", default))
+        roots = [(os.environ.get("VDITOR_DOC_NAME", "我的文档"), dd)] + managed
+    else:
+        roots = roots + managed
+        if not roots:
+            # 回退：单目录（运行时数据 docs 或 BASE_DIR/docs）——仅在既无系统分区
+            #（未挂载）、也无管理文件夹、也未显式指定 VDITOR_DOC_DIR 时才启用
+            base = os.environ.get("TRIM_PKGVAR")
+            default = os.path.join(base, "docs") if base else os.path.join(BASE_DIR, "docs")
+            roots.append(("我的文档", default))
     # 去重（按绝对路径），生成最终分区列表
     out = []
     seen = set()
@@ -845,21 +883,30 @@ class Handler(BaseHTTPRequestHandler):
 
     def _https_required_error(self):
         """安全策略要求 HTTPS（Secure Cookie）但当前为 HTTP 连接时，返回明确错误；
-        返回 None 表示允许登录。局域网私有网段直连 HTTP 仍放行（见 _send_cookie）。"""
+        返回 None 表示允许登录。
+
+        1.4.1 规则（IPv4 / IPv6 通用）：
+          · 局域网（IPv4 私有段 / IPv6 ULA fc00::/7 / 链路本地 fe80::/10）→ 始终放行；
+          · 公网（公网 IPv4 / 公网 IPv6）且「强制 Cookie Secure 标记」开启 → 拒绝；
+          · 公网且该选项关闭 → 放行（用户已知悉明文传输风险）。
+        """
         proto = trusted_forwarded_proto(self)   # 仅本机/局域网代理可信，防伪造绕过
         if proto == "https":
             return None
         lan = is_private_ip(client_ip(self))
         if SETTINGS.get("secure_cookie") and not lan:
             return ("当前为 HTTP 连接，但安全策略要求使用 HTTPS（Secure Cookie 无法在 HTTP 下生效）。"
-                    "请通过 HTTPS（如反向代理 / 域名）访问本应用后再登录。")
+                    "请通过 HTTPS（如反向代理 / 域名）访问本应用后再登录；"
+                    "若确需以公网 HTTP（IPv4 或 IPv6）直接访问，请先在「设置 → 安全 → 网络访问安全」"
+                    "中阅读风险说明后关闭「强制 Cookie Secure 标记」。")
         return None
 
     def _send_cookie(self, token):
         parts = ["vditor_sid=%s" % token, "HttpOnly", "SameSite=Lax", "Path=/", "Max-Age=%d" % ABS_TIMEOUT]
         # Secure 仅当「强制 Cookie Secure 标记」开启且非局域网时附加。
         # 关闭该选项后，无论当前连接是 HTTP 还是 HTTPS，Cookie 都不带 Secure，
-        # 从而允许公网 HTTP 登录后正常使用（不会因浏览器拒绝发送 Secure Cookie 而 401）。
+        # 从而允许公网 HTTP（含 IPv4 / IPv6）登录后正常使用
+        # （不会因浏览器拒绝发送 Secure Cookie 而 401）。
         lan = is_private_ip(client_ip(self))
         if SETTINGS["secure_cookie"] and not lan:
             parts.append("Secure")
@@ -919,6 +966,9 @@ class Handler(BaseHTTPRequestHandler):
                 "clientIp": c_ip,
                 "directIp": direct,
                 "isLan": lan,
+                # 客户端地址族（1.4.1）：便于区分 IPv4 / IPv6 访问（含公网 IPv6）。
+                # 取自真实客户端 IP（可能已剥离 IPv6 的 %scope 后缀）。
+                "ipVersion": ip_version_of(c_ip),
                 # 本次请求是否经反向代理 / 内网穿透（XFF 首段与直连来源不同）
                 "viaProxy": via_proxy,
                 "proto": proto,
@@ -1533,6 +1583,15 @@ class Handler(BaseHTTPRequestHandler):
                         SETTINGS[k] = data[k]; changed = True
                 else:
                     errs.append("%s 必须为布尔值" % k)
+        # 默认渲染模式（1.4.1）：三选一枚举，非法值明确报错（不静默吞掉，
+        # 否则用户会困惑于「设置没生效」）。
+        if "render_mode" in data:
+            v = (data["render_mode"] or "").strip()
+            if v in RENDER_MODES:
+                if SETTINGS.get("render_mode") != v:
+                    SETTINGS["render_mode"] = v; changed = True
+            else:
+                errs.append("render_mode 必须为 auto / rich / raw 之一")
         # 三个整型字段：范围不同、报错文案不同，故仅抽取校验骨架
         changed |= self._apply_int_setting(data, "autosave_interval", 10, 1 << 30,
                                           "autosave_interval", errs, SETTINGS)
@@ -1583,7 +1642,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"ok": True, "settings": dict(SETTINGS)})
 
     def _api_settings_export(self):
-        keys = ("trust_proxy", "secure_cookie", "versioning", "max_versions", "autosave_interval", "page_title", "favicon", "clear_on_uninstall", "upload_max_mb", "upload_deny", "upload_accept")
+        keys = ("trust_proxy", "secure_cookie", "render_mode", "versioning", "max_versions", "autosave_interval", "page_title", "favicon", "clear_on_uninstall", "upload_max_mb", "upload_deny", "upload_accept")
         payload = {
             "app": "vditor-nas",
             "version": APP_VERSION,
@@ -2044,12 +2103,68 @@ class Handler(BaseHTTPRequestHandler):
         sys.stderr.write("[vditor-nas] %s - %s\n" % (self.address_string(), fmt % args))
 
 
+class DualStackServer(ThreadingHTTPServer):
+    """同时监听 IPv6 与 IPv4 的 HTTP 服务（1.4.1）。
+
+    为什么需要：`socketserver.TCPServer.address_family` 默认 `AF_INET`，
+    即使把 HOST 写成 `::`，socket 仍按 IPv4 族创建，`bind()` 会抛
+    `Address family not supported`；退成 `0.0.0.0` 则只收 IPv4，
+    于是「http://[公网IPv6]:3838」「http://[局域网IPv6]:3838」全部连不上
+    （表现为域名指向 AAAA 记录却打不开）。
+
+    实现要点：
+    1. `address_family = AF_INET6`，绑定 `::` 即可覆盖 IPv6；
+    2. 在 `server_bind` 前置 `IPV6_V6ONLY = 0`，让同一个 socket 同时接受
+       IPv4 连接（映射为 `::ffff:a.b.c.d`），避免为 IPv4 再开第二个监听端口；
+    3. 若系统未启用 IPv6 或 V6ONLY 置 0 失败，则**回退**为纯 IPv4 监听，
+       保证老环境 / 纯 IPv4 机器仍能正常启动（不因 IPv6 缺失而无法提供服务）。
+
+    注：`::ffff:a.b.c.d` 这类 IPv4-mapped 地址在 `client_ip()` 与
+    `is_private_ip()` 中已被还原为 IPv4（`ipv4_mapped`），局域网判定不受影响。
+    """
+
+    address_family = socket.AF_INET6
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def server_bind(self):
+        # 关闭 IPV6_V6ONLY 才能让同一端口同时接受 IPv4 客户端。
+        # 部分系统默认 net.ipv6.bindv6only=1，必须显式置 0。
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except OSError:
+            pass          # 不支持则保持默认；后续 bind 失败会走回退分支
+        return ThreadingHTTPServer.server_bind(self)
+
+
+def make_server(host, port, handler):
+    """按可用性选择监听族，优先 IPv6 双栈，失败则回退 IPv4。
+
+    返回可 serve_forever() 的 server 实例。
+    """
+    errors = []
+    # ① 首选 IPv6 双栈：HOST 为空 / '::' / '0.0.0.0' 时都尝试双栈，
+    #    因为 '0.0.0.0' 在双栈语境下即「本机所有地址（v4 + v6）」。
+    try:
+        bind_host = host if host not in ("", "0.0.0.0") else "::"
+        return DualStackServer((bind_host, port), handler)
+    except OSError as e:
+        errors.append("IPv6 双栈监听失败（%s: %s）" % (bind_host, e))
+    # ② 回退：纯 IPv4（覆盖未启用 IPv6 的系统）
+    try:
+        return ThreadingHTTPServer(("0.0.0.0", port), handler)
+    except OSError as e:
+        errors.append("IPv4 监听失败（0.0.0.0: %s）" % e)
+    raise OSError("无法监听端口 %d：%s" % (port, "；".join(errors)))
+
+
 def main():
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    server = make_server(HOST, PORT, Handler)
     print("=" * 56)
-    print(" Vditor NAS 已启动（安全增强版）")
+    print(" Vditor 编辑器已启动")
     print(" 监听地址 : http://%s:%d" % (HOST, PORT))
     print(" 本机访问 : http://127.0.0.1:%d" % PORT)
+    print("           http://[::1]:%d" % PORT)
     print(" 资源目录 : %s" % BASE_DIR)
     print(" 上传目录 : %s" % UPLOAD_DIR)
     print(" 文档分区 :")
@@ -2059,6 +2174,15 @@ def main():
         print(" 安全提示 : 首次访问需设置管理员密码（/api/setup）")
     else:
         print(" 访问控制 : 已启用密码登录")
+    print(" 访问协议 : 本应用为纯 HTTP 服务，不提供 HTTPS；请勿用 https:// 直接访问。")
+    print("            局域网可直接访问（IPv4 / IPv6 均可）。")
+    if SETTINGS["secure_cookie"]:
+        print(" 公网访问 : 当前「强制 Cookie Secure 标记」已开启，公网 HTTP 访问会被拒绝。")
+        print("            如需公网访问，请在「设置 → 安全」中了解风险后再决定是否关闭该选项；")
+        print("            更推荐通过反向代理 / 内网穿透在公网侧终止 HTTPS 后再转发到本应用。")
+    else:
+        print(" 公网访问 : 当前「强制 Cookie Secure 标记」已关闭，公网 HTTP（含公网 IPv4 / IPv6）可访问，")
+        print("            但登录密码与文档内容均为明文传输，易被第三方截获，安全性显著降低。")
     if not SETTINGS["trust_proxy"]:
         print(" 代理提示 : 若经反向代理/内网穿透，请在『设置』中开启“信任代理(X-Forwarded-For)”，以正确识别客户端 IP")
     print(" 按 Ctrl+C 停止")

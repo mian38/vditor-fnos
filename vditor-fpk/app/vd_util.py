@@ -257,8 +257,50 @@ def invalidate_upload_index():
     _UPLOAD_INDEX["map"] = None
 
 
+def strip_ip_scope(ip):
+    """去掉 IPv6 地址的 zone / scope 后缀（形如 `fe80::1%eth0`）。
+
+    链路本地地址（fe80::/10）在 socket 层会带 scope id，浏览器与日志里也可能出现，
+    但 `ipaddress.ip_address()` 不接受 `%`——不剥离会让所有 IP 判定直接抛 ValueError
+    并被上层当成「非法 IP」，进而把局域网 IPv6 误判为公网（登录被拒、Cookie 不带 Secure）。
+    """
+    if not ip:
+        return ""
+    ip = str(ip).strip()
+    if ip.startswith("[") and "]" in ip:      # 形如 [240e::1]:3838 或 [::1]
+        ip = ip[1:ip.index("]")]
+    if "%" in ip:
+        ip = ip.split("%", 1)[0]
+    return ip
+
+
+def ip_version_of(ip):
+    """返回地址族标识：4 / 6 / 0（无法解析）。
+
+    1.4.1 起「应用状态」会显示访问来源是 IPv4 还是 IPv6（含公网 IPv6），
+    便于用户确认双栈监听是否生效。
+    """
+    ip = strip_ip_scope(ip)
+    if not ip:
+        return 0
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return 0
+    if addr.version == 6 and getattr(addr, "ipv4_mapped", None) is not None:
+        return 4          # ::ffff:a.b.c.d 实质仍是 IPv4
+    return addr.version
+
+
 def is_private_ip(ip):
-    """判断 IPv4/IPv6 是否为私有/回环/链路本地网段（局域网）。"""
+    """判断 IPv4/IPv6 是否为私有/回环/链路本地网段（局域网）。
+
+    覆盖 LAN IPv6 的两类典型地址：
+      · ULA  fc00::/7   （含 fd00::/8，最常见的局域网 IPv6）
+      · 链路本地 fe80::/10（带 %scope 后缀，已由 strip_ip_scope 剥离）
+    公网 IPv6（如 240e::/32、2400::/12 段）不在上述范围，会被正确判定为「非局域网」。
+    """
+    ip = strip_ip_scope(ip)
     if not ip:
         return False
     try:
