@@ -145,7 +145,9 @@
             background: var(--c-bg);
             color: var(--c-text);
             tab-size: 4;
-            white-space: pre;
+            white-space: pre-wrap;        /* 1.4 修复：整段超长文本（含无空格长串 / CJK）自动换行，不横向滚动 */
+            overflow-wrap: anywhere;
+            word-break: break-word;
             overflow: auto;
         }
         #raw-editor.is-active { display: block; }
@@ -736,7 +738,7 @@
         <!-- 纯文本（原始 Markdown）编辑区：大文件 / 超大文件降级使用。
              完全不经过 Vditor 渲染，仅编辑文本本身，用于承载 ir 模式无法处理的大文档。 -->
         <div id="raw-mode-tip">纯文本模式：已关闭富文本渲染以降低资源占用，可直接编辑 Markdown 原文（保存与历史版本不受影响）。</div>
-        <textarea id="raw-editor" spellcheck="false" wrap="off" hidden></textarea>
+        <textarea id="raw-editor" spellcheck="false" wrap="soft" hidden></textarea>
     </div>
     <div id="sidebar-backdrop"></div>
 </div>
@@ -1616,6 +1618,29 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     // 仅超大型文档（如 15MB 对话记录）才退化为原文估算，换取绝对流畅。
     const COUNT_FAST_CHARS = 2000000;
 
+    // ---------- 1.4 解耦：Vditor 惰性构建 / 销毁 ----------
+    // 纯文本模式（尤其超大文档）下不保留 Vditor 实例：编辑 15MB 级文档时零富文本负担。
+    //  - 启动时由 initEditorAndFiles 内部 createVditor() 构建（默认载入小体积教程，富文本无压力）；
+    //  - 进入纯文本且文档超阈值时 destroyVditor() 释放内存与后台开销；
+    //  - 切回富文本时 buildVditor() 惰性重建，pendingRichText 携带来源文本灌入。
+    let pendingRichText = null;     // 重建 Vditor 后要灌入的富文本内容（来自纯文本 textarea）
+    let _buildVditorImpl = null;    // 由 initEditorAndFiles 注入的构造器（闭包捕获主题/文案）
+    function buildVditor() {
+        if (vditor) return;
+        if (_buildVditorImpl) _buildVditorImpl();
+    }
+    function destroyVditor() {
+        if (!vditor) return;
+        try { if (typeof vditor.destroy === 'function') vditor.destroy(); } catch (e) {}
+        try {
+            const iv = vditor.vditor;
+            if (iv && typeof iv.destroy === 'function') iv.destroy();
+        } catch (e) {}
+        vditor = null;
+        const host = document.getElementById('vditor');
+        if (host) host.innerHTML = '';
+    }
+
     function isRawMode() { return rawMode; }
 
     // 手动切换纯文本 / 富文本。切回富文本时若文档过大，先二次确认（渲染可能明显卡顿）。
@@ -1660,12 +1685,20 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         if (vditor) vditor.setValue(t, false);
     }
 
-    function enterRawMode(reason) {
+    function enterRawMode(reason, len) {
         if (rawMode) return;
+        // ⚠️ 必须在 rawMode = true **之前**取内容：getContent() 依据 rawMode 分流，
+        //    置位后会改为读 textarea（此时为空），导致手动切换时内容丢失。
+        //    统一走访问层，禁止在此直调 vditor.getValue()（见 test_frontend 守卫）。
+        const carry = (!rawEl || !rawEl.value) ? (getContent() || '') : '';
         rawMode = true;
         rawEl = document.getElementById('raw-editor');
         document.body.classList.add('raw-mode');
         if (rawEl) {
+            // 手动切换：把富文本当前内容同步进 textarea，保证编辑连续（避免空白 / 丢失）
+            if (!rawEl.value && carry) {
+                try { rawEl.value = carry; } catch (e) {}
+            }
             rawEl.classList.add('is-active');
             rawEl.hidden = false;
             if (!rawEl._bound) {
@@ -1674,9 +1707,25 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             }
         }
         if (reason) toast(reason);
+        // 1.4 解耦：超大文档纯文本模式足以编辑，销毁 Vditor 释放内存与后台开销
+        if (typeof len === 'number' && len > RAW_AUTO_CHARS && vditor) {
+            destroyVditor();
+        }
         scheduleCounter();
     }
 
+    // 离开纯文本模式但不沿用旧内容（如打开小文件）：交由后续 setContent 灌入新内容，
+    // 避免把上一超大文档误灌进 Vditor 造成卡死。
+    function leaveRawMode() {
+        if (!rawMode) return;
+        rawMode = false;
+        document.body.classList.remove('raw-mode');
+        if (rawEl) { rawEl.classList.remove('is-active'); rawEl.hidden = true; rawEl.value = ''; }
+        if (!vditor) { pendingRichText = null; buildVditor(); }
+        scheduleCounter();
+    }
+
+    // 手动「切回富文本」：把纯文本内容交还 Vditor（超大文档已在 toggleRawMode 二次确认）
     function exitRawMode() {
         if (!rawMode) return;
         const text = rawEl ? rawEl.value : '';
@@ -1684,6 +1733,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         document.body.classList.remove('raw-mode');
         if (rawEl) { rawEl.classList.remove('is-active'); rawEl.hidden = true; rawEl.value = ''; }
         if (vditor) vditor.setValue(text, false);
+        else { pendingRichText = text; buildVditor(); }
         scheduleCounter();
     }
     // 上传时随表单携带「当前文档所属分区 + 文档路径」，使上传物存进文档所在文件夹（与文档放一起）。
@@ -1784,7 +1834,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         _wcTimer = setTimeout(updateCounter, 250);
     }
     function updateCounter() {
-        if (!vditor) return;
+        // 1.4 解耦：纯文本模式（Vditor 可能已销毁）下仍需正常统计，故不再以 vditor 存在为前提
+        if (!rawMode && !vditor) return;
         const val = getContent() || '';
         const mdLen = val.endsWith('\n') ? val.length - 1 : val.length;
         const textLen = countReaderWords(readerVisibleText());
@@ -2179,10 +2230,11 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 // 大文件分级：超过阈值切纯文本模式，规避 ir 渲染卡死
                 const big = content.length > RAW_AUTO_CHARS;
                 if (big) {
-                    enterRawMode('文件较大（' + fmtSize(content.length) + '），已切换纯文本模式以保证流畅');
+                    if (!rawMode) enterRawMode('文件较大（' + fmtSize(content.length) + '），已切换纯文本模式以保证流畅', content.length);
                 } else if (rawMode) {
-                    exitRawMode();
+                    leaveRawMode();
                 }
+                updateRawModeBtn();   // 自动进/出纯文本后同步按钮文案，消除「按钮显示与真实模式不符」的歧义
                 // 先让浏览器完成一帧绘制（含模式切换后的布局），再灌入内容，
                 // 避免大文本写入长时间占用主线程造成「白屏假死」观感。
                 const fill = () => {
@@ -2894,7 +2946,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
   'uploading': '上传中...',
   'wysiwyg': '所见即所得',
 };
-        vditor = new Vditor('vditor', {
+        function createVditor() {
+            vditor = new Vditor('vditor', {
             cdn: '/vditor',
             i18n: ZH_CN_I18N,
             height: '100%',
@@ -2955,9 +3008,13 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             },
             input: () => { dirty = true; scheduleCounter(); },
             after() {
-                // 编辑器默认内容 = Markdown 教程（内嵌于 #welcome-md，仿 Vditor 官方 demo 预置示例）
-                const welcomeEl = document.getElementById('welcome-md');
-                setContent(welcomeEl ? welcomeEl.textContent : '');
+                // 1.4 解耦：重建（从纯文本切回富文本）时优先灌入 pendingRichText；
+                // 首次启动则载入内嵌 Markdown 教程。
+                let initial;
+                if (pendingRichText != null) { initial = pendingRichText; }
+                else { const welcomeEl = document.getElementById('welcome-md'); initial = welcomeEl ? welcomeEl.textContent : ''; }
+                pendingRichText = null;
+                setContent(initial);
                 refreshFiles();
                 // 窄屏下拉面板脱离工具栏，避免被滚动容器裁掉
                 initMobilePanelFix();
@@ -2965,14 +3022,20 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 initOutlineToggle();
                 // 初始化顶栏字数统计（counter.after 已在 setValue 时驱动一次，这里兜底刷新）
                 updateCounter();
-                // 非安全上下文下录音不可用，说明原因（浏览器安全策略，非应用缺陷）
-                if (!canRecord) {
-                    toast('录音不可用：浏览器仅在 HTTPS 或 localhost 下开放麦克风，当前为 HTTP 访问');
-                }
                 // 拉取设置以应用自动保存间隔
                 loadSettings();
             }
         });
+        }
+
+        // 首次启动构建富文本引擎（默认载入小体积教程，无压力）
+        createVditor();
+        // 非安全上下文下录音不可用，说明原因（浏览器安全策略，非应用缺陷；仅启动提示一次）
+        if (!canRecord) {
+            toast('录音不可用：浏览器仅在 HTTPS 或 localhost 下开放麦克风，当前为 HTTP 访问');
+        }
+        // 暴露给纯文本模式「切回富文本」时的惰性重建（闭包捕获 isDark / canRecord / ZH_CN_I18N）
+        _buildVditorImpl = createVditor;
 
         document.getElementById('btn-toggle-side').addEventListener('click', toggleSidebar);
         document.getElementById('btn-logout').addEventListener('click', doLogout);
