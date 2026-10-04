@@ -199,6 +199,23 @@ check('清除临时态后超大文档重新按自动分级为 raw', sandbox.deci
 check('清除临时态后小文档重新按自动分级为 rich', sandbox.decideRenderMode(1000) === 'rich');
 segSet('auto');
 
+// ---------- [10b] 1.4.2 顶栏按钮承载临时态 + 仅大文档可见 ----------
+// 按钮显隐：小文档隐藏 / 大文档显示
+vm.runInContext('currentPath = null;', sandbox);
+sandbox.updateRawModeBtn();
+check('未打开文档时按钮隐藏', getEl('btn-raw-mode').hidden === true);
+vm.runInContext('currentPath = "a.md";', sandbox);
+sandbox.setContent('短');                      // 小文档
+sandbox.updateRawModeBtn();
+check('小文档时按钮隐藏（1.4.2）', getEl('btn-raw-mode').hidden === true);
+sandbox.setContent('数据 '.repeat(300000));    // 超阈值大文档
+sandbox.updateRawModeBtn();
+check('大文档时按钮显示（1.4.2）', getEl('btn-raw-mode').hidden === false);
+check('大文档按钮文案表示目标模式（当前富文本 → 显示「纯文本」）',
+      getEl('btn-raw-mode').textContent === '纯文本');
+check('设置页临时态控件已删除', !/btn-once/.test(html));
+check('按钮 title 标注仅本次生效', /仅本次生效/.test(getEl('btn-raw-mode').title));
+
 // ---------- [11] 1.4.1 二次确认按钮：取消为主色蓝、确认置白 ----------
 check('确认框：取消按钮为高亮主色（蓝）', /#confirm-mask #confirm-cancel\s*\{[\s\S]*?background:\s*var\(--c-brand\)/.test(html));
 check('确认框：确认按钮为白底', /#confirm-mask #confirm-ok\s*\{[\s\S]*?background:\s*#fff/.test(html));

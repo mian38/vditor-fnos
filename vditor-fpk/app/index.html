@@ -507,6 +507,14 @@
         .help-body { max-height: 70vh; overflow: auto; }
         .help-body p { margin: 8px 0; line-height: 1.7; font-size: var(--fs-md); }
         .help-body .g-h { margin: 14px 0 4px; font-size: var(--fs-lg); font-weight: 600; color: var(--c-text); }
+        /* 补充说明段（1.4.2）：略小于正文、浅底，用于「限制条件 / 注意事项」这类补充信息 */
+        .help-body .g-note {
+            margin: 6px 0 10px; padding: 8px 12px; font-size: var(--fs-sm);
+            color: var(--c-text-3); line-height: 1.65;
+            background: var(--c-bg-fill, #f6f7f9);
+            border-left: 3px solid var(--c-border, #d0d7de); border-radius: 0 var(--r) var(--r) 0;
+        }
+        .help-body .g-note b { color: var(--c-text-2); }
         .help-body hr { border: none; border-top: 1px solid var(--c-border-2); margin: 12px 0; }
 
         /* toast 须高于所有弹层（.modal-mask 10001 / #confirm-mask 10010），否则在设置面板中保存后的成功提示会被遮罩挡住 */
@@ -784,7 +792,8 @@
                 <button id="btn-export-md" class="ghost">导出 .md</button>
                 <button id="btn-export-html" class="ghost">导出 HTML</button>
                 <button id="btn-doc-info" class="ghost">信息</button>
-                <button id="btn-raw-mode" class="ghost" title="切换为纯文本模式（关闭渲染，适合大文件）">纯文本</button>
+                <!-- 1.4.2：仅在打开大文档时出现（由 updateRawModeBtn 依据文档大小控制显隐） -->
+                <button id="btn-raw-mode" class="ghost" title="切换为纯文本模式（关闭渲染，适合大文件）" hidden>纯文本</button>
                 <button id="btn-theme" class="ghost" title="切换浅色 / 暗黑模式">🌙</button>
                 <button id="btn-save">保存</button>
             </div>
@@ -866,21 +875,15 @@
         <div class="set-page" id="pg-file">
             <section class="set-sec">
                 <div class="set-sub">
-                    <h3>渲染模式（1.4.1）</h3>
+                    <h3>渲染模式（1.4.2）</h3>
                     <div class="set-seg" id="set-render-mode" role="radiogroup" aria-label="默认渲染模式">
                         <button type="button" class="seg" data-v="auto" role="radio" aria-checked="true">自动（推荐）</button>
                         <button type="button" class="seg" data-v="rich" role="radio" aria-checked="false">始终富文本</button>
                         <button type="button" class="seg" data-v="raw" role="radio" aria-checked="false">始终纯文本</button>
                     </div>
                     <p class="sub" id="set-render-mode-desc"></p>
-                    <p class="sub">本项为<b>默认行为</b>，保存后长期生效。若只想临时切换当前文档的渲染模式（不改变本设置），请用顶栏的「纯文本 / 富文本」切换按钮，或在下方使用临时态。</p>
-                    <div class="frow">
-                        <button class="ghost action" id="btn-once-raw" type="button">仅本次用纯文本</button>
-                        <button class="ghost action" id="btn-once-rich" type="button">仅本次用富文本</button>
-                        <button class="ghost action" id="btn-once-reset" type="button" hidden>恢复默认行为</button>
-                    </div>
-                    <p class="sub">临时态<b>仅在本次会话（页面不刷新）内生效</b>，不会写入配置；刷新页面后自动回到上方「默认行为」。适用于「这一次想快点改大文档」之类的临时需求。</p>
-                    <p class="sub sub-warn"><b>⚠️ 关于「始终富文本」</b>：对超大文档（如 15MB 对话记录、含大量代码块的日志）强制使用富文本渲染，<b>可能造成浏览器长时间卡顿甚至无响应</b>。若遇卡顿，请改回「自动」或「始终纯文本」，或使用顶栏切换按钮。</p>
+                    <p class="sub">本项为<b>默认行为</b>，保存后长期生效，对所有文档生效。若只想临时切换<b>当前这一个文档</b>的渲染模式（不改变本设置），请用顶栏右上角的「纯文本 / 富文本」切换按钮——该按钮仅在打开大文档时出现，切换只在本次会话有效、刷新后即回到本设置。</p>
+                    <p class="sub sub-warn"><b>⚠️ 关于「始终富文本」</b>：对超大文档（如 15MB 对话记录、含大量代码块的日志）强制使用富文本渲染，<b>可能造成浏览器长时间卡顿甚至无响应</b>。若遇卡顿，请改回「自动」或「始终纯文本」。</p>
                 </div>
                 <div class="set-sub">
                     <h3>文件版本与自动保存</h3>
@@ -923,10 +926,10 @@
                     <label class="set-toggle"><input type="checkbox" id="set-trust-proxy"> 信任反向代理</label>
                     <p class="sub">默认勾选。从 <b>X-Forwarded-For</b> 取真实客户端 IP，用于判断网络环境、登录日志显示、防爆破计数与会话绑定。仅在确实经由反向代理 / 内网穿透访问时才应开启；直连访问时开启会让他人可伪造该头，进而影响上述判定。</p>
                     <label class="set-toggle"><input type="checkbox" id="set-secure-cookie"> 强制 Cookie Secure 标记</label>
-                    <p class="sub">默认勾选。开启后，<b>公网 HTTP 连接（如 <code>http://公网IP:3838</code>）将被拒绝访问</b>，避免 HTTP 明文在公网中被抓包窃取。局域网 HTTP 连接（如 <code>http://局域网IP:3838</code>）可正常访问，不受影响。关闭后，公网 HTTP 连接也可正常访问，但<b>登录密码、文档内容等以明文传输</b>，更易被第三方截获，<b>安全性显著降低，强烈不建议这么做</b>。</p>
+                    <p class="sub">默认勾选。开启后，公网 HTTP 连接（如 <code>http://公网IP:3838</code>）将被拒绝访问，避免 HTTP 明文在公网中被抓包窃取。局域网 HTTP 连接（如 <code>http://局域网IP:3838</code>）可正常访问，不受影响。</p>
                     <p class="sub">本应用本身为<b>纯 HTTP 服务，不提供 HTTPS</b>，无法使用 <code>https://公网IP:3838</code> 直连访问（这与是否开启 Cookie Secure 无关）。如需通过 HTTPS 连接访问，请通过<b>反向代理 / 内网穿透</b>等方案实现 HTTPS，并务必开启上方两项安全选项。</p>
-                    <p class="sub"><b>支持 IPv4 与 IPv6</b>：服务同时监听 IPv4 与 IPv6，<code>http://局域网IPv6:3838</code>（形如 <code>http://[fd00::1]:3838</code>，注意 IPv6 地址需用方括号包裹）与公网 IPv6 均可访问；域名解析到 IPv6（AAAA 记录）时亦可正常访问。</p>
-                    <p class="sub sub-warn"><b>⚠️ 风险自负</b>：关闭「强制 Cookie Secure 标记」后，任何能访问到本服务地址的人，都可能截获你的<b>登录密码与全部文档内容</b>（含通过公网 IPv6 域名访问的场景）。请务必确认所处网络环境可信，并优先采用反向代理 / 内网穿透 + HTTPS 的方式；开发者不对由此产生的任何数据泄露或损失承担责任。</p>
+                    <p class="sub sub-warn"><b>⚠️ 风险自负</b>：关闭「强制 Cookie Secure 标记」后，若使用 HTTP 连接访问，任何能访问到本服务地址的人，都可能截获你的<b>登录密码与全部文档内容</b>，<b>安全性显著降低</b>。请务必确认所处网络环境可信，并优先采用<b>反向代理 / 内网穿透 + HTTPS</b> 的方式；开发者不对由此产生的任何数据泄露或损失承担责任。</p>
+                    <p class="sub">本应用<b>同时监听 IPv4 与 IPv6</b>，<code>http://局域网IPv6:3838</code>（形如 <code>http://[fd00::1]:3838</code>，注意 IPv6 地址需用方括号包裹）与公网 IPv6 均可访问；域名解析到 IPv6（AAAA 记录）时亦可正常访问。</p>
                 </div>
                 <div class="set-sub">
                     <h3>修改登录密码</h3>
@@ -1152,30 +1155,41 @@
             <div class="help-body">
                 <p class="g-h">一、编辑器（中间区域）</p>
                 <p>支持三种模式：点工具栏「编辑模式」可在 <b>即时渲染 / 所见即所得 / 源码</b> 之间切换；工具栏还提供加粗、斜体、标题、列表、引用、代码块、表格、链接、表情等常用操作。</p>
-                <p>点「上传」可插入图片或文件（需登录）；上传物保存在<b>当前文档所在文件夹</b>内，并以相对链接引用，便于随文档整体打包。在 <b>HTTPS</b> 环境下额外支持「录音」。左侧「大纲」自动列出文档标题，点按即可跳转。</p>
+                <p>点「上传」可插入图片或文件（需登录）；上传物保存在<b>当前文档所在文件夹</b>内，并以相对链接引用，便于随文档整体打包。在 <b>HTTPS 或 localhost</b> 环境下额外支持「录音」（浏览器仅在这两种情形开放麦克风）。左侧「大纲」自动列出文档标题，点按即可跳转。</p>
 
-                <p class="g-h">二、文件与分区（左侧栏）</p>
-                <p>左侧按「分区」列出各 NAS 文件夹下的 Markdown 文件，选文件即打开。分区（即文档存放位置）在「设置 → 分区」中添加与管理；顶栏「«」按钮可折叠 / 展开左侧文档栏。</p>
+                <p class="g-h">二、纯文本模式与大文档（1.3.0 起）</p>
+                <p>富文本渲染的成本与文档的<b>块级结构数量</b>成正比，因此对话记录、日志这类「体积不大但结构极多」的文档（实测 1.4MB 含 674 个代码块、1,450 个标题）在富文本模式下打开会卡死。本应用因此引入<b>纯文本模式</b>：关闭渲染、直接编辑 Markdown 原文，<b>保存、历史版本、导出等能力全部保留</b>，仅失去排版预览。</p>
+                <p><b>自动切换</b>：打开超过约 <b>30 万字符</b>（300KB）的文档会自动进入纯文本模式，15MB 级超大文档亦可正常编辑。纯文本模式下顶栏会显示一条提示，并隐藏富文本工具栏。</p>
+                <p><b>顶栏切换按钮</b>：打开<b>大文档</b>时，右上角会出现「纯文本 / 富文本」按钮（打开常规小文档时该按钮隐藏）。点它可临时切换当前文档的渲染模式：<b>切回富文本时若文档过大会有二次确认</b>，因为渲染可能明显卡顿。该切换<b>只在本次会话有效、不写入配置</b>，刷新页面后即恢复。</p>
+                <p><b>默认行为</b>：「设置 → 文件 → 渲染模式」可长期指定默认行为，三选一：<b>自动（推荐）</b>（按上述阈值自动分级）、<b>始终富文本</b>、<b>始终纯文本</b>。判定优先级为「顶栏临时切换 &gt; 默认行为 &gt; 按大小自动分级」。</p>
+                <p class="g-note">为让超大文档在纯文本模式下也能保持流畅：进入纯文本时会<b>释放富文本引擎占用的内存</b>，切回时再惰性重建；字数统计改用<b>采样估算</b>（超大文档只统计前 20 万字再按比例外推），因此顶栏字数在超大文档上是<b>估算值</b>，略有误差属正常。</p>
 
-                <p class="g-h">三、保存与自动保存</p>
-                <p>编辑后点右上角「保存」即可存盘，内容也会按设置的间隔 <b>自动保存</b>。自动保存间隔、是否保留历史版本在「设置 → 版本与自动保存」中配置。</p>
+                <p class="g-h">三、文件与分区（左侧栏）</p>
+                <p>左侧按「分区」列出各 NAS 文件夹下的 Markdown 文件，选文件即打开。顶栏「«」按钮可折叠 / 展开左侧文档栏。</p>
+                <p><b>系统分区只有一个</b>：<code>/vol1/@appshare/vditor-docs</code>，其文件可直接在文件管理器中访问。如需使用其它 NAS 目录，请到「设置 → 分区」中添加为<b>自建分区</b>（可添加多个，各分区文档相互独立）。</p>
 
-                <p class="g-h">四、历史版本</p>
-                <p>点顶栏「信息」按钮，在弹出的「文档信息」对话框中点<b>「历史版本」</b>即可查看每次保存的快照，支持 <b>对比差异、恢复、删除</b>；每个文件保留的最大版本数可在设置中调整（1–200）。</p>
+                <p class="g-h">四、保存与自动保存</p>
+                <p>编辑后点右上角「保存」即可存盘，内容也会按设置的间隔 <b>自动保存</b>（快捷键 <b>Ctrl / Cmd + S</b>）。是否保留历史版本、保留数量与自动保存间隔，在<b>「设置 → 文件」</b>中配置。</p>
 
-                <p class="g-h">五、导出</p>
+                <p class="g-h">五、历史版本</p>
+                <p>点顶栏「信息」按钮，在弹出的「文档信息」对话框中点<b>「历史版本」</b>即可查看每次保存的快照，支持 <b>对比差异、恢复、删除</b>；每个文件保留的最大版本数可在设置中调整（1–200）。为避免磁盘被自动保存写满，<b>超过 5MB 的文档不再生成历史版本快照</b>。</p>
+
+                <p class="g-h">六、导出</p>
                 <p>顶栏「导出 .md / 导出 HTML」导出当前文档：若该文档文件夹内还有图片 / 音频等<b>其它文件</b>，会自动把整个文件夹打包为 zip 一起导出，否则只导出单文件。「设置 → 维护」里还有「导出备份（配置 + 文档）」与「导出 / 导入配置（JSON）」，用于迁移与容灾。</p>
+                <p class="g-note"><b>纯文本模式下不支持「导出 HTML」</b>：HTML 导出依赖富文本渲染结果，此时会提示你先切回富文本模式，或改用「导出 .md」。</p>
 
-                <p class="g-h">六、设置</p>
-                <p>顶栏「设置」打开设置面板，顶部为选项卡：<br><b>分区</b>：管理现有分区（可隐藏 / 恢复系统默认分区、删除自建分区），并在其中添加新的 NAS 目录作为分区。<br><b>文件</b>：历史版本开关与保留数量、自动保存间隔，以及上传大小上限与格式黑名单。<br><b>安全</b>：网络访问安全（信任反向代理、强制 Cookie Secure）与修改登录密码。<br><b>外观</b>：暗黑模式、网页标题、网页图标（浏览器标签页）。<br><b>维护</b>：导出 / 导入备份（配置 + 文档）、导出 / 导入配置（JSON）、「状态与日志」（应用状态 / 应用日志 / 登录日志），以及「卸载时是否清除软件数据」。<br><b>关于与帮助</b>：使用指南、快捷键一览（与使用指南并列的「快捷键」按钮，均以弹窗打开）、开源协议与法律声明。</p>
+                <p class="g-h">七、设置</p>
+                <p>顶栏「设置」打开设置面板，顶部为选项卡：<br><b>分区</b>：管理现有分区（系统分区可<b>隐藏</b>、自建分区可<b>删除</b>，隐藏的分区可恢复），并在其中添加新的 NAS 目录作为分区。<br><b>文件</b>：渲染模式（默认行为）、历史版本开关与保留数量、自动保存间隔，以及上传大小上限与格式黑名单。<br><b>安全</b>：网络访问安全（信任反向代理、强制 Cookie Secure）与修改登录密码。<br><b>外观</b>：暗黑模式、网页标题、网页图标（浏览器标签页）。<br><b>维护</b>：导出 / 导入备份（配置 + 文档）、导出 / 导入配置（JSON）、「状态与日志」（应用状态 / 应用日志 / 登录日志），以及「卸载时是否清除软件数据」。<br><b>关于与帮助</b>：使用指南、快捷键一览（与使用指南并列的「快捷键」按钮，均以弹窗打开）、开源协议与法律声明。</p>
+                <p class="g-note"><b>关于二次确认弹窗</b>：删除文档、退出登录、导入备份、关闭安全选项等操作都会弹二次确认。这类弹窗的本意是<b>劝退</b>，因此<b>「取消」是醒目的蓝色并排在前面，「确认」为白色</b>——若你只是想看看发生了什么，直接点「取消」即可。</p>
 
-                <p class="g-h">七、账号与访问</p>
-                <p>首次进入需设置管理员密码，之后凭密码访问。忘记密码：请在 fnOS 终端中执行命令 <code>vditor reset-password</code>，按指引重置密码。</p>
+                <p class="g-h">八、账号与访问</p>
+                <p>首次进入需设置管理员密码，之后凭密码访问。忘记密码：请在 fnOS 终端中执行命令 <code>vditor reset-password</code>，按指引重置密码。连续多次输错会触发临时锁定。</p>
                 <p><b>访问方式</b>：本应用默认使用 <b>3838 端口</b>，在局域网内通过 <b>http://局域网IP:3838</b> 访问（将 IP 换成本机局域网 IP）。<b>同时监听 IPv4 与 IPv6</b>：局域网 IPv6 用 <b>http://[局域网IPv6]:3838</b> 访问（IPv6 地址需用方括号包裹）；使用 DDNS 域名且解析到 IPv6（AAAA 记录）时同样可正常访问。本应用为纯 HTTP 服务、不提供 HTTPS，<b>无法用 https:// 直接访问</b>（这与是否开启 Cookie Secure 无关）。</p>
                 <p><b>公网访问与风险</b>：安装后<b>默认禁止</b>以 公网IP/域名:3838 的形式从公网直接访问（公网 IPv4 与公网 IPv6 均在内）。如确需公网访问，请在「设置 → 安全 → 网络访问安全」中<b>关闭「强制 Cookie Secure 标记」</b>；关闭后公网 HTTP 可正常访问，但<b>登录密码与全部文档内容以明文传输</b>，易被第三方截获，<b>安全性显著降低，强烈不建议这么做</b>，请自行评估并承担相应风险。<b>更推荐使用反向代理 / 内网穿透，在公网侧启用 HTTPS 后再转发到本应用</b>（此时请保持「强制 Cookie Secure 标记」与「信任反向代理」两项开启）。</p>
+                <p>可在「设置 → 维护 → 状态与日志 → 应用状态」中确认当前<b>监听地址</b>与<b>客户端 IP（IPv4 / IPv6）</b>，以排查访问问题。</p>
 
-                <p class="g-h">八、字数统计（顶栏）</p>
-                <p><b>正文</b>：渲染后读者实际看到的文字数（不含 Markdown 标记）；<b>含语法</b>：Markdown 源文件字符数（磁盘实际大小）；<b>预计阅读时间</b>：正文字数 ÷ 400（字/分钟，向上取整），仅作粗略参考。</p>
+                <p class="g-h">九、字数统计（顶栏）</p>
+                <p><b>正文</b>：渲染后读者实际看到的文字数（不含 Markdown 标记）；<b>含语法</b>：Markdown 源文件字符数（磁盘实际大小）；<b>预计阅读时间</b>：正文字数 ÷ 400（字/分钟，向上取整），仅作粗略参考。超大文档下正文字数为<b>采样估算值</b>，详见上文「纯文本模式与大文档」。</p>
             </div>
         </div>
     </div>
@@ -1753,9 +1767,12 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
     function isRawMode() { return rawMode; }
 
-    // 手动切换纯文本 / 富文本。切回富文本时若文档过大，先二次确认（渲染可能明显卡顿）。
+    // 手动切换纯文本 / 富文本。1.4.2 起该按钮同时承载「临时态」：
+    // 切换只影响当前文档 + 本次会话（不写盘），刷新后回到「设置 → 渲染模式」的默认行为。
+    // 切回富文本时若文档过大，先二次确认（渲染可能明显卡顿）。
     function toggleRawMode() {
         if (rawMode) {
+            renderModeOnce = 'rich';
             const len = rawEl ? (rawEl.value || '').length : 0;
             if (len > RAW_AUTO_CHARS) {
                 showConfirm('切回富文本', '当前文档 ' + fmtSize(len) + '，恢复富文本渲染可能明显卡顿。确定切换吗？',
@@ -1764,16 +1781,22 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             }
             exitRawMode();
         } else {
+            renderModeOnce = 'raw';
             const len = (getContent() || '').length;
             enterRawMode(len > 0 ? ('已切换纯文本模式（' + fmtSize(len) + '），渲染已关闭') : '已切换纯文本模式，渲染已关闭');
         }
         updateRawModeBtn();
     }
+    // 按钮可见性：1.4.2 起**仅在打开大文档时出现**，常规小文档隐藏
+    // （小文档本就该用富文本，切换无意义且易误点）。
     function updateRawModeBtn() {
         const b = document.getElementById('btn-raw-mode');
         if (!b) return;
+        const len = (getContent() || '').length;
+        b.hidden = !(currentPath && len > RAW_AUTO_CHARS);
         b.textContent = rawMode ? '富文本' : '纯文本';
-        b.title = rawMode ? '切回富文本渲染模式' : '切换为纯文本模式（关闭渲染，适合大文件）';
+        b.title = rawMode ? '切回富文本渲染模式（仅本次生效，刷新后回到默认设置）'
+                          : '切换为纯文本模式（关闭渲染，适合大文件；仅本次生效）';
     }
 
     // 人类可读的文件规模（字数统计与提示复用）
@@ -2250,7 +2273,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                     if (!d.ok) { toast('删除失败：' + (d.error || '')); return; }
                     toast('已删除文档及其历史版本');
                     closeDocInfo();
-                    if (currentPath) { currentPath = null; currentRoot = null; syncUploadExtra(); setCurName('未选择'); if (rawMode) exitRawMode(); else setContent(''); }
+                    if (currentPath) { currentPath = null; currentRoot = null; syncUploadExtra(); setCurName('未选择'); if (rawMode) exitRawMode(); else setContent(''); updateRawModeBtn(); }
                     refreshFiles();
                 }).catch(() => toast('删除失败'));
         });
@@ -2502,12 +2525,14 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         setToggleTitle(false, false);
     }
 
-    // ---------- 1.4.1 渲染模式设置（三态 + 临时态）----------
+    // ---------- 1.4.2 渲染模式设置（三态；临时态在顶栏切换按钮）----------
     function currentSegValue() {
         const on = document.querySelector('#set-render-mode .seg[aria-checked="true"]');
         return on ? on.dataset.v : renderModeSetting;
     }
-    // 同步分段控件选中态 + 说明文案 + 临时态按钮的可见性
+    // 同步分段控件选中态 + 说明文案
+    // 注：临时态（renderModeOnce）由顶栏「纯文本 / 富文本」按钮设置，
+    //     故这里只在说明里提示当前被临时态覆盖，不再提供临时态按钮。
     function syncRenderModeUI() {
         document.querySelectorAll('#set-render-mode .seg').forEach(b => {
             b.setAttribute('aria-checked', b.dataset.v === renderModeSetting ? 'true' : 'false');
@@ -2516,40 +2541,10 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         if (desc) {
             desc.textContent = RENDER_MODE_DESC[renderModeSetting] || '';
             if (renderModeOnce) {
-                desc.textContent += '（当前已被临时态覆盖：' +
-                    (renderModeOnce === 'raw' ? '仅本次用纯文本' : '仅本次用富文本') + '）';
+                desc.textContent += '（当前文档已被顶栏切换按钮临时覆盖为' +
+                    (renderModeOnce === 'raw' ? '纯文本' : '富文本') + '，刷新后即恢复本设置）';
             }
         }
-        const reset = document.getElementById('btn-once-reset');
-        if (reset) reset.hidden = !renderModeOnce;
-    }
-    // 临时态：切到指定模式并**立即作用于当前文档**（无需重新打开）
-    function applyRenderModeOnce(mode) {
-        renderModeOnce = mode;
-        syncRenderModeUI();
-        if (!currentPath) { toast('当前没有打开的文档'); return; }
-        const len = (getContent() || '').length;
-        if (mode === 'raw') {
-            if (rawMode) { toast('已处于纯文本模式'); return; }
-            enterRawMode('已按临时设置切换到纯文本模式（本次会话有效）', len);
-        } else {
-            if (!rawMode) { toast('已处于富文本模式'); return; }
-            if (len > RAW_AUTO_CHARS) {
-                showConfirm('切回富文本',
-                    '当前文档 ' + fmtSize(len) + '，恢复富文本渲染可能明显卡顿。确定切换吗？',
-                    () => { exitRawMode(); updateRawModeBtn(); });
-                // 无论确认与否，临时态都已生效（体现在后续打开的文档上）
-                return;
-            }
-            exitRawMode();
-        }
-        updateRawModeBtn();
-    }
-    function clearRenderModeOnce() {
-        renderModeOnce = null;
-        syncRenderModeUI();
-        toast('已恢复为默认行为（' +
-            (renderModeSetting === 'auto' ? '自动' : renderModeSetting === 'rich' ? '始终富文本' : '始终纯文本') + '）');
     }
 
     // ---------- 设置面板 ----------
@@ -3211,7 +3206,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // 暴露给纯文本模式「切回富文本」时的惰性重建（闭包捕获 isDark / canRecord / ZH_CN_I18N）
         _buildVditorImpl = createVditor;
 
-        // ---------- 1.4.1 渲染模式：三态分段控件 + 临时态按钮 ----------
+        // ---------- 1.4.2 渲染模式：三态分段控件（临时态在顶栏切换按钮）----------
         (function bindRenderMode() {
             const segBox = document.getElementById('set-render-mode');
             if (segBox) {
@@ -3222,12 +3217,6 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                     syncRenderModeUI();
                 });
             }
-            const onRaw = document.getElementById('btn-once-raw');
-            const onRich = document.getElementById('btn-once-rich');
-            const onReset = document.getElementById('btn-once-reset');
-            if (onRaw) onRaw.addEventListener('click', () => applyRenderModeOnce('raw'));
-            if (onRich) onRich.addEventListener('click', () => applyRenderModeOnce('rich'));
-            if (onReset) onReset.addEventListener('click', clearRenderModeOnce);
             syncRenderModeUI();
         })();
 
@@ -3261,24 +3250,27 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             box.addEventListener('change', function () {
                 if (!this.checked) {
                     const el = this;
-                    showConfirm('关闭安全选项',
-                        '确定要关闭「' + name + '」吗？\n\n' + risk +
-                        '\n\n建议保持开启（取消本次操作）。如确需关闭，请确认你已了解上述风险。',
+                    // 标题 = 问句，正文 = risk 全文（各开关自带完整风险说明与建议）
+                    showConfirm('关闭安全选项', risk,
                         null,                                  // 确认关闭：保持未勾选，由「保存设置」落盘
                         function () { el.checked = true; });   // 取消：恢复勾选
                 }
             });
         }
-        attachSecurityConfirm('set-trust-proxy', '信任反向代理',            '关闭后，若你仍经反向代理 / 内网穿透访问，本应用将取到代理的 IP 而非你的真实 IP，' +
+        attachSecurityConfirm('set-trust-proxy', '信任反向代理',
+            '确定要关闭「信任反向代理」吗？\n\n' +
+            '关闭后，若你仍经反向代理 / 内网穿透访问，本应用将取到代理的 IP 而非你的真实 IP，' +
             '导致：登录日志中的来源 IP 不准、防暴力破解的锁定计数对同一攻击者失效、' +
-            '会话绑定与网络环境判断（是否局域网）出现偏差。');
+            '会话绑定与网络环境判断（是否局域网）出现偏差。\n\n' +
+            '建议保持开启（取消本次操作）。如你不理解此处的说明，请保持开启。');
         attachSecurityConfirm('set-secure-cookie', '强制 Cookie Secure 标记',
-            '关闭后，公网 HTTP 连接（含公网 IPv4 / 公网 IPv6，如 http://公网IP:3838 或 http://[公网IPv6]:3838）' +
-            '将可正常访问本应用。代价是：登录密码与全部文档内容均以**明文**在网络上传输，' +
-            '同一网络中的任何人、乃至链路上的中间设备都可能截获并窃取这些内容，' +
-            '安全性显著降低，强烈不建议这么做。\n\n' +
-            '注意：本应用为纯 HTTP 服务、不提供 HTTPS，是否开启本选项都不影响「无法用 https:// 直连」这一事实；' +
-            '如需加密访问，请通过反向代理 / 内网穿透在公网侧终止 HTTPS。');
+            '确定要关闭「强制 Cookie Secure 标记」吗？\n\n' +
+            '关闭后，公网 HTTP 连接（包括 IPv4 / IPv6）将可正常访问本应用。若通过 HTTP 连接访问，' +
+            '登录密码与全部文档内容均以明文在网络上传输，同一网络中的任何人、乃至链路上的中间设备' +
+            '都可能截获并窃取这些内容，安全性显著降低，强烈不建议这么做。\n\n' +
+            '注意：本应用为纯 HTTP 服务、不提供 HTTPS，是否开启本选项都不影响「无法用 https://IP:3838 直连访问」' +
+            '这一事实；请通过反向代理 / 内网穿透实现 HTTPS 访问。\n\n' +
+            '建议保持开启（取消本次操作）。如你不理解此处的说明，请保持开启。如确需关闭，请确认你已了解上述风险。');
         bindDenyUI();
         document.getElementById('btn-doc-info').addEventListener('click', openDocInfo);
         document.getElementById('btn-raw-mode').addEventListener('click', toggleRawMode);
@@ -3360,7 +3352,6 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
                 kv(dl, '应用版本', a.version || '—');
                 kv(dl, '运行状态', '运行中（已运行 ' + fmtDuration(a.uptime) + '）', 'ok');
-                kv(dl, '监听地址', (a.host || '0.0.0.0') + ' : ' + (a.port || '—'));
                 kv(dl, '运行环境', 'Python ' + (a.python || '—') + ' / ' + (a.platform || '—'));
 
                 kv(dl, '浏览器', navigator.userAgent || '—');
@@ -3380,7 +3371,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 const vLabel = n.ipVersion === 6 ? 'IPv6' : (n.ipVersion === 4 ? 'IPv4' : '');
                 kv(dl, '客户端 IP', (n.clientIp || '—') + (vLabel ? '（' + vLabel + '）' : '') +
                    (viaProxy ? '（经代理，直连来源 ' + n.directIp + '）' : ''));
-                kv(dl, '监听地址', (d.host || '—') + ':' + (d.port || '—') + '（IPv4 / IPv6 双栈）');
+                kv(dl, '监听地址',
+                   (a.bindHost || a.host || '::') + ':' + (a.port || '—') +
+                   (a.dualStack ? '（IPv4 / IPv6 双栈，同一端口；0.0.0.0 表示本机所有网卡）' : '（仅 IPv4）'));
                 kv(dl, '信任反向代理', n.trustProxy ? '已开启' : '未开启');
                 kv(dl, 'Cookie Secure', n.secureCookie ? '已开启' : '未开启');
                 kv(dl, '登录会话', s.hasSession ? '有效' : '已失效', s.hasSession ? 'ok' : 'warn');

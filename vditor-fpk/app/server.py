@@ -71,7 +71,7 @@ from vd_util import (
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.2"
 
 # 超过此体积的文档不再生成「历史版本」快照。
 # 背景：快照机制是每次保存都存一份**全文**。配合默认 60 秒自动保存，
@@ -960,6 +960,10 @@ class Handler(BaseHTTPRequestHandler):
                 "uptime": int(time.time() - START_TIME),
                 "port": PORT,
                 "host": HOST,
+                # 实际生效的绑定地址与是否双栈（1.4.2）：HOST 默认 "0.0.0.0" 会在
+                # make_server() 中被提升为 "::"，故 HOST 本身并不能反映真实监听地址。
+                "bindHost": "::" if HOST in ("", "0.0.0.0") else HOST,
+                "dualStack": HOST in ("", "0.0.0.0"),
                 "docRoots": roots,
             },
             "network": {
