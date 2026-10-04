@@ -11,7 +11,7 @@
 
 ## 组件总览
 
-编辑器内核为 [Vditor](https://github.com/Vditor/Vditor) **4.0.0**（MIT），
+编辑器内核为 [Vditor](https://github.com/Vanessa219/vditor) **4.0.0**（MIT），
 其 `dist` 目录随包分发，内含下列第三方渲染组件。
 
 > **版本指纹说明**：本仓库中 `dist/js/lute/lute.min.js`、`dist/js/method.min.js`、
@@ -24,7 +24,7 @@
 
 | 组件 | 用途 | 许可 | 许可文件（随包） |
 |---|---|---|---|
-| [Vditor](https://github.com/Vditor/Vditor) 4.0.0 | 编辑器内核 | MIT | `LICENSE` |
+| [Vditor](https://github.com/Vanessa219/vditor) 4.0.0 | 编辑器内核 | MIT | `LICENSE` |
 | [KaTeX](https://github.com/KaTeX/KaTeX) 0.16.9 | 公式渲染（库代码） | MIT | `dist/js/katex/LICENSE` |
 | KaTeX 字体 | 公式字体（60 个 ttf/woff/woff2） | **SIL OFL 1.1** | `dist/js/katex/fonts/OFL.txt` |
 | [Apache ECharts](https://github.com/apache/echarts) 5.6.0 | 图表渲染 | **Apache-2.0** | `dist/js/echarts/LICENSE` + `NOTICE` |
@@ -37,7 +37,7 @@
 | [WaveDrom](https://github.com/Bool-hat/wavedrom) 3.6.2 | 数字电路时序图 | MIT | `dist/js/wavedrom/LICENSE.WaveDrom` |
 | [flowchart.js](https://github.com/adrai/flowchart.js) 1.18.0 | 流程图 | MIT | `dist/js/flowchart.js/LICENSE` |
 | [smiles-drawer](https://github.com/reymond-group/smilesDrawer) 2.4.1 | 分子结构式 | MIT | `dist/js/smiles-drawer/LICENSE` |
-| [Lute](https://github.com/b3log/Lute) | Markdown 解析 | MIT | `dist/js/lute/LICENSE` |
+| Lute（随 [Vditor](https://github.com/Vanessa219/vditor) 分发） | Markdown 解析 | MIT | `dist/js/lute/LICENSE` |
 | [PlantUML Encoder](https://github.com/markushedvall/plantuml-encoder) 1.4.0 | PlantUML 编码 | MIT | `dist/js/plantuml/LICENSE` |
 | [ant-design icons](https://github.com/ant-design/ant-design-icons) | 图标 | MIT | 随 Vditor 分发 |
 | Vditor i18n | 中文语言包 | MIT | 随 Vditor 分发 |
@@ -166,8 +166,7 @@ d3 采用 **ISC** 许可。ISC 要求随分发保留版权与许可声明，故�
 
 **特殊情况说明**：
 
-- **Lute** —— 上游仓库根目录未提供独立 LICENSE 文件（已核实返回 404）。
-  因其与 Vditor 同源（均由 B3log 开源维护），按 MIT 处理，并由 Vditor 顶层
+- **Lute** ——   随 Vditor 主仓库一同分发，上游无独立仓库（原 `b3log/Lute` 地址已实测返回 404）。因与 Vditor 同源、著作权相同，按 MIT 处理，并由 Vditor 顶层
   `LICENSE`（MIT, Copyright (c) 2019-present B3log 开源, b3log.org）覆盖。
   该说明已写入 `dist/js/lute/LICENSE`。
 - **flowchart.js** —— 上游未提供独立 LICENSE 文件，许可与作者取自其官方

@@ -1,6 +1,6 @@
 # Vditor for fnOS
 
-把开源 Markdown 编辑器 [Vditor](https://github.com/Vditor/Vditor) 打包成一个**无需 Docker** 的轻量 Web 应用，安装到飞牛 fnOS 后浏览器打开即用。
+把开源 Markdown 编辑器 [Vditor](https://github.com/Vanessa219/vditor) 打包成一个**无需 Docker** 的轻量 Web 应用，安装到飞牛 fnOS 后浏览器打开即用。
 
 - 纯静态前端 + 一个用 Python 内置标准库写的微型服务器（**零第三方依赖**）
 - 非Docker 部署，由系统进程直接运行，不依赖容器
@@ -308,7 +308,7 @@ CSP 与 `X-Frame-Options: DENY` 等安全响应头、非内联扩展名强制下
 
 | 组件 | 许可 |
 | --- | --- |
-| 编辑器内核 Vditor 4.0.0 | MIT，© B3log 开源 |
+| 编辑器内核 [Vditor](https://github.com/Vanessa219/vditor) 4.0.0 | MIT，© Vanessa219 / B3log 开源 |
 | Apache ECharts 5.6.0 | Apache-2.0（含 NOTICE 义务，已保留） |
 | KaTeX **字体文件** | SIL OFL 1.1（**非 MIT**） |
 | Graphviz（Viz.js 内） | EPL-1.0（与 MIT 并存） |

@@ -55,7 +55,7 @@
 
 **不属于本项目范畴**（请向上游报告）：
 
-- 编辑器内核 [Vditor](https://github.com/Vditor/Vditor/issues)（MIT，© Vanessa219 / B3log）
+- 编辑器内核 [Vditor](https://github.com/Vanessa219/vditor/issues)（MIT，© Vanessa219 / B3log）
 - 第三方渲染组件：KaTeX、highlight.js、Apache ECharts、Mermaid、markmap、
   Graphviz viz.js、abcjs、WaveDrom、flowchart.js、smiles-drawer 等
   完整清单与各自许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
