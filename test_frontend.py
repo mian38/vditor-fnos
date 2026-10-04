@@ -103,7 +103,10 @@ gethtml_hits = len(re.findall(r"vditor\.getHTML\(\)", code))
 
 check("vditor.getValue() 仅出现在访问层(期望 1 处)", getvalue_hits == 1,
       "实际 %d 处" % getvalue_hits)
-check("vditor.setValue() 仅出现在访问层(期望 2 处)", setvalue_hits == 2,
+# 1.4.3：exitRawMode 原本有一处直调 vditor.setValue()，已改为经 setContent() 走访问层
+# （直调会绕过 vditorReady 就绪判断，可能在 Vditor 未就绪/已销毁时抛错）。
+# 故期望值由 2 降为 1——直调越少越安全。
+check("vditor.setValue() 仅出现在访问层(期望 1 处，1.4.3 起 exitRawMode 已改走 setContent)", setvalue_hits == 1,
       "实际 %d 处" % setvalue_hits)
 check("vditor.getHTML() 仅出现在导出(期望 1 处)", gethtml_hits == 1,
       "实际 %d 处" % gethtml_hits)

@@ -1686,6 +1686,10 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     });
 
     let vditor = null;
+    // 1.4.3：Vditor 是否已真正就绪（after() 已触发）。`new Vditor()` 是同步返回的，
+    // 但其内部模块异步加载完成后才调用 after()，此前调用 getValue()/setValue() 会抛错。
+    // 纯文本模式销毁 Vditor 时置 false。
+    let vditorReady = false;
     let currentRoot = null;     // 当前打开文件所属分区 id
     let currentPath = null;     // 当前打开文件的相对路径（含 .md）
     let firstRootId = null;     // 默认分区（文件列表首个）
@@ -1761,6 +1765,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             if (iv && typeof iv.destroy === 'function') iv.destroy();
         } catch (e) {}
         vditor = null;
+        vditorReady = false;   // 1.4.3：已销毁，getValue()/setValue() 不再可用
         const host = document.getElementById('vditor');
         if (host) host.innerHTML = '';
     }
@@ -1789,10 +1794,24 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     }
     // 按钮可见性：1.4.2 起**仅在打开大文档时出现**，常规小文档隐藏
     // （小文档本就该用富文本，切换无意义且易误点）。
+    //
+    // ⚠️ 1.4.3 修复（重大）：此处曾直接调 `getContent()` 取长度，而本函数会在
+    // `createVditor()` 之后**同步**被调用一次——此时 Vditor 的 `after()` 尚未触发
+    // （模块异步加载完成），`vditor.getValue()` 会抛错。该异常会中断
+    // `initEditorAndFiles()`，导致其后的**所有**事件绑定（文档信息关闭、设置选项卡、
+    // 深色模式、添加分区…）全部失效；`checkAuth` 的 catch 又会弹登录页。
+    // 现改为：仅在 Vditor 就绪（vditorReady）或已处于纯文本模式时才取长度，
+    // 并整体 try/catch 兜底——按钮显隐属于辅助功能，绝不能影响主流程。
     function updateRawModeBtn() {
         const b = document.getElementById('btn-raw-mode');
         if (!b) return;
-        const len = (getContent() || '').length;
+        let len = 0;
+        try {
+            if (rawMode) len = (rawEl && rawEl.value || '').length;
+            else if (vditorReady && vditor) len = (getContent() || '').length;
+        } catch (e) {
+            len = 0;   // 取不到长度就按「小文档」处理，隐藏按钮，不抛错
+        }
         b.hidden = !(currentPath && len > RAW_AUTO_CHARS);
         b.textContent = rawMode ? '富文本' : '纯文本';
         b.title = rawMode ? '切回富文本渲染模式（仅本次生效，刷新后回到默认设置）'
@@ -1807,15 +1826,19 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     }
 
     // 统一内容读取：纯文本模式取 textarea，否则取 Vditor
+    // 1.4.3：Vditor 未就绪/已销毁时返回空串而非抛错——读取失败不应中断调用方流程
+    // （1.4.2 曾因在 Vditor 就绪前调用 getValue() 抛错，进而中断 initEditorAndFiles）。
     function getContent() {
         if (rawMode) return rawEl ? rawEl.value : '';
-        return vditor ? vditor.getValue() : '';
+        if (!vditor || !vditorReady) return '';
+        try { return vditor.getValue() || ''; } catch (e) { return ''; }
     }
     // 统一内容写入
     function setContent(text) {
         const t = text || '';
         if (rawMode) { if (rawEl) rawEl.value = t; return; }
-        if (vditor) vditor.setValue(t, false);
+        if (!vditor || !vditorReady) return;
+        try { vditor.setValue(t, false); } catch (e) { /* 未就绪时静默跳过 */ }
     }
 
     function enterRawMode(reason, len) {
@@ -1865,7 +1888,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         rawMode = false;
         document.body.classList.remove('raw-mode');
         if (rawEl) { rawEl.classList.remove('is-active'); rawEl.hidden = true; rawEl.value = ''; }
-        if (vditor) vditor.setValue(text, false);
+        if (vditor) { pendingRichText = text; setContent(text); }
         else { pendingRichText = text; buildVditor(); }
         scheduleCounter();
     }
@@ -3183,6 +3206,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 if (pendingRichText != null) { initial = pendingRichText; }
                 else { const welcomeEl = document.getElementById('welcome-md'); initial = welcomeEl ? welcomeEl.textContent : ''; }
                 pendingRichText = null;
+                // 1.4.3：必须**先**置 vditorReady 再 setContent，否则 setContent 会因
+                // 「未就绪」而静默跳过，导致教程内容 / pendingRichText 丢失。
+                vditorReady = true;
                 setContent(initial);
                 refreshFiles();
                 // 窄屏下拉面板脱离工具栏，避免被滚动容器裁掉

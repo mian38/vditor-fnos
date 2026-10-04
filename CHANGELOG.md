@@ -5,12 +5,63 @@
 > **后续发布任何新版本时，需同时更新这两份更新记录。**
 
 - **应用标识**：`com.mian38.vditor`
-- **当前版本**：**1.4.2**（当前主线）
+- **当前版本**：**1.4.3**（当前主线）
 - **归档版本**：**1.1.4beta**（标签 `v1.1.4beta` / 分支 `archive/v1.1.4beta`，不再作为主线维护；原为 `1.2.0beta`，因占用下一个 minor 号而统一改号为 `1.1.4beta`）
 - **形态**：飞牛 fnOS 官方 `.fpk` 安装包（非 Docker：系统进程直接运行 Python 标准库后端，前端静态托管）
 - **版本体系**：`4.0.x` 为早期 β 迭代线（产物文件名统一带 `-beta` 标识）；自 **1.0** 起进入正式版序列。
 
 > 说明：本文按时间倒序排列，覆盖自首个 `.fpk`（4.0.0）到 1.2.4 的全部版本。
+
+---
+
+## 1.4.3（2026-10-04）
+
+**修复 1.4.2 引入的重大缺陷：初始化中断导致大量控件失效（缺陷修复，升 z 位 1.4.2 → 1.4.3）**
+
+### 现象
+
+1. 选定文档后打开「信息」，对话框无法进行任何操作、无法关闭；强制刷新后虽已登录却跳回登录页。
+2. 设置各选项卡点击不跳转；「添加分区」按键无反应。
+3. 顶栏深色模式切换按键不生效。
+
+### 根因（单点，非多个独立 bug）
+
+三个现象同源：**`initEditorAndFiles()` 执行到一半抛异常被中断**，其后的**全部** `addEventListener` 都没有执行。
+
+1.4.2 为实现「顶栏切换按钮仅在大文档时出现」，在 `updateRawModeBtn()` 中调用 `getContent()` 取当前文档长度；
+而该函数在 `createVditor()` 之后会被**同步调用一次**（初始化时统一刷新按钮状态），
+此时 Vditor 的 `after()` 尚未触发（其内部模块为异步加载），`vditor.getValue()` 抛错。
+
+实测栈（1.4.2 代码 + 未就绪桩）：
+```
+initEditorAndFiles THREW: editor not ready
+  at getContent      (index.html:174)
+  at updateRawModeBtn(index.html:157)
+→ doc-info-close / folder-add / btn-theme / set-tabs 全部未绑定
+```
+
+「刷新跳登录页」是同一异常的次生现象：`initEditorAndFiles()` 由 `checkAuth()` 的 `.then()` 调用，
+一旦抛错即落入 `.catch(() => { …; showLogin(); })`，于是登录遮罩重新弹出。
+
+### 修复
+
+- **新增 `vditorReady` 标志**：仅在 Vditor 的 `after()` 内置 `true`，`destroyVditor()` 时置 `false`，
+  准确反映「实例已创建」与「已可安全调用 `getValue/setValue`」的区别。
+- **`getContent()` / `setContent()` 加就绪判断 + `try/catch` 兜底**：未就绪时分别降级为
+  返回空串、静默跳过，**不再抛错**——内容读写失败不应中断调用方流程。
+- **`updateRawModeBtn()` 整体加 `try/catch`**，且**仅在 Vditor 就绪或已处于纯文本模式时**才取长度；
+  取不到长度按「小文档」处理并隐藏按钮。按钮显隐属辅助功能，不应影响主流程。
+- **调整 `after()` 内顺序**：先置 `vditorReady = true` 再 `setContent(initial)`，
+  否则就绪判断会让教程内容 / `pendingRichText` 被静默丢弃。
+
+### 测试
+
+- `test_rawmode_v14.js` 新增两段回归：
+  - **[13]** 未就绪桩下 `initEditorAndFiles()` 不抛错，且 15 个关键绑定（`doc-info-close`、
+    `folder-add`、`btn-theme`、`set-tabs` 等）全部完成；
+  - **[14]** 端到端复现线上故障的同一探针，断言绑定总数 ≥ 40。
+- 修复前该探针可稳定复现异常与 4 个缺失绑定；修复后 46 个绑定全部完成。
+- `test_rawmode_v14.js` 由 60 扩至 **104 断言**，全量 **344 断言零失败**。
 
 ---
 

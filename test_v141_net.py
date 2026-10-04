@@ -372,5 +372,29 @@ check("启动横幅按 secure_cookie 状态给出不同风险提示",
       "登录密码与文档内容均为明文传输" in sr and "公网 HTTP 访问会被拒绝" in sr)
 
 # ============================================================
+# 1.4.3：重大缺陷回归（初始化中断）——静态守卫
+section("1.4.3 回归守卫：Vditor 就绪判断")
+idx14 = idx
+check("存在 vditorReady 就绪标志", "let vditorReady = false;" in idx14)
+check("after() 内置 vditorReady = true", "vditorReady = true;" in idx14)
+check("destroyVditor 置 vditorReady = false", "vditorReady = false;" in idx14)
+check("after() 先置就绪再 setContent（避免内容被误丢）",
+      re.search(r"vditorReady = true;\s*\n\s*setContent\(initial\);", idx14) is not None)
+check("getContent 未就绪时返回空串而非抛错",
+      re.search(r"if \(!vditor \|\| !vditorReady\) return '';", idx14) is not None)
+check("getContent 带 try-catch 兜底",
+      re.search(r"try \{ return vditor\.getValue\(\) \|\| ''; \} catch \(e\) \{ return ''; \}", idx14) is not None)
+check("setContent 未就绪时静默跳过", "if (!vditor || !vditorReady) return;" in idx14)
+check("updateRawModeBtn 整体 try-catch 兜底",
+      re.search(r"function updateRawModeBtn\(\) \{[\s\S]*?try \{[\s\S]*?\} catch \(e\) \{", idx14) is not None)
+check("updateRawModeBtn 仅在就绪或纯文本时取长度",
+      "else if (vditorReady && vditor) len = (getContent() || '').length;" in idx14)
+check("exitRawMode 不再直调 vditor.setValue（改走 setContent 守卫）",
+      re.search(r"function exitRawMode\(\)[\s\S]*?if \(vditor\) \{ pendingRichText = text; setContent\(text\); \}",
+                idx14) is not None)
+check("端到端回归测试已内置（探针 14）",
+      "1.4.3 端到端：initEditorAndFiles 完整绑定" in
+      open(os.path.join(BASE, "vditor-fpk", "test_rawmode_v14.js"), encoding="utf-8").read())
+
 print("\n结果: %d 通过, %d 失败" % (_pass, _fail))
 sys.exit(0 if _fail == 0 else 1)

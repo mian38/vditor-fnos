@@ -42,7 +42,7 @@ const documentStub = {
 const allVditorStubs = [];
 class VditorStub {
   constructor(sel, opts) {
-    this.sel = sel; this.opts = opts; this._val = ''; this._destroyed = false;
+    this.sel = sel; this.opts = opts; this._val = ''; this._destroyed = false; this._ready = false;
     this.vditor = { destroy() {}, options: { upload: { extraData: {} } } };
     allVditorStubs.push(this);
     // 真实 Vditor 在编辑器就绪后异步调用 after()；此处同步调用以驱动 setContent 等副作用
@@ -52,6 +52,23 @@ class VditorStub {
   setValue(v) { this._val = (v == null ? '' : String(v)); }
   setTheme() {}
   destroy() { this._destroyed = true; }
+}
+
+// ---- 1.4.3 回归桩：真实 Vditor 在 after() 之前调用 getValue()/setValue() 会抛错 ----
+// ⚠️ 不能 `extends VditorStub`：派生类构造函数访问 this 前必须先 super()，
+//    而本桩刻意不调用父类构造（父类会同步触发 after()），故独立成类。
+class VditorNotReadyStub {
+  constructor(sel, opts) {
+    this.sel = sel; this.opts = opts; this._val = ''; this._destroyed = false; this._ready = false;
+    this.vditor = { destroy() {}, options: { upload: { extraData: {} } } };
+    allVditorStubs.push(this);
+  }
+  getValue() { if (!this._ready) throw new Error('editor not ready'); return this._val; }
+  setValue(v) { if (!this._ready) throw new Error('editor not ready'); this._val = (v == null ? '' : String(v)); }
+  setTheme() {}
+  destroy() { this._destroyed = true; }
+  // 模拟异步就绪
+  becomeReady() { this._ready = true; if (this.opts && typeof this.opts.after === 'function') this.opts.after(); }
 }
 
 const localStorageStub = { _m: {}, getItem(k) { return Object.prototype.hasOwnProperty.call(this._m, k) ? this._m[k] : null; }, setItem(k, v) { this._m[k] = v; }, removeItem(k) { delete this._m[k]; } };
@@ -241,6 +258,128 @@ check('安装引导：说明需关闭 secure cookie 才能公网访问', /关闭
 check('安装引导：含明文传输风险与不建议', /以明文传输/.test(wizard) && /强烈不建议这么做/.test(wizard));
 check('安装引导：说明系统分区路径', /\/vol1\/@appshare\/vditor-docs/.test(wizard));
 check('安装引导：说明旧分区不迁移', /不会被自动迁移/.test(wizard));
+
+// ---------- [13] 1.4.3 重大回归：Vditor 未就绪时不得中断 initEditorAndFiles ----------
+// 线上现象（1.4.2）：打开文档后「信息」窗口无法关闭、设置选项卡不跳转、
+// 「添加分区」无反应、深色模式不生效；强制刷新后跳回登录页。
+// 根因：updateRawModeBtn() 在 createVditor() 之后被**同步**调用，而此时 Vditor 的
+//       after() 尚未触发（模块异步加载），vditor.getValue() 抛错 → 中断
+//       initEditorAndFiles()，其后的所有事件绑定全部未挂载；checkAuth 的 catch 弹登录页。
+// 本段用「未就绪即抛错」的桩复现，并断言：initEditorAndFiles 不抛错、后续绑定全部完成。
+console.log('\n[13] 1.4.3 回归：Vditor 未就绪时的初始化健壮性');
+(function () {
+  // 记录本沙箱中被绑定的元素 id，用于验证「异常未中断后续绑定」
+  const boundIds = [];
+  const elCache2 = {};
+  function getEl2(id) {
+    if (!elCache2[id]) {
+      const el = makeEl(id);
+      const orig = el.addEventListener;
+      el.addEventListener = function (evt, fn) { orig.call(this, evt, fn); boundIds.push(id); };
+      elCache2[id] = el;
+    }
+    return elCache2[id];
+  }
+  const doc2 = Object.assign({}, documentStub, { getElementById: (id) => getEl2(id) });
+  // ⚠️ 必须**显式构造**沙箱：Object.assign({}, sandbox, …) 浅拷贝会沿用第一个沙箱的
+  //    document/Vditor 绑定，导致本段实际测的还是「已就绪」桩，测不出问题。
+  const stubs2 = [];
+  class NR2 extends VditorNotReadyStub {
+    constructor(sel, opts) { super(sel, opts); stubs2.push(this); }
+  }  const sb2 = {
+    document: doc2,
+    window: Object.assign({}, windowStub, { fetch: fetchStub }),
+    Vditor: NR2, localStorage: localStorageStub, navigator: windowStub.navigator,
+    performance: windowStub.performance, requestAnimationFrame: windowStub.requestAnimationFrame,
+    fetch: fetchStub, setTimeout, clearTimeout, console, JSON, Math, Date, RegExp, Promise,
+    URL: { createObjectURL: () => 'blob:x', revokeObjectURL() {} }
+  };
+  sb2.globalThis = sb2;
+
+  let threw = null;
+  try {
+    vm.createContext(sb2);
+    vm.runInContext(code, sb2, { filename: 'notready.js' });
+    // after() 未触发 → Vditor 未就绪；此时调用 initEditorAndFiles（与线上一致）
+    sb2.initEditorAndFiles();
+  } catch (e) { threw = e; }
+
+  check('未就绪时确实使用了未就绪桩', stubs2.length === 1);
+  check('未就绪时 initEditorAndFiles 不抛错（1.4.3 核心）', threw === null, threw && threw.message);
+  // 这些绑定都在 updateRawModeBtn() 之后，1.4.2 恰好在这里被中断
+  ['doc-info-close', 'doc-info-close2', 'doc-info-delete', 'folder-add', 'pw-change',
+   'btn-backup', 'btn-theme', 'btn-doc-info', 'btn-raw-mode', 'btn-save',
+   'settings-close', 'settings-save', 'btn-toggle-side', 'btn-logout', 'btn-settings'
+  ].forEach(function (id) {
+    check('未就绪时仍完成绑定：' + id, boundIds.indexOf(id) >= 0);
+  });
+  check('未就绪时 updateRawModeBtn 已安全降级（按钮隐藏）',
+        getEl2('btn-raw-mode').hidden === true);
+  check('未就绪时 getContent() 返回空串而非抛错',
+        vm.runInContext('getContent()', sb2) === '');
+  check('未就绪时 setContent() 不抛错（静默跳过）', (function () {
+    try { vm.runInContext('setContent("x")', sb2); return true; } catch (e) { return false; }
+  })());
+  // 就绪后再切回富文本，来源文本须正确写入
+  const stub = stubs2[0];
+  stub.becomeReady();
+  check('就绪标记已置为 true', vm.runInContext('vditorReady', sb2) === true);
+  check('就绪后可正常读取内容', typeof vm.runInContext('getContent()', sb2) === 'string');
+})();
+
+// ---------- [14] 1.4.3 端到端回归：真实 initEditorAndFiles 必须完整绑定 ----------
+// 复现 1.4.2 线上故障的**同一探针**（Vditor 未就绪即抛错），
+// 断言 initEditorAndFiles 不抛错且后续绑定全部完成。
+// 注：真实 Vditor 的 after() 由内部异步触发，故此处刻意不同步调用 after()。
+console.log('\n[14] 1.4.3 端到端：initEditorAndFiles 完整绑定');
+(function () {
+  const boundIds = [];
+  const cache3 = {};
+  function getEl3(id) {
+    if (!cache3[id]) {
+      const el = makeEl(id);
+      const orig = el.addEventListener;
+      el.addEventListener = function (evt, fn) { orig.call(this, evt, fn); boundIds.push(id); };
+      cache3[id] = el;
+    }
+    return cache3[id];
+  }
+  class NR3 {
+    constructor(sel, opts) {
+      this.sel = sel; this.opts = opts; this._val = ''; this._ready = false; this._destroyed = false;
+      this.vditor = { destroy() {}, options: { upload: { extraData: {} } } };
+    }
+    getValue() { if (!this._ready) throw new Error('editor not ready'); return this._val; }
+    setValue(v) { if (!this._ready) throw new Error('editor not ready'); this._val = String(v == null ? '' : v); }
+    setTheme() { if (!this._ready) throw new Error('editor not ready'); }
+    destroy() { this._destroyed = true; }
+  }
+  const sb3 = {
+    document: Object.assign({}, documentStub, { getElementById: (id) => getEl3(id) }),
+    window: Object.assign({}, windowStub, { fetch: fetchStub }),
+    Vditor: NR3, localStorage: localStorageStub, navigator: windowStub.navigator,
+    performance: windowStub.performance, requestAnimationFrame: windowStub.requestAnimationFrame,
+    fetch: fetchStub, setTimeout, clearTimeout, console, JSON, Math, Date, RegExp, Promise,
+    URL: { createObjectURL: () => 'blob:x', revokeObjectURL() {} }
+  };
+  sb3.globalThis = sb3;
+  let threw = null;
+  try {
+    vm.createContext(sb3);
+    vm.runInContext(code, sb3, { filename: 'e2e.js' });
+    sb3.initEditorAndFiles();
+  } catch (e) { threw = e; }
+  check('1.4.2 故障点不再抛错（getContent / updateRawModeBtn）',
+        threw === null, threw && (threw.message + ' @ ' + String(threw.stack).split('\n')[1]));
+  check('绑定总数达到 40+（1.4.2 中断在第 26 个左右）', boundIds.length >= 40, boundIds.length);
+  ['doc-info-close', 'doc-info-close2', 'doc-info-delete', 'folder-add', 'pw-change',
+   'btn-backup', 'btn-theme', 'btn-doc-info', 'btn-raw-mode', 'btn-save', 'btn-word-help',
+   'settings-close', 'settings-close2', 'settings-save', 'btn-toggle-side', 'btn-logout',
+   'btn-settings', 'set-tabs', 'btn-export-md', 'btn-export-html'
+  ].forEach(function (id) {
+    check('1.4.2 中断点之后仍绑定：' + id, boundIds.indexOf(id) >= 0);
+  });
+})();
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);
