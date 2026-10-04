@@ -156,7 +156,7 @@ chore(1.1.4): 版本号统一更新
 ### 分支结构
 
 - **`main`**：唯一主分支，承载全部日常开发与正式发版。
-- **标签 `vX.Y.Z`**：每个正式发版打 tag（如 `v1.2.5`），版本历史由 tag 记录，不在 `main` 上分叉版本分支。
+- **标签 `vX.Y.Z`**：每个正式发版打 tag（如 `v1.4.3`），版本历史由 tag 记录，不在 `main` 上分叉版本分支。
 - **短期分支**：需要时从 `main` 拉 `feat/<scope>` / `fix/<scope>`（前缀见上方「提交规范」），合并回 `main` 后**立即删除**。
 - **历史快照**：以 tag 保存（如 `v1.1.4beta`），不创建 `archive/*` 分支。
 
@@ -214,7 +214,8 @@ python3 tests/test_stress_largefile.py  # 复杂大文件压力
 另外：`request()` 助手不能无条件覆写 `Content-Length`（用 `if "Content-Length" not in h`），
 否则故意声明的超大值会被覆盖，导致超限测试失效。
 
-**测试范围**：自 1.1.1 起只对**本轮修改**做定向测试，不再全量回归。
+**测试范围**：开发中可只跑与本轮修改相关的用例求快；**提交前必须跑一次全量核心套件**
+（`python3 tests/run_all.py`）。CI 会在每次 push / PR 自动执行全量核心套件。
 但改动 `vditor-fpk/app/` 后必须跑 `python test_pkg.py && python test_core.py`（核心功能 + 包结构门禁）。
 
 ---

@@ -7,7 +7,7 @@
 - 密码登录 + 会话 Cookie，防暴力破解、防会话劫持
 - 文档直接落盘到 NAS 目录，可经 SMB / FTP 直接访问
 
-**当前版本：1.2.5** ｜ 许可：[MIT](LICENSE) ｜ 交付形态：fnOS `.fpk` 安装包
+**当前版本：1.4.3** ｜ 许可：[MIT](LICENSE) ｜ 交付形态：fnOS `.fpk` 安装包
 
 > **测试状态：本项目仅在飞牛 fnOS 上构建并实机验证。**
 > 后端因零第三方依赖，从代码上可在其他 NAS / Linux 平台运行，但**从未实机验证**，
@@ -42,7 +42,7 @@
 | 数学公式 | KaTeX 渲染 |
 | 图表 | 流程图（flowchart.js）、思维导图（markmap）、时序图（WaveDrom）、ECharts 图表、Graphviz 状态图等 |
 | 主题切换 | 明/暗模式、内容主题、代码主题 |
-| 文档分区 | 把 NAS 上多个文件夹挂载为独立分区，互不混淆 |
+| 文档分区 | 内置一个系统分区（`/vol1/@appshare/vditor-docs`），可另行添加多个 NAS 目录作为分区 |
 | 文件上传 | 图片/文件上传到 NAS 本机，文档内自动插入链接 |
 | 历史版本 | 每次保存生成快照，可查看与回滚，误改可救 |
 | 访问控制 | 首次设置管理员密码，PBKDF2 哈希存储，全程会话认证 |
@@ -118,7 +118,7 @@ nohup python3 server.py >/var/log/vditor.log 2>&1 &
 | Python | 3.8 或更高（**仅用标准库，无第三方依赖**） |
 | 操作系统 | **飞牛 fnOS**（唯一实机验证平台）；其他 Linux 发行版未验证，见「方式 B」 |
 | 浏览器 | 支持 ES6 的现代浏览器 |
-| 磁盘 | 应用约 50 MB |
+| 磁盘 | 应用约 20 MB（安装包 `.fpk` 约 4.4 MB，安装后解压约 16 MB） |
 
 无需 Node.js、无需构建环境、无需 pip install。
 
@@ -130,15 +130,15 @@ nohup python3 server.py >/var/log/vditor.log 2>&1 &
 
 | 变量 | 说明 | 默认 |
 | --- | --- | --- |
-| `PORT` / `HOST` | 监听端口 / 地址（也可写 `config.env`） | `3838` / `0.0.0.0` |
+| `PORT` / `HOST` | 监听端口 / 地址（也可写 `config.env`）。`HOST` 为 `0.0.0.0` 时实际以 IPv6 双栈监听（`::`），同端口同时接受 IPv4 与 IPv6 | `3838` / `0.0.0.0` |
 | `VDITOR_DOC_DIRS` | 多分区：`名称::路径` 逗号分隔 | 空 |
-| `VDITOR_DOC_DIR` | 单目录回退 | `安装目录/docs` |
+| `VDITOR_DOC_DIR` | 覆盖系统分区（指定后该目录即唯一默认分区） | 空（用系统分区 `/vol1/@appshare/vditor-docs`） |
 | `VDITOR_UPLOAD_DIR` | 上传目录 | `安装目录/uploads` |
-| `VDITOR_CONFIG` | 配置目录（存 `pwhash`） | `BASE_DIR/etc` |
+| `VDITOR_CONFIG` | 配置目录（存 `pwhash`） | `BASE_DIR` |
 | `VDITOR_PASSWORD` | 预置明文密码（不推荐） | 空 |
 | `VDITOR_PWHASH` | 预置 PBKDF2 哈希（优先于上者） | 空 |
-| `VDITOR_TRUST_PROXY` | 置 1 信任 `X-Forwarded-For` | 0 |
-| `VDITOR_SECURE_COOKIE` | 置 1 强制 Cookie `Secure` | 0 |
+| `VDITOR_TRUST_PROXY` | 置 `0` 关闭信任 `X-Forwarded-For`（**默认开启信任**） | 开启 |
+| `VDITOR_SECURE_COOKIE` | 置 `0` 关闭强制 Cookie `Secure`（**默认开启**） | 开启 |
 | `VDITOR_TRUST_PROXY_STRICT` | 置 1 严格校验代理来源 | 0 |
 
 ### 忘记密码
@@ -248,11 +248,12 @@ python3 tests/test_stress_largefile.py  # 四类复杂大文件压力（逐字�
 开发辅助脚本：
 
 ```bash
-python3 tools/bump_version.py 1.2.6 --dry-run   # 版本号同步（仅 manifest + server.py 两处）
+python3 tools/bump_version.py 1.4.4 --dry-run   # 版本号同步（仅 manifest + server.py 两处）
 node    tools/perf_frontend_check.js             # 字数统计路径性能抽检
 ```
 
-约定：自 1.1.1 起只对**本轮修改**做定向测试，不再全量回归。
+约定：开发过程中可只跑**与本轮修改相关**的用例求快；但**提交前与发版前必须跑一次全量**
+（`tests/run_all.py`），CI 亦对每次 push / PR 执行全量核心套件。
 
 上述测试全部针对 **fpk 交付物**（`vditor-fpk/app/`），在飞牛 fnOS 上验证。本项目**没有**其他平台的自动化测试或实机验证。
 

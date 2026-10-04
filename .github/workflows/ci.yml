@@ -12,8 +12,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 后端需 Python 3；fnOS 实际为 Python 3.12+，故下限取 3.9 以覆盖更广
-        python-version: ['3.9', '3.12']
+        # README 声明最低 Python 3.8，故以 3.8 作为矩阵下界实测；
+        # 另加当前主流版本 3.12。
+        python-version: ['3.8', '3.12']
 
     steps:
       - uses: actions/checkout@v4
