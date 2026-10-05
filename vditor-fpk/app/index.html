@@ -38,8 +38,6 @@
             --c-brand-soft: #e8f0fe;
             --c-danger: #d73a49;
             --c-danger-hover: #b92534;
-            --c-warn: #b45309;           /* 1.5.0：警示（超大文档门禁），与 danger 区分开 */
-            --c-warn-hover: #92400e;    /* 1.5.0.4：警示按钮悬停色，替代原先的 filter: brightness */
             --c-btn-ghost-bg: #ffffff;  /* 1.5.0.4：ghost 按钮底色令牌（深色模式下切换为深灰，
                                           原先靠 html[data-theme="dark"] 逐条覆写，易漏新按钮） */
             --c-success: #237804;
@@ -222,13 +220,11 @@
         #folders-list .fdel.restore:hover:not(:disabled) { background: var(--c-brand-hover); }
         .btn--danger:hover:not(:disabled),
         #history-list .vitem .vdel:hover:not(:disabled) { background: var(--c-danger-hover); }
-        .btn--warn:hover:not(:disabled) { background: var(--c-warn-hover); }
         /* ---- hover：ghost 类只加边框与文字色，底色保持不变（1.5.0.4 修复核心） ---- */
         .btn--ghost:hover:not(:disabled),
         #topbar button:hover:not(:disabled),
         .frow button:hover:not(:disabled),
-        .modal-card button.ghost:hover:not(:disabled),
-        #sidebar .side-head button.ghost:hover:not(:disabled),
+        #sidebar .side-head button:hover:not(:disabled),
         .set-head .close:hover:not(:disabled),
         #history-list .vitem .vdiff:hover:not(:disabled) {
             color: var(--c-brand); border-color: var(--c-brand); background: var(--c-btn-ghost-bg);
@@ -285,8 +281,7 @@
         .btn--ghost,
         #topbar button,
         .frow button,
-        .modal-card button.ghost,
-        #sidebar .side-head button.ghost,
+        #sidebar .side-head button,
         .set-head .close,
         #history-list .vitem .vdiff {
             background: var(--c-btn-ghost-bg); color: var(--c-text-2); border-color: var(--c-border);
@@ -299,7 +294,6 @@
         #folders-list .fdel { background: var(--c-danger); color: #fff; }
 
         /* ---- 变体：警示按钮（琥珀底）---- */
-        .btn--warn { background: var(--c-warn); color: #fff; border-color: var(--c-warn); }
 
         /* ---- 侧边栏「+」新建按钮 ---- */
         .root-head .rnew { background: var(--c-brand); color: #fff; border: none; }
@@ -335,7 +329,6 @@
            （.btn--warn 常态 / .btn:disabled 禁用态），此处不再重复定义。
            「仍然打开」保持禁用直到输入与文档名完全一致，需明显不可用，
            否则用户会以为点了没反应（而实际是刻意禁用）。 */
-        #bigdoc-mask .sub-warn { line-height: 1.65; }
         /* 强确认与二次确认的正文都含多段落（\n\n 分段），而 showConfirm /
            showTypedConfirm 都用 textContent 赋值（天然转义，避免 XSS），
            故需 white-space:pre-line 才能让换行生效。 */
@@ -383,16 +376,46 @@
         .set-ext-row input::placeholder,
         #set-page-title::placeholder { color: var(--c-text-3); }
 
-        /* ---------------- 通用弹层 ---------------- */
+        /* ---------------- 通用弹层 ----------------
+         * z-index 层级体系（1.5.0.7 重整）
+         * 此前所有 .modal-mask 都是 10001，仅 #confirm-mask 是 10010。
+         * 缺陷：当 z-index **相同时，后出现的 DOM 元素盖住先前的**——
+         * #doc-info-mask 在 HTML 里位于 #confirm-mask **之后**（第 1311 行 vs 1263 行），
+         * 于是「文档信息」对话框把「删除确认」框压在下面，点不到；
+         * 而当用户再点「历史版本」打开另一个同为 10001 的框时，
+         * 删除确认框反而因 DOM 更靠后而浮到最上层，压在历史版本之上。
+         *
+         * 修法：给每个弹层**显式分配互不相同的层级**，不再依赖 DOM 顺序。
+         * 层级越高 = 越晚打开的对话框（语义：后开的必须压住先开的）。
+         */
         .modal-mask {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--mask); z-index: 10001;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--mask);
             display: none; align-items: center; justify-content: center; padding: 14px;
         }
-        /* 二次确认对话框：始终置顶于其它弹层（如文档信息卡）之上，避免被遮挡 */
-        .modal-mask#confirm-mask { z-index: 10010; }
-        /* 1.5.0：备份导出进度遮罩。层级高于设置面板与确认框——
-           导出期间需盖住一切，避免用户以为没反应而重复点「导出」并发多个任务。 */
-        .modal-mask#backup-mask { z-index: 10030; }
+        /* —— 层级 1（10010）：基础对话框（互斥打开，同级不共存） —— */
+        #settings-mask    { z-index: 10010; }
+        #history-mask     { z-index: 10010; }
+        #doc-info-mask    { z-index: 10010; }
+        #word-help-mask   { z-index: 10010; }
+        #kb-help-mask     { z-index: 10010; }
+        /* —— 层级 2（10020）：强确认（可盖在文档信息/历史版本之上）—— */
+        #confirm-mask     { z-index: 10020; }
+        #bigdoc-mask      { z-index: 10020; }
+        #session-mask     { z-index: 10020; }
+        /* —— 层级 3（10030）：备份进度遮罩（须盖住一切，含确认框）—— */
+        #backup-mask      { z-index: 10030; }
+        /* —— 层级 4（10040）：全局 toast（永远可见）—— */
+        /* —— 层级 0（10000）：登录层（最底层，全屏）—— */
+        #login-mask { z-index: 10000; }
+
+        /* ---------------- 模态阻断（1.5.0.7）----------------
+         * 只调 z-index 只能保证「谁盖住谁」，但**被盖住的对话框里的按钮仍可能被点到**
+         *（尤其当两个框 z-index 相同、或底层框有局部高层子元素时）。
+         * 规则：任何处于显示状态的弹层，若其上方还有别的弹层，则自身不可交互。
+         * 用 .modal-mask.has-above 标记（由 JS 在开/关弹层时维护），
+         * 保证同一时刻只有最顶层对话框能响应点击与 Esc。 */
+        .modal-mask.has-above { pointer-events: none; }
+        .modal-mask.has-above .modal-card { pointer-events: none; }
         #backup-bar {
             height: 8px; border-radius: 4px; background: var(--c-border-2);
             overflow: hidden; margin: 12px 0 8px;
@@ -665,18 +688,19 @@
         .help-body .g-note b { color: var(--c-text-2); }
         .help-body hr { border: none; border-top: 1px solid var(--c-border-2); margin: 12px 0; }
 
-        /* toast 须高于所有弹层（.modal-mask 10001 / #confirm-mask 10010），否则在设置面板中保存后的成功提示会被遮罩挡住 */
+        /* toast 须高于所有弹层（层级 4 = 10040），否则在设置面板中保存后的成功提示会被遮罩挡住。
+           pointer-events:none 保证它永不拦截点击。 */
         .toast {
             position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
             background: var(--c-text); color: #fff; padding: 8px 16px; border-radius: var(--r);
             font-size: var(--fs-md); opacity: 0; transition: opacity .25s; pointer-events: none;
-            z-index: 10020; box-shadow: var(--shadow);
+            z-index: 10040; box-shadow: var(--shadow);
         }
         .toast.show { opacity: 1; }
 
-        /* 登录层 */
+        /* 登录层（z-index 见上方「通用弹层」层级体系，勿在此重复声明） */
         #login-mask {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--mask); z-index: 10000;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--mask);
             display: flex; align-items: center; justify-content: center; padding: 16px;
         }
         #login-card {
@@ -728,8 +752,6 @@
             --c-brand-soft: rgba(88,166,255,.16);
             --c-danger: #f85149;
             --c-danger-hover: #da3633;
-            --c-warn: #e3a008;           /* 1.5.0：暗色下需提亮才看得清 */
-            --c-warn-hover: #f5b942;    /* 1.5.0.4：暗色下的警示悬停色 */
             --c-btn-ghost-bg: #23272f;  /* 1.5.0.4：暗色下 ghost 按钮底色（原先为逐条覆写） */
             --c-success: #3fb950;
             --c-info: #58a6ff;
@@ -2722,7 +2744,6 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 const wantRaw = (passed && bytes > BIG_DOC_BYTES)
                     ? true
                     : decideRenderMode(bytes) === 'raw';
-                const modeChanged = wantRaw !== rawMode;
                 if (wantRaw) {
                     if (!rawMode) {
                         enterRawMode(wantRawReason(bytes), bytes);
@@ -4016,6 +4037,29 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         if (e.target === e.currentTarget) closeBigDocGate();
     });
 
+    /* ---------------- 弹层层级同步（1.5.0.7）----------------
+     * 只调z-index 不足以保证「被遮挡的对话框不可点击」——被盖住的框里
+     * 的按钮仍可能响应鼠标。本函数按 z-index 从高到低扫描所有弹层，
+     * 给「上方还有别的弹层」的那些打上 .has-above（CSS 里禁用其指针事件）。
+     * 每次开/关弹层都必须调用一次，保证同一时刻只有最顶层可交互。 */
+    const MODAL_Z = {
+        'login-mask': 10000,
+        'settings-mask': 10010, 'history-mask': 10010, 'doc-info-mask': 10010,
+        'word-help-mask': 10010, 'kb-help-mask': 10010,
+        'confirm-mask': 10020, 'bigdoc-mask': 10020, 'session-mask': 10020,
+        'backup-mask': 10030
+    };
+    function syncModalStack() {
+        const open = Object.keys(MODAL_Z)
+            .map(id => ({ id: id, el: document.getElementById(id), z: MODAL_Z[id] }))
+            .filter(o => o.el && o.el.style.display === 'flex')
+            .sort((a, b) => a.z - b.z);          // z 升序：越靠后打开（z 越大）越顶层
+        open.forEach((o, i) => {
+            // 该弹层之上还有别的显示中的弹层 → 阻断其交互
+            o.el.classList.toggle('has-above', i < open.length - 1);
+        });
+    }
+
     // 浏览器端快捷键适配
     document.addEventListener('keydown', function(e) {
         // Ctrl / Cmd + S：保存（捕获阶段拦截，避免 Vditor 默认的删除线/其他行为）
@@ -4056,6 +4100,33 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     // 启动：先应用主题（登录层也要跟随），再检查鉴权
     initTheme();
     checkAuth();
+
+    /* 用 MutationObserver 自动监听各弹层的显隐（1.5.0.7）——
+       各弹层的开/关散落在十余处调用点（openDocInfo / showConfirm / showTypedConfirm /
+       openHistory / closeHistory / closeDocInfo / hideConfirm / closeBigDocGate / …），
+       逐个手动补 syncModalStack() 调用极易漏一处。监听 style 属性的变化可全覆盖。
+       只在「显示状态真正变化」时同步，避免其它 style 改动引发无谓重排。 */
+    (function () {
+        if (typeof MutationObserver === 'undefined') return;   // 老浏览器兜底
+        let last = '';
+        const refresh = function () {
+            const state = Object.keys(MODAL_Z).map(function (id) {
+                const el = document.getElementById(id);
+                return el && el.style.display === 'flex' ? id : '';
+            }).join('|');
+            if (state === last) return;
+            last = state;
+            syncModalStack();
+        };
+        const targets = Object.keys(MODAL_Z).map(id => document.getElementById(id))
+                                  .filter(Boolean);
+        targets.forEach(function (el) {
+            new MutationObserver(refresh).observe(el, {
+                attributes: true, attributeFilter: ['style']
+            });
+        });
+        refresh();
+    })();
 </script>
 </body>
 </html>

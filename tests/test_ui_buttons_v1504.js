@@ -30,8 +30,12 @@ check('ghost hover 不改底色（用 --c-btn-ghost-bg 而非 brand）',
 check('已移除 filter: brightness 的按钮 hover',
   !/bigdoc-ok:not\(:disabled\):hover\s*\{\s*filter/.test(html));
 check('二次确认反色设计保留', /#confirm-mask #confirm-cancel/.test(CSS));
-check('新增 --c-warn-hover 浅色令牌', /--c-warn-hover:\s*#92400e/.test(CSS));
-check('新增 --c-warn-hover 深色令牌', /--c-warn-hover:\s*#f5b942/.test(CSS));
+// 1.5.0.7：--c-warn / --c-warn-hover / .btn--warn 已成孤儿并清理
+// （1.5.0.6 起bigdoc 确认按钮改用 btn--ghost，无元素再用 warn 变体；
+//   设置页风险提示用的是 --c-danger）
+check('已清理孤儿令牌 --c-warn / --c-warn-hover',
+  !/--c-warn\s*:/.test(CSS) && !/--c-warn-hover\s*:/.test(CSS));
+check('已清理无使用者的 .btn--warn 变体', !/\.btn--warn[{:]/.test(CSS));
 check('新增 --c-btn-ghost-bg 双主题', (CSS.match(/--c-btn-ghost-bg:/g) || []).length === 2);
 check('移除 dark模式逐条 ghost 覆写',
   !/data-theme="dark"\] #topbar button\.ghost/.test(CSS));
@@ -105,6 +109,84 @@ check('渲染模式选中项为主色蓝底', /background:\s*var\(--c-brand\)/.t
 check('渲染模式选中项 hover 加深', /aria-checked="true"\]:hover/.test(CSS));
 check('渲染模式样式已删除旧的裸 .seg 定义',
   !/\.set-seg \.seg \{[^}]*background:\s*#fff/.test(CSS));
+
+// ---------- 1.5.0.7：弹窗 z-index 层级体系 ----------
+console.log('== 弹窗层级 ==');
+// 复现缺陷本质：#doc-info-mask 在 HTML 中位于 #confirm-mask 之后，
+// 若两者 z-index 相同则 DOM 靠后者胜出 → 文档信息框会盖住删除确认框。
+const orderOf = (id) => html.indexOf('id="' + id + '"');
+check('HTML 中 doc-info-mask 确实在 confirm-mask 之后（缺陷前提）',
+  orderOf('doc-info-mask') > orderOf('confirm-mask'),
+  { doc: orderOf('doc-info-mask'), confirm: orderOf('confirm-mask') });
+
+const zOf = (id) => {
+  const m = CSS.match(new RegExp('#' + id + '\\s*\\{[^}]*z-index:\\s*(\\d+)'));
+  return m ? parseInt(m[1], 10) : null;
+};
+// 每个弹层都必须有显式 z-index，不能依赖 .modal-mask 的继承值
+const LAYERS = {
+  'login-mask': 10000,
+  'settings-mask': 10010, 'history-mask': 10010, 'doc-info-mask': 10010,
+  'word-help-mask': 10010, 'kb-help-mask': 10010,
+  'confirm-mask': 10020, 'bigdoc-mask': 10020, 'session-mask': 10020,
+  'backup-mask': 10030
+};
+Object.keys(LAYERS).forEach(id => {
+  check(id + ' 有显式 z-index = ' + LAYERS[id], zOf(id) === LAYERS[id], zOf(id));
+});
+check('.modal-mask 不再自带 z-index（强制每个弹层显式声明）',
+  !/\.modal-mask \{[^}]*z-index/.test(CSS));
+check('确认框层级高于文档信息框（修复遮挡的核心）',
+  zOf('confirm-mask') > zOf('doc-info-mask'));
+check('强确认框层级高于文档信息框',
+  zOf('bigdoc-mask') > zOf('doc-info-mask'));
+check('备份遮罩层级最高（盖住确认框）',
+  zOf('backup-mask') > zOf('confirm-mask'));
+check('toast 层级高于所有弹层', /\.toast \{[^}]*z-index:\s*10040/.test(CSS));
+
+// 模态阻断：保证被遮挡的弹层不可点击
+check('存在 .has-above 阻断规则',
+  /\.modal-mask\.has-above \{[^}]*pointer-events:\s*none/.test(CSS));
+check('阻断同时作用于卡片内容', /\.modal-mask\.has-above \.modal-card \{[^}]*pointer-events:\s*none/.test(CSS));
+check('存在 syncModalStack 层级同步函数',
+  /function syncModalStack\(\)/.test(code));
+check('syncModalStack 按 z 升序判定顶层',
+  /\.sort\(\(a, b\) => a\.z - b\.z\)/.test(code));
+check('syncModalStack 为非顶层打 has-above',
+  /classList\.toggle\('has-above', i < open\.length - 1\)/.test(code));
+check('用 MutationObserver 自动同步（避免漏调用点）',
+  /new MutationObserver\(refresh\)/.test(code)
+  && /attributeFilter:\s*\['style'\]/.test(code));
+check('JS 侧 z 表与 CSS 一致（10 个弹层）',
+  (code.match(/'(?:login|settings|history|doc-info|word-help|kb-help|confirm|bigdoc|session|backup)-mask':\s*\d+/g) || []).length === 10);
+
+// ---------- 通用守卫：不得有孤儿 CSS 变量 / 按钮变体 ----------
+console.log('== 孤儿检测 ==');
+const bodyHtml = html.split('</style>').slice(1).join('</style>');
+/* 自定义属性（--foo）必须在 CSS 里被 var(--foo) 引用，否则是孤儿。
+   ⚠️ 排除「覆盖 Vditor 第三方库变量」的那一组：我们是给 Vditor 喂它的设计令牌
+   （如 --toolbar-background-color），Vditor 内部消费这些名字，自身不会出现在本文件里。 */
+const VEDITOR_OWNED = /--(toolbar|panel|textarea|count|heading|blockquote|primary|second|danger|ghost|border|icon|preview|code)/i;
+const declaredVars = new Set((CSS.match(/(--[a-z0-9-]+)\s*:/gi) || []).map(x => x.replace(/\s*:\s*$/, '')));
+const orphanVars = [...declaredVars].filter(v => {
+  if (VEDITOR_OWNED.test(v)) return false;
+  const uses = (CSS.match(new RegExp('var\\(' + v.replace(/-/g, '\\-') + '\\s*[,)]', 'g')) || []).length;
+  return uses === 0;
+});
+check('无孤儿 CSS 变量（声明了却没有任何 var() 引用）',
+  orphanVars.length === 0, orphanVars);
+// 按钮变体类必须在 HTML class 或 JS 的 className 赋值中真的被使用
+//（不能匹配注释，故只认 class="..." 与 className = '...' 两种实际写法）
+const VARIANTS = ['btn--primary', 'btn--ghost', 'btn--danger', 'btn--warn'];
+const unusedVar = VARIANTS.filter(v => {
+  const inHtml = new RegExp('class="[^"]*\\b' + v + '\\b').test(bodyHtml);
+  const inJsAssign = new RegExp("className\\s*=\\s*'[^']*\\b" + v + "\\b").test(code)
+                   || new RegExp('className\\s*=\\s*"[^"]*\\b' + v + '\\b').test(code);
+  // CSS 里仍有该变体规则却无人使用 → 死变体
+  const hasRule = new RegExp('\\.' + v + '\\s*[{,:]').test(CSS);
+  return hasRule && !inHtml && !inJsAssign;
+});
+check('按钮变体类均有使用者（无死变体）', unusedVar.length === 0, unusedVar);
 
 // ---------- 静态断言：体积标注移除 ----------
 console.log('== 列表体积标注 ==');
