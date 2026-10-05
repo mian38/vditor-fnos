@@ -1,0 +1,77 @@
+# AGENTS.md —— 本项目的 AI / 多 Agent 协作硬性约定
+
+本项目由人类所有者（mian38）与多个 AI 编码 agent（WorkBuddy / Claude / Codex 等）协作开发。
+**本文件中的规则对修改本仓库的任何 agent 具有约束力。** 不确定时，优先向人类确认，不要凭猜。
+
+> 详细规范见 [`CONTRIBUTING.md`](CONTRIBUTING.md)（代码结构 / 提交 / 分支 / 测试 / 升版 / 许可）。
+> 项目长期记忆见 `.workbuddy/memory/MEMORY.md`（含逐版本踩坑与根因，**本地文件、不进仓库**，clone 后请以本文件与 `CONTRIBUTING.md` 为准）。
+
+---
+
+## 0. 人在环发版门禁（最高优先级）
+
+实机（飞牛 fnOS）测试**只能由人类（mian38）手动完成**。Agent 可在本地完成除实机外的全部事：
+开发、跑测试、打包 fpk。据此：
+
+- Agent 构建 / 交付的每一个 fpk，一律视为**测试版 / 候选**，必须在交付物上明确标注「**未发布**」。
+- **Agent 绝不自行创建 GitHub Release、绝不打 release tag、绝不在未获授权时把 fpk 公开或对外宣布。**
+- 只有人类显式下达「**发布 vX.Y.Z**」指令后，Agent 才可：打 `vX.Y.Z` tag、建 GitHub Release、上传 fpk、更新 changelog。
+- **发版时机控制权完全在人类，Agent 不预判、不抢跑。**
+- 迭代期内可多次构建为 `<ver>-beta.N` 供人类安装，但只有人类签字的版本才晋升 stable。
+- 不要把「代码 push 到 GitHub（main 公开）」等同于「已发布」：代码公开无所谓，fpk 发布锁死在人类签字之后。
+
+## 1. 版本号规则（x.y.z）
+
+唯一判据 = **用户可见功能范围是否扩大**：
+
+- 功能范围扩大（新增 / 增强用户可见能力）→ 升 **y**，z 归零；
+- 未扩大（修 bug / 做对 / 细节优化）→ 升 **z**；
+- 架构级重构或不兼容变更 → 升 **x**；
+- 纯文档 / git 元数据调整不算代码更新，**无需升版**。
+
+每次更新须在变更说明写明新版本号 + 升版依据。版本号存两处（`vditor-fpk/manifest` 的 `version=` 与
+`vditor-fpk/app/server.py` 的 `APP_VERSION`），用 `tools/bump_version.py` 同步，测试已改为动态读取、无需手改断言。
+
+## 2. 测试门禁（交付任何 fpk 前必跑）
+
+- 交付 fpk 测试版前，本地必须执行：
+  `rm -rf vditor-fpk/app/__pycache__ && python tests/run_all.py --all`
+  → **0 失败**才可交付，避免浪费人类一次实机安装。
+- 改动 `vditor-fpk/app/` 后至少跑 `python tests/test_pkg.py && python tests/test_core.py`（包结构 + 核心功能）。
+- 所有测试脚本集中在 `tests/`，统一入口 `tests/run_all.py`；**新增测试必须登记进 `run_all.py` 的 `CASES`**，不要散落在仓库其它位置。
+- **Bug 修复遵循「先复现再验证」范式**：用探针在旧版先复现异常，再对新版跑同一探针确认修复。
+  教训（1.4.2→1.4.3）：初始化崩溃类 bug 用**同步桩调 `after()` 测不出**，必须模拟真实异步（未就绪即抛）才能复现；不要靠「测试没报错」就断言修好了。
+
+## 3. 只发 fpk，不维护独立部署目录
+
+- 唯一源 = `vditor-fpk/app/`（它同时就是通用 Linux 部署的运行代码）。历史上独立的
+  `vditor-nas/`、`nas-template/`、`make_nas.py` 均已删除，不要再复活。
+- `releases/` 下的所有 `.fpk` 一律**本地保留、不进仓库、不主动删除**（已被 `*.fpk` gitignore）——作本地备份与回滚。
+
+## 4. 技术硬约束
+
+- **零第三方依赖**是本项目的硬性约束：禁止引入任何 `pip` 包；`server.py` 纯 Python 标准库。
+- 新增 `.py` 首两行之后必须加：
+  `# Copyright (c) 2026 mian38` + `# SPDX-License-Identifier: MIT`
+  （无 `.py` 后缀脚本如 `apply_style_v414` / `check` 同样要加，最易漏检）。
+- `server.py` 顶部的 `sys.path.insert(0, …)` 自举代码必须保留（否则以 `-c`/`-m` 拉起会 `ModuleNotFoundError`）。
+- 可变状态留在 `server.py`；纯函数 / 常量留在 `vd_util.py`。
+- 请求体读取只走 `_content_length()` / `_read_body(handler, limit)`（安全红线，禁止裸读 `Content-Length` / `rfile`）。
+
+## 5. 宣传口径纪律
+
+- 只声明**实测平台 = 飞牛 fnOS**（唯一实机验证平台）。不宣称未验证的平台；新增平台表述前先问「实测过吗」。
+- 改动任何用户可见文案（设置说明、README、弹窗）须与代码行为**逐字一致**，不夸大、不误导。
+  教训：「强制 Cookie Secure 标记」曾写成「强制通过 HTTPS 传输凭证」，实际机制是「公网 HTTP 登录被拦截」——文案须忠实机制，不能写意图当机制。
+
+## 6. 多 Agent 并行
+
+- 改仓库前先跑 `bash preflight.sh` 自检：分支 / 工作区是否干净 / 是否落后 main / 是否有他人独占锁。
+- 不在 `main` 上长驻开发；用 `feat/<scope>` / `fix/<scope>` 短期分支，合并回 `main` 后立即删除。
+- 临时分支合并回 `main` 后必须删除，避免无主分支堆积。
+
+## 7. 给人类交付时的标准动作
+
+每次交付 fpk 测试版时，附一句话说明：**构建版本号（如 `1.4.4-beta.2`）+ 改了什么 + 请重点测哪几项**。
+人类安装、实机验证、反馈 bug（带 fpk 版本号 / 访问方式 / 操作步骤 / 期望 vs 实际 / 控制台报错 / 截图）后，
+你再修、再测、再打包，循环往复，直到人类说「实机无 bug，发布 vX.Y.Z」。

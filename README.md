@@ -190,8 +190,8 @@ fnpack.exe build -d vditor-fpk
 `tools/bump_version.py` 会一次性同步这两处；测试脚本动态读取版本，无硬编码：
 
 ```bash
-python3 tools/bump_version.py 1.2.6 --dry-run   # 先预览
-python3 tools/bump_version.py 1.2.6             # 确认后执行
+python3 tools/bump_version.py <新版本号> --dry-run   # 先预览
+python3 tools/bump_version.py <新版本号>             # 确认后执行
 ```
 
 ---

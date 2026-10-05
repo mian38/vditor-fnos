@@ -370,6 +370,6 @@ Authorization: Bearer <token>
   `is_denied_upload`（黑名单判定）、`upload_headers`（响应头与沙箱），
   **不要另写一套**上传校验或路径处理逻辑。
 - 上传大小上限沿用 `SETTINGS["upload_max_mb"]`，不要写死常量。
-- 新接口需补回归测试；核心功能端到端见 `test_core.py`。
+- 新接口需补回归测试；核心功能端到端见 `tests/test_core.py`。
 - 静态资源白名单为**白名单放行**机制（仅 `/index.html`、`/vditor/`、`/ui/` 可公开访问），
   新增需公开访问的路径时必须同步 `vd_util.PUBLIC_STATIC_EXACT` / `PUBLIC_STATIC_PREFIX`，否则 404。

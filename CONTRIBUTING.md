@@ -216,7 +216,7 @@ python3 tests/test_stress_largefile.py  # 复杂大文件压力
 
 **测试范围**：开发中可只跑与本轮修改相关的用例求快；**提交前必须跑一次全量核心套件**
 （`python3 tests/run_all.py`）。CI 会在每次 push / PR 自动执行全量核心套件。
-但改动 `vditor-fpk/app/` 后必须跑 `python test_pkg.py && python test_core.py`（核心功能 + 包结构门禁）。
+但改动 `vditor-fpk/app/` 后必须跑 `python3 tests/test_pkg.py && python3 tests/test_core.py`（核心功能 + 包结构门禁）。
 
 ---
 
@@ -232,14 +232,26 @@ rm -rf vditor-fpk/app/__pycache__
 
 ## 升版本流程
 
-版本号存于 fpk 两处，`bump_version.py` 只同步这 **两处**（测试已改为动态读取版本，无需同步）：
+**版本号升哪位（唯一判据 = 用户可见功能范围是否扩大）**：
+
+- 功能范围扩大（新增 / 增强用户可见能力）→ 升 **y**，z 归零；
+- 未扩大（修 bug / 做对 / 细节优化）→ 升 **z**；
+- 架构级重构或不兼容变更 → 升 **x**；
+- 纯文档 / git 元数据调整不算代码更新，**无需升版**。
+
+每次更新须在变更说明写明新版本号 + 升版依据。
+
+版本号存于 fpk 两处，`tools/bump_version.py` 只同步这 **两处**（测试已改为动态读取版本，无需同步）：
 
 - `vditor-fpk/manifest` 的 `version=`
 - `vditor-fpk/app/server.py` 的 `APP_VERSION`
 
+> **发版门禁（AI / Agent 必读）**：实机（fnOS）测试只能由人类（mian38）手动完成；Agent 构建 / 交付的每一个 fpk 一律为**测试版 · 未发布**，Agent **绝不**自行创建 GitHub Release、不打 release tag、不对外宣布；只有人类显式下达「发布 vX.Y.Z」指令后才可发布。完整约定见 [`AGENTS.md`](AGENTS.md)。
+
 ```bash
-python bump_version.py 1.2.6 --dry-run
-python bump_version.py 1.2.6
+# 尖括号内替换为目标版本号；--dry-run 只预览不落盘
+python3 tools/bump_version.py <新版本号> --dry-run
+python3 tools/bump_version.py <新版本号>
 ```
 
 **两份更新记录必须同时更新**：
@@ -264,5 +276,6 @@ python bump_version.py 1.2.6
 本项目本身大量使用 AI 编码助手开发（见 [README「开发方式说明」](README.md)），欢迎你也这样做。使用 AI 辅助没有限制，但请注意：
 
 1. **你需为提交内容负责** —— AI 可能产生错误，请自行验证后再提交。
-2. **测试是硬要求** —— 改动 `vditor-fpk/app/` 后必须跑 `python test_pkg.py && python test_core.py`。
+2. **测试是硬要求** —— 改动 `vditor-fpk/app/` 后必须跑 `python3 tests/test_pkg.py && python3 tests/test_core.py`。
 3. **如实标注** —— 若提交内容大量由 AI 生成，建议在 PR 中说明，以便维护者安排更严格的审阅。
+4. **发版门禁（硬性）** —— Agent 开发本项目的发版门禁、版本规则与测试门禁见 [`AGENTS.md`](AGENTS.md)，必须严格遵守——尤其「**绝不自行发布 fpk**」：实机（fnOS）测试只能由人类完成，Agent 交付的 fpk 一律为测试版 · 未发布，只有人类显式「发布 vX.Y.Z」指令后才可发布。

@@ -126,7 +126,7 @@ d3 采用 **ISC** 许可。ISC 要求随分发保留版权与许可声明，故�
 - `vditor-fpk/app/vd_util.py` —— 无副作用工具函数与常量
 - `vditor-fpk/app/index.html` —— 单页前端（含内联样式 `ui_style_v414`）
 - `vditor-fpk/app/ui/` —— 前端样式与脚本
-- `bump_version.py` —— 版本号同步工具
+- `tools/bump_version.py` —— 版本号同步工具
 - `test_*.py` —— 回归测试脚本
 - `docs/`、`README.md`、`CHANGELOG.md`、`CHANGELOG_USER.md` —— 文档
 
