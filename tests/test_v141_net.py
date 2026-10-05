@@ -296,8 +296,8 @@ check("确认框 CSS：取消为主色蓝",
       re.search(r"#confirm-mask #confirm-cancel\s*\{[^}]*background:\s*var\(--c-brand\)", idx) is not None)
 check("确认框 CSS：确认为白底",
       re.search(r"#confirm-mask #confirm-ok\s*\{[^}]*background:\s*#fff", idx) is not None)
-check("确认框：取消按钮排在确认之前（默认视线落点）",
-      idx.index('id="confirm-cancel"') < idx.index('id="confirm-ok"'))
+check("1.5.0 确认框：确认按钮排在取消之前（右手侧留给推荐操作「取消」）",
+      idx.index('id="confirm-ok"') < idx.index('id="confirm-cancel"'))
 check("确认框正文支持多段落换行", "#confirm-msg { white-space: pre-line" in idx)
 check("两个安全开关使用各自风险文案（attachSecurityConfirm 增加第 3 参）",
       "function attachSecurityConfirm(id, name, risk)" in idx)
@@ -331,27 +331,33 @@ check("1.4.2 二次确认说明与 https 直连无关",
 check("1.4.2 已删除设置页临时态按钮", "btn-once" not in idx)
 check("1.4.2 顶栏按钮初始为 hidden（仅大文档出现）",
       re.search(r'id="btn-raw-mode"[^>]*\bhidden\b', idx) is not None)
-check("1.4.2 updateRawModeBtn 按文档大小控制显隐",
-      "b.hidden = !(currentPath && len > RAW_AUTO_CHARS);" in idx)
+check("1.5.0 updateRawModeBtn 按 docBaseLen 控制显隐（与自动降级同源）",
+      "b.hidden = !(currentPath && isBigDoc());" in idx)
 check("1.4.2 顶栏按钮切换即写入临时态 renderModeOnce",
       re.search(r"function toggleRawMode\(\) \{\s*if \(rawMode\) \{\s*renderModeOnce = 'rich';", idx) is not None)
 check("1.4.2 已移除 applyRenderModeOnce / clearRenderModeOnce",
       "applyRenderModeOnce" not in idx and "clearRenderModeOnce" not in idx)
 # 1.4.2：状态栏监听地址合并为单栏
 check("1.4.2 监听地址仅出现一次（已合并）", idx.count("kv(dl, '监听地址'") == 1)
-check("1.4.2 监听地址显示 bindHost 与双栈说明",
-      "(a.bindHost || a.host || '::')" in idx and "IPv4 / IPv6 双栈" in idx)
-check("1.4.2 /api/status 提供 bindHost 与 dualStack",
-      '"bindHost": "::" if HOST in ("", "0.0.0.0") else HOST' in sr and '"dualStack":' in sr)
+check("1.5.0 监听地址显示实测 bindHost 与双栈说明（null 不虚报）",
+      "(a.bindHost || a.host || '—')" in idx and "IPv4 / IPv6 双栈" in idx and "dual === true" in idx)
+check("1.5.0 /api/status 读取实测监听结果 ACTUAL_BIND",
+      '"bindHost": ACTUAL_BIND["host"]' in sr and '"dualStack": ACTUAL_BIND["dualStack"]' in sr
+      and '"bindFamily": ACTUAL_BIND["family"]' in sr)
+check("1.5.0 ACTUAL_BIND 由 make_server 按 bind 成败写入（不再按 HOST 推断）",
+      'ACTUAL_BIND = {"host": "::", "dualStack": True' in sr
+      and 'ACTUAL_BIND = {"host": "0.0.0.0", "dualStack": False' in sr)
 # 1.4.2：使用指南集中修订
 check("1.4.2 使用指南新增「纯文本模式与大文档」章节", "纯文本模式与大文档" in idx)
 check("1.4.2 使用指南说明临时态只在本次会话有效", "只在本次会话有效" in idx)
 check("1.4.2 使用指南说明单系统分区路径", "/vol1/@appshare/vditor-docs" in idx)
-check("1.4.2 使用指南修正失效选项卡名（版本与自动保存 → 文件）",
-      "设置 → 版本与自动保存" not in idx and "在<b>「设置 → 文件」</b>中配置" in idx)
-check("1.4.2 使用指南补充 >5MB 不生成历史版本", "超过 5MB 的文档不再生成历史版本快照" in idx)
+check("1.5.0 使用指南指向「设置 → 文件」（自动保存与版本策略均在其中）",
+      "设置 → 版本与自动保存" not in idx and "在<b>「设置 → 文件」</b>" in idx)
+check("1.5.0 使用指南：>5MB 仅自动保存不生成历史版本，手动保存仍生成",
+      "自动保存不生成历史版本" in idx and "但手动保存仍正常生成历史版本" in idx)
 check("1.4.2 使用指南补充纯文本不支持导出 HTML", "纯文本模式下不支持「导出 HTML」" in idx)
-check("1.4.2 使用指南说明二次确认按钮配色", "「取消」是醒目的蓝色并排在前面" in idx)
+check("1.5.0 使用指南说明二次确认按钮配色与位置",
+      "「取消」是醒目的蓝色并排在右边" in idx)
 check("1.4.2 使用指南章节序号连续（一~九）",
       all(("%s、" % c) in idx for c in "一二三四五六七八九"))
 
@@ -388,8 +394,9 @@ check("getContent 带 try-catch 兜底",
 check("setContent 未就绪时静默跳过", "if (!vditor || !vditorReady) return;" in idx14)
 check("updateRawModeBtn 整体 try-catch 兜底",
       re.search(r"function updateRawModeBtn\(\) \{[\s\S]*?try \{[\s\S]*?\} catch \(e\) \{", idx14) is not None)
-check("updateRawModeBtn 仅在就绪或纯文本时取长度",
-      "else if (vditorReady && vditor) len = (getContent() || '').length;" in idx14)
+check("1.5.0 updateRawModeBtn 不再触碰 Vditor API（改用 docBaseLen，根除未就绪抛错）",
+      "else if (vditorReady && vditor) len = (getContent() || '').length;" not in idx14
+      and "b.hidden = !(currentPath && isBigDoc());" in idx14)
 check("exitRawMode 不再直调 vditor.setValue（改走 setContent 守卫）",
       re.search(r"function exitRawMode\(\)[\s\S]*?if \(vditor\) \{ pendingRichText = text; setContent\(text\); \}",
                 idx14) is not None)

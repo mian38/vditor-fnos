@@ -123,8 +123,11 @@ check('启动后创建 Vditor 实例', allVditorStubs.length === 1 && !allVditor
 check('_buildVditorImpl 已注入', typeof sandbox.buildVditor === 'function' && typeof sandbox.destroyVditor === 'function');
 
 // ---------- [3] 进入超大文档纯文本模式 -> 应销毁 Vditor（解耦核心） ----------
-const BIG = '数据 '.repeat(3_000_000); // ~ 6MB，远超 RAW_AUTO_CHARS(30万)
+// 1.5.0：销毁判据改用 docBaseLen（与自动降级、按钮显隐同源），
+// 故测试须先写入 docBaseLen 才能复现「打开超大文档」的真实状态。
+const BIG = '数据 '.repeat(3_000_000); // ~ 6MB，远超 RAW_AUTO_CHARS(100万)
 getEl('raw-editor').value = BIG;
+vm.runInContext('docBaseLen = ' + BIG.length + ';', sandbox);
 sandbox.enterRawMode('自动进入纯文本', BIG.length);
 check('超大文档进入纯文本后销毁 Vditor', allVditorStubs[0]._destroyed === true);
 check('#vditor 容器被清空', getEl('vditor').innerHTML === '');
@@ -156,6 +159,8 @@ check('富文本模式下按钮显示「纯文本」（点击即切纯文本）'
 
 // ---------- [7] 手动切纯文本：富文本内容须被带入 textarea（不丢内容） ----------
 sandbox.setContent('手动切换保留内容测试');   // 富文本模式下写入
+// 基准长度同步改小：docBaseLen 是「打开时的文档大小」，此处模拟打开一份小文档后手动切换
+vm.runInContext('docBaseLen = 100;', sandbox);
 sandbox.enterRawMode('手动切纯文本', 100);    // 小规模，不销毁
 check('手动切纯文本把富文本内容带入编辑框', getEl('raw-editor').value === '手动切换保留内容测试');
 
@@ -184,7 +189,8 @@ console.log('\n静态结构校验：');
 check('openFile 自动进/出纯文本后调用 updateRawModeBtn()', /updateRawModeBtn\(\);\s*\/\/\s*自动进\/出纯文本/.test(code));
 check('textarea wrap="soft"（软换行）', /id="raw-editor"[^>]*wrap="soft"/.test(html));
 check('#raw-editor CSS white-space: pre-wrap', /#raw-editor\s*\{[\s\S]*?white-space:\s*pre-wrap/.test(html));
-check('enterRawMode 超大时调用 destroyVditor()', /if \(typeof len === 'number' && len > RAW_AUTO_CHARS && vditor\) \{\s*destroyVditor\(\);/.test(code));
+check('1.5.0 enterRawMode 超大时调用 destroyVditor()（判据用 docBaseLen）',
+  /if \(isBigDoc\(\) && vditor\) \{\s*destroyVditor\(\);/.test(code));
 check('exitRawMode 重建走 pendingRichText + buildVditor()', /else \{ pendingRichText = text; buildVditor\(\); \}/.test(code));
 check('updateCounter 不再以 vditor 存在为前提', /if \(!rawMode && !vditor\) return;/.test(code));
 
@@ -196,9 +202,12 @@ function segSet(v) { vm.runInContext('renderModeSetting = ' + JSON.stringify(v) 
 function onceSet(v) { vm.runInContext('renderModeOnce = ' + (v === null ? 'null' : JSON.stringify(v)) + ';', sandbox); }
 segSet('auto');
 check('auto：小文档走富文本', sandbox.decideRenderMode(1000) === 'rich');
-check('auto：超阈值走纯文本', sandbox.decideRenderMode(400000) === 'raw');
+// 1.5.0：阈值由 30 万字符上调至 100 万字符——300KB~1MB 的文档不再被过早降级
+check('auto：40 万字符（新阈值内）仍走富文本', sandbox.decideRenderMode(400000) === 'rich');
+check('auto：100 万字符（恰好等于阈值）仍走富文本', sandbox.decideRenderMode(1000000) === 'rich');
+check('auto：超阈值（100 万字符以上）走纯文本', sandbox.decideRenderMode(1000001) === 'raw');
 segSet('rich');
-check('rich：一律富文本（含超大文档）', sandbox.decideRenderMode(400000) === 'rich');
+check('rich：一律富文本（含超大文档）', sandbox.decideRenderMode(4000000) === 'rich');
 segSet('raw');
 check('raw：一律纯文本（含小文档）', sandbox.decideRenderMode(1000) === 'raw');
 // 临时态覆盖持久化设置
@@ -211,10 +220,10 @@ check('临时态 rich 覆盖持久化 rich（仍为富文本）', sandbox.effect
 onceSet('raw');
 segSet('auto');
 check('临时态 raw 覆盖持久化 auto', sandbox.effectiveRenderMode() === 'raw');
-check('临时态 raw 时超大文档判定为 raw', sandbox.decideRenderMode(400000) === 'raw');
+check('临时态 raw 时超大文档判定为 raw', sandbox.decideRenderMode(4000000) === 'raw');
 onceSet(null);
 check('清除临时态后回到持久化设置 auto', sandbox.effectiveRenderMode() === 'auto');
-check('清除临时态后超大文档重新按自动分级为 raw', sandbox.decideRenderMode(400000) === 'raw');
+check('清除临时态后超大文档重新按自动分级为 raw', sandbox.decideRenderMode(4000000) === 'raw');
 check('清除临时态后小文档重新按自动分级为 rich', sandbox.decideRenderMode(1000) === 'rich');
 segSet('auto');
 
@@ -224,12 +233,19 @@ vm.runInContext('currentPath = null;', sandbox);
 sandbox.updateRawModeBtn();
 check('未打开文档时按钮隐藏', getEl('btn-raw-mode').hidden === true);
 vm.runInContext('currentPath = "a.md";', sandbox);
-sandbox.setContent('短');                      // 小文档
+vm.runInContext('docBaseLen = 10;', sandbox);   // 小文档
 sandbox.updateRawModeBtn();
 check('小文档时按钮隐藏（1.4.2）', getEl('btn-raw-mode').hidden === true);
-sandbox.setContent('数据 '.repeat(300000));    // 超阈值大文档
+// 1.5.0：判据改为打开时记录的 docBaseLen，编辑中不再漂移
+vm.runInContext('docBaseLen = 1200000;', sandbox);  // 超阈值大文档
 sandbox.updateRawModeBtn();
 check('大文档时按钮显示（1.4.2）', getEl('btn-raw-mode').hidden === false);
+check('大文档按钮文案表示目标模式（当前富文本 → 显示「纯文本」）',
+      getEl('btn-raw-mode').textContent === '纯文本');
+// 编辑后 docBaseLen 不变 → 按钮状态不因内容长度变化而反复显隐
+vm.runInContext('docBaseLen = 1200000;', sandbox);
+sandbox.updateRawModeBtn();
+check('编辑后按钮状态稳定（docBaseLen 不随内容漂移）', getEl('btn-raw-mode').hidden === false);
 check('大文档按钮文案表示目标模式（当前富文本 → 显示「纯文本」）',
       getEl('btn-raw-mode').textContent === '纯文本');
 check('设置页临时态控件已删除', !/btn-once/.test(html));
@@ -238,8 +254,8 @@ check('按钮 title 标注仅本次生效', /仅本次生效/.test(getEl('btn-ra
 // ---------- [11] 1.4.1 二次确认按钮：取消为主色蓝、确认置白 ----------
 check('确认框：取消按钮为高亮主色（蓝）', /#confirm-mask #confirm-cancel\s*\{[\s\S]*?background:\s*var\(--c-brand\)/.test(html));
 check('确认框：确认按钮为白底', /#confirm-mask #confirm-ok\s*\{[\s\S]*?background:\s*#fff/.test(html));
-check('确认框：取消按钮在确认按钮之前（默认视线落在取消）',
-   html.indexOf('id="confirm-cancel"') < html.indexOf('id="confirm-ok"'));
+check('1.5.0 确认框：确认按钮在取消按钮之前（右手侧留给推荐操作「取消」）',
+   html.indexOf('id="confirm-ok"') < html.indexOf('id="confirm-cancel"'));
 check('确认框正文支持换行（多段落风险说明）', /#confirm-msg \{ white-space: pre-line/.test(html));
 // 两个安全开关各自有专属风险文案（不再是共用一句泛化提示）
 check('secure_cookie 关闭确认含「明文」风险说明',
@@ -250,9 +266,24 @@ check('secure_cookie 关闭确认含「不建议」', /强烈不建议这么做/
 check('设置页说明公网 HTTP 被拒绝（secure cookie 开启时）', /公网 HTTP 连接（如 <code>http:\/\/公网IP:3838<\/code>）将被拒绝访问/.test(html));
 check('设置页说明局域网 HTTP 不受影响', /局域网 HTTP 连接（如 <code>http:\/\/局域网IP:3838<\/code>）可正常访问，不受影响/.test(html));
 check('设置页说明纯 HTTP 不提供 HTTPS', /不提供 HTTPS<\/b>，无法使用 <code>https:\/\/公网IP:3838<\/code>/.test(html));
-check('设置页含风险自负免责段', /风险自负/.test(html) && /不对由此产生的任何数据泄露或损失承担责任/.test(html));
-check('设置页说明支持 IPv6 访问', /同时监听 IPv4 与 IPv6/.test(html));
-check('设置页说明 IPv6 需方括号', /http:\/\/\[局域网IPv6\]:3838/.test(html));
+check('设置页含风险自负免责段（secure cookie）', /强制 Cookie Secure 标记<\/label>[\s\S]{0,900}风险自负/.test(html)
+  && /不对由此产生的任何数据泄露或损失不承担责任/.test(html));
+// 1.5.0：渲染模式的风险段须含「数据损失与损坏」免责表述。
+// 注意措辞是「开发者不对由此产生的任何数据损失与损坏**承担**责任」——
+// 「不承担责任」被「数据损失与损坏」隔开，不能用整句 indexOf 去匹配。
+const fileSec = html.slice(html.indexOf('id="pg-file"'), html.indexOf('id="pg-security"'));
+check('1.5.0 渲染模式含独立的「⚠️ 风险自负」段（数据损失与损坏）',
+  /风险自负/.test(fileSec) && /数据损失与损坏承担责任/.test(fileSec));
+check('1.5.0 渲染模式说明含浏览器性能提示',
+  /与使用的设备和浏览器性能强相关/.test(fileSec));
+check('1.5.0 渲染模式说明含浏览器性能提示',
+  /与使用的设备和浏览器性能强相关/.test(fileSec));
+// 1.5.0：设置 → 安全中那段 IPv6 访问说明已按用户要求删除。
+// 该内容在「使用指南」、应用中心描述与安装引导中仍有完整说明，不属信息丢失。
+const secPage = html.slice(html.indexOf('id="pg-security"'), html.indexOf('id="pg-', html.indexOf('id="pg-security"') + 20));
+check('1.5.0 设置 → 安全 已移除冗余的 IPv6 访问说明段',
+  !/同时监听 IPv4 与 IPv6/.test(secPage) && !/局域网IPv6/.test(secPage));
+check('IPv6 访问说明仍保留在「使用指南」中', /同时监听 IPv4 与 IPv6/.test(html));
 // 安装引导同步
 const wizard = fs.readFileSync(path.join(ROOT, 'vditor-fpk', 'wizard', 'install'), 'utf8');
 check('安装引导：说明默认禁止公网访问', /默认禁止<\/b>以 <b>公网IP\/域名:3838/.test(wizard));

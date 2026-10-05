@@ -83,6 +83,18 @@
             font-weight: 600; font-size: var(--fs-md); color: var(--c-text);
             background: var(--c-border-2); border-radius: var(--r);
         }
+        /* 1.5.0 分区折叠：整个 .root-head 可点，右侧箭头指示展开态 */
+        .root-head.clickable { cursor: pointer; user-select: none; }
+        .root-head.clickable:hover { filter: brightness(0.97); }
+        .root-head .rcaret {
+            flex: 0 0 auto; width: 14px; text-align: center;
+            font-size: var(--fs-xs); color: var(--c-text-3);
+            transition: transform .15s;
+        }
+        .root-block.collapsed .rcaret { transform: rotate(-90deg); }
+        /* 折叠时隐藏文件列表；路径提示与「+」按钮仍留在标题行 */
+        .root-block.collapsed > ul,
+        .root-block.collapsed > .root-warn { display: none; }
         .root-head .rname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .root-head .rpath { font-weight: 400; font-size: var(--fs-xs); color: var(--c-text-3); margin-left: auto; }
         /* 分区头部「+」新建按钮：与主按钮同色，仅尺寸为行内小按钮 */
@@ -875,27 +887,32 @@
         <div class="set-page" id="pg-file">
             <section class="set-sec">
                 <div class="set-sub">
-                    <h3>渲染模式（1.4.2）</h3>
+                    <h3>渲染模式</h3>
                     <div class="set-seg" id="set-render-mode" role="radiogroup" aria-label="默认渲染模式">
                         <button type="button" class="seg" data-v="auto" role="radio" aria-checked="true">自动（推荐）</button>
                         <button type="button" class="seg" data-v="rich" role="radio" aria-checked="false">始终富文本</button>
                         <button type="button" class="seg" data-v="raw" role="radio" aria-checked="false">始终纯文本</button>
                     </div>
                     <p class="sub" id="set-render-mode-desc"></p>
-                    <p class="sub">本项为<b>默认行为</b>，保存后长期生效，对所有文档生效。若只想临时切换<b>当前这一个文档</b>的渲染模式（不改变本设置），请用顶栏右上角的「纯文本 / 富文本」切换按钮——该按钮仅在打开大文档时出现，切换只在本次会话有效、刷新后即回到本设置。</p>
-                    <p class="sub sub-warn"><b>⚠️ 关于「始终富文本」</b>：对超大文档（如 15MB 对话记录、含大量代码块的日志）强制使用富文本渲染，<b>可能造成浏览器长时间卡顿甚至无响应</b>。若遇卡顿，请改回「自动」或「始终纯文本」。</p>
+                    <p class="sub">本项保存后长期生效，对所有文档生效。超大文档的读写表现，与使用的设备和浏览器性能强相关。若本应用运行在性能较弱的设备或浏览器上，建议优先选用「自动」或「始终纯文本」模式。若只想临时切换<b>当前编辑的大文档</b>的渲染模式，请用顶栏右上角的「纯文本 / 富文本」切换按钮——该按钮仅在打开大文档时出现，切换只在本次会话有效，刷新后行为即回到本设置。</p>
+                    <p class="sub sub-warn"><b>⚠️ 风险自负</b>：对超大文档强制使用富文本渲染，<b>可能造成浏览器长时间卡顿甚至无响应</b>。如有打开超大文档的需求，请谨慎选择「始终富文本」模式。如坚持选择，开发者不对由此产生的任何数据损失与损坏承担责任。若遇卡顿，请<b>使用顶栏的「纯文本」切换按钮切换回纯文本模式，并将此项改回「自动」或「始终纯文本」</b>。</p>
                 </div>
                 <div class="set-sub">
                     <h3>文件版本与自动保存</h3>
-                    <label class="set-toggle"><input type="checkbox" id="set-versioning"> 启用文件历史版本（每次手动/自动保存均生成可回溯版本）</label>
-                    <div class="set-num">
-                        <label>每个文件保留的最大版本数（1–200）</label>
-                        <input type="number" id="set-max-versions" min="1" max="200" value="50">
-                    </div>
+                    <label class="set-toggle"><input type="checkbox" id="set-autosave-enabled"> 启用自动保存</label>
+                    <p class="sub">开启后，编辑内容会按下方设定的间隔定期自动存盘，无需手动点「保存」。关闭后不再自动存盘，但仍可随时用顶栏「保存」按钮或 <b>Ctrl / Cmd + S</b> 手动保存；关闭页面时若检测到有未保存的内容，仍会照常提醒，不会静默丢失。</p>
                     <div class="set-num">
                         <label>自动保存间隔（秒，最小 10）</label>
                         <input type="number" id="set-autosave" min="10" max="3600" value="60">
                     </div>
+                    <p class="sub">两次自动保存之间的等待时间。间隔越短，未保存内容丢失的风险越小，但触发保存的频率也越高。</p>
+                    <label class="set-toggle"><input type="checkbox" id="set-versioning"> 启用文件历史版本</label>
+                    <p class="sub">开启后，每次保存（手动或自动）都会生成一份可回溯的历史快照，可用于对比差异、恢复误改前的版本、删除旧快照。关闭后不再生成新的历史快照，已有的历史版本仍可查看与恢复。单个文档超过 5 MB 时，为避免高频自动保存<b>影响性能</b>，<b>自动保存不生成历史版本</b>，但手动保存仍正常生成历史版本。</p>
+                    <div class="set-num">
+                        <label>每个文件保留的最大版本数（1–200）</label>
+                        <input type="number" id="set-max-versions" min="1" max="200" value="50">
+                    </div>
+                    <p class="sub">每个文档各自独立计数，默认值为 50。超出上限后，最旧的快照会被自动清理。数值越小占用磁盘越少，数值越大可回溯的时间跨度越长。</p>
                 </div>
                 <div class="set-sub">
                     <h3>附件上传</h3>
@@ -928,8 +945,7 @@
                     <label class="set-toggle"><input type="checkbox" id="set-secure-cookie"> 强制 Cookie Secure 标记</label>
                     <p class="sub">默认勾选。开启后，公网 HTTP 连接（如 <code>http://公网IP:3838</code>）将被拒绝访问，避免 HTTP 明文在公网中被抓包窃取。局域网 HTTP 连接（如 <code>http://局域网IP:3838</code>）可正常访问，不受影响。</p>
                     <p class="sub">本应用本身为<b>纯 HTTP 服务，不提供 HTTPS</b>，无法使用 <code>https://公网IP:3838</code> 直连访问（这与是否开启 Cookie Secure 无关）。如需通过 HTTPS 连接访问，请通过<b>反向代理 / 内网穿透</b>等方案实现 HTTPS，并务必开启上方两项安全选项。</p>
-                    <p class="sub sub-warn"><b>⚠️ 风险自负</b>：关闭「强制 Cookie Secure 标记」后，若使用 HTTP 连接访问，任何能访问到本服务地址的人，都可能截获你的<b>登录密码与全部文档内容</b>，<b>安全性显著降低</b>。请务必确认所处网络环境可信，并优先采用<b>反向代理 / 内网穿透 + HTTPS</b> 的方式；开发者不对由此产生的任何数据泄露或损失承担责任。</p>
-                    <p class="sub">本应用<b>同时监听 IPv4 与 IPv6</b>，<code>http://局域网IPv6:3838</code>（形如 <code>http://[fd00::1]:3838</code>，注意 IPv6 地址需用方括号包裹）与公网 IPv6 均可访问；域名解析到 IPv6（AAAA 记录）时亦可正常访问。</p>
+                    <p class="sub sub-warn"><b>⚠️ 风险自负</b>：关闭「强制 Cookie Secure 标记」后，若使用 HTTP 连接访问，任何能访问到本服务地址的人，都可能截获你的<b>登录密码与全部文档内容</b>，<b>安全性显著降低</b>。请务必确认所处网络环境可信。如坚持关闭，开发者不对由此产生的任何数据泄露或损失不承担责任。</p>
                 </div>
                 <div class="set-sub">
                     <h3>修改登录密码</h3>
@@ -1087,7 +1103,6 @@
         <p class="sess-desc">因长时间未操作，登录会话已过期。<br>为保障文档安全，应用已自动退出登录，请重新登录后继续使用。</p>
         <div class="sess-actions">
             <button class="action" id="btn-session-reload">刷新页面并重新登录</button>
-            <button class="ghost action" id="btn-session-close">稍后处理</button>
         </div>
     </div>
 </div>
@@ -1117,8 +1132,10 @@
         <h2 id="confirm-title">确认</h2>
         <p class="sub" id="confirm-msg"></p>
         <div class="set-foot">
-            <button class="ghost action" id="confirm-cancel">取消</button>
+            <!-- 1.5.0：确认在左、取消在右。安全相关的二次确认一律把「取消（推荐）」设为主色，
+                 放在右手侧符合「右手离开提交键」的肌肉记忆，也与 Windows 侧栏一致。 -->
             <button class="ghost action" id="confirm-ok">确认</button>
+            <button class="ghost action" id="confirm-cancel">取消</button>
         </div>
     </div>
 </div>
@@ -1159,7 +1176,7 @@
 
                 <p class="g-h">二、纯文本模式与大文档（1.3.0 起）</p>
                 <p>富文本渲染的成本与文档的<b>块级结构数量</b>成正比，因此对话记录、日志这类「体积不大但结构极多」的文档（实测 1.4MB 含 674 个代码块、1,450 个标题）在富文本模式下打开会卡死。本应用因此引入<b>纯文本模式</b>：关闭渲染、直接编辑 Markdown 原文，<b>保存、历史版本、导出等能力全部保留</b>，仅失去排版预览。</p>
-                <p><b>自动切换</b>：打开超过约 <b>30 万字符</b>（300KB）的文档会自动进入纯文本模式，15MB 级超大文档亦可正常编辑。纯文本模式下顶栏会显示一条提示，并隐藏富文本工具栏。</p>
+                <p><b>自动切换</b>：打开超过约 <b>100 万字符</b>（1MB）的文档会自动进入纯文本模式，15MB 级超大文档亦可正常编辑。纯文本模式下顶栏会显示一条提示，并隐藏富文本工具栏。</p>
                 <p><b>顶栏切换按钮</b>：打开<b>大文档</b>时，右上角会出现「纯文本 / 富文本」按钮（打开常规小文档时该按钮隐藏）。点它可临时切换当前文档的渲染模式：<b>切回富文本时若文档过大会有二次确认</b>，因为渲染可能明显卡顿。该切换<b>只在本次会话有效、不写入配置</b>，刷新页面后即恢复。</p>
                 <p><b>默认行为</b>：「设置 → 文件 → 渲染模式」可长期指定默认行为，三选一：<b>自动（推荐）</b>（按上述阈值自动分级）、<b>始终富文本</b>、<b>始终纯文本</b>。判定优先级为「顶栏临时切换 &gt; 默认行为 &gt; 按大小自动分级」。</p>
                 <p class="g-note">为让超大文档在纯文本模式下也能保持流畅：进入纯文本时会<b>释放富文本引擎占用的内存</b>，切回时再惰性重建；字数统计改用<b>采样估算</b>（超大文档只统计前 20 万字再按比例外推），因此顶栏字数在超大文档上是<b>估算值</b>，略有误差属正常。</p>
@@ -1169,10 +1186,10 @@
                 <p><b>系统分区只有一个</b>：<code>/vol1/@appshare/vditor-docs</code>，其文件可直接在文件管理器中访问。如需使用其它 NAS 目录，请到「设置 → 分区」中添加为<b>自建分区</b>（可添加多个，各分区文档相互独立）。</p>
 
                 <p class="g-h">四、保存与自动保存</p>
-                <p>编辑后点右上角「保存」即可存盘，内容也会按设置的间隔 <b>自动保存</b>（快捷键 <b>Ctrl / Cmd + S</b>）。是否保留历史版本、保留数量与自动保存间隔，在<b>「设置 → 文件」</b>中配置。</p>
+                <p>编辑后点右上角「保存」即可存盘（快捷键 <b>Ctrl / Cmd + S</b>）。若在<b>「设置 → 文件」</b>中开启了「启用自动保存」，内容还会按设定的间隔自动存盘，无需手动点保存；关闭自动保存不影响手动保存，关闭页面时若确有未保存内容也仍会照常提醒。</p>
 
                 <p class="g-h">五、历史版本</p>
-                <p>点顶栏「信息」按钮，在弹出的「文档信息」对话框中点<b>「历史版本」</b>即可查看每次保存的快照，支持 <b>对比差异、恢复、删除</b>；每个文件保留的最大版本数可在设置中调整（1–200）。为避免磁盘被自动保存写满，<b>超过 5MB 的文档不再生成历史版本快照</b>。</p>
+                <p>点顶栏「信息」按钮，在弹出的「文档信息」对话框中点<b>「历史版本」</b>即可查看每次保存的快照，支持 <b>对比差异、恢复、删除</b>；是否生成历史版本、每个文件保留的最大版本数可在设置中调整（1–200）。单个文档超过 5 MB 时，为避免高频自动保存<b>影响性能</b>，<b>自动保存不生成历史版本</b>，但手动保存仍正常生成历史版本。</p>
 
                 <p class="g-h">六、导出</p>
                 <p>顶栏「导出 .md / 导出 HTML」导出当前文档：若该文档文件夹内还有图片 / 音频等<b>其它文件</b>，会自动把整个文件夹打包为 zip 一起导出，否则只导出单文件。「设置 → 维护」里还有「导出备份（配置 + 文档）」与「导出 / 导入配置（JSON）」，用于迁移与容灾。</p>
@@ -1180,7 +1197,7 @@
 
                 <p class="g-h">七、设置</p>
                 <p>顶栏「设置」打开设置面板，顶部为选项卡：<br><b>分区</b>：管理现有分区（系统分区可<b>隐藏</b>、自建分区可<b>删除</b>，隐藏的分区可恢复），并在其中添加新的 NAS 目录作为分区。<br><b>文件</b>：渲染模式（默认行为）、历史版本开关与保留数量、自动保存间隔，以及上传大小上限与格式黑名单。<br><b>安全</b>：网络访问安全（信任反向代理、强制 Cookie Secure）与修改登录密码。<br><b>外观</b>：暗黑模式、网页标题、网页图标（浏览器标签页）。<br><b>维护</b>：导出 / 导入备份（配置 + 文档）、导出 / 导入配置（JSON）、「状态与日志」（应用状态 / 应用日志 / 登录日志），以及「卸载时是否清除软件数据」。<br><b>关于与帮助</b>：使用指南、快捷键一览（与使用指南并列的「快捷键」按钮，均以弹窗打开）、开源协议与法律声明。</p>
-                <p class="g-note"><b>关于二次确认弹窗</b>：删除文档、退出登录、导入备份、关闭安全选项等操作都会弹二次确认。这类弹窗的本意是<b>劝退</b>，因此<b>「取消」是醒目的蓝色并排在前面，「确认」为白色</b>——若你只是想看看发生了什么，直接点「取消」即可。</p>
+                <p class="g-note"><b>关于二次确认弹窗</b>：删除文档、退出登录、导入备份、关闭安全选项等操作都会弹二次确认。这类弹窗的本意是<b>劝退</b>，因此<b>「取消」是醒目的蓝色并排在右边，「确认」为白色排在左边</b>——若你只是想看看发生了什么，直接点「取消」即可。</p>
 
                 <p class="g-h">八、账号与访问</p>
                 <p>首次进入需设置管理员密码，之后凭密码访问。忘记密码：请在 fnOS 终端中执行命令 <code>vditor reset-password</code>，按指引重置密码。连续多次输错会触发临时锁定。</p>
@@ -1677,12 +1694,10 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         };
     })();
     document.addEventListener('DOMContentLoaded', function () {
+        // 1.5.0：原「稍后处理」按钮已移除（会话失效后继续操作只会持续 401，
+        // 留着它等于给一个必然失败的操作出口）。现在只剩「刷新页面并重新登录」一条出路。
         const reload = document.getElementById('btn-session-reload');
-        const close = document.getElementById('btn-session-close');
         if (reload) reload.addEventListener('click', function () { location.reload(); });
-        if (close) close.addEventListener('click', function () {
-            document.getElementById('session-mask').style.display = 'none';
-        });
     });
 
     let vditor = null;
@@ -1696,6 +1711,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     let dirty = false;
     let needsSetup = false;
     let autoSaveSec = 60;       // 自动保存间隔（秒），来自设置
+    // 1.5.0：自动保存总开关。默认 true——老配置无 autosave_enabled 键，须保持升级前的既有行为。
+    let autosaveEnabled = true;
     let SETTINGS_UI = {};
 
     // ---------- 大文件性能：渲染分级 / 纯文本降级 ----------
@@ -1707,8 +1724,10 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     let rawMode = false;                                  // 当前是否处于纯文本模式
     let rawEl = null;                                     // #raw-editor 元素引用
     // 自动进入纯文本模式的阈值（按 Markdown 原文字符数）。
-    // 1.44MB 对话记录实测在 ir 模式下卡死，故阈值取 30 万字符（约 300KB）以提前规避。
-    const RAW_AUTO_CHARS = 300000;
+    // 1.4 时期为 30 万字符（约 300KB）：1.44MB 对话记录实测在 ir 模式下卡死，故提前规避。
+    // 1.5.0 上调到 100 万字符（约 1MB）：实测 1MB 以内的文档富文本渲染流畅，
+    // 过早降级会让大量中等文档白白失去排版预览；>1MB 仍默认纯文本。
+    const RAW_AUTO_CHARS = 1000000;
     // 超过该字符数时，字数统计不再做全文语法剥离（改用原文估算）。
     // 实测 stripMarkdown 对 15MB 文档耗时约 78ms，对 1.4MB 约 13ms，均在可接受范围，
     // 故阈值放宽到 200 万字符（约 2MB）：2MB 以内仍做精确剥离以保证字数准确，
@@ -1721,7 +1740,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     let renderModeSetting = 'auto';   // 来自服务端的持久化默认行为
     let renderModeOnce = null;        // 临时态：'rich' / 'raw' / null（null=未设置）
     const RENDER_MODE_DESC = {
-        auto: '按文档大小自动决定：超过约 30 万字符（300KB）的文档自动使用纯文本模式，其余使用富文本。（推荐）',
+        auto: '按文档大小自动决定：超过约 100 万字符（约 1MB）的文档自动使用纯文本模式，其余使用富文本。（推荐）',
         rich: '始终使用富文本渲染。适合以小文档为主的场景；对超大文档可能造成浏览器长时间卡顿甚至无响应。',
         raw: '始终使用纯文本模式（不渲染，直接编辑 Markdown 原文）。打开任何文档都跳过富文本渲染，加载最快，但看不到排版效果。'
     };
@@ -1736,6 +1755,16 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         if (m === 'rich') return 'rich';
         return (contentLen > RAW_AUTO_CHARS) ? 'raw' : 'rich';   // auto
     }
+    // 1.5.0：当前文档的「基准长度」——打开时读到的 Markdown 原文字符数。
+    //
+    // 为什么需要它：此前「是否进纯文本」用打开时的 content.length（Markdown 原文），
+    // 而顶栏按钮显隐用 getContent().length。两者虽同为原文，但在 Vditor 未就绪时
+    // getContent() 返回空串（1.4.3 修复引入的兜底），按钮会莫名消失；
+    // 且用户在富文本下编辑后长度会实时变化，同一份文档的「是否算大文档」结论会飘。
+    // 现统一以此变量为准：打开时写入一次，之后不再随编辑漂移，
+    // 保证「进不进纯文本」与「按钮显不显示」永远得出同一结论。
+    let docBaseLen = 0;
+    const isBigDoc = () => docBaseLen > RAW_AUTO_CHARS;
     // 进入纯文本模式时的提示文案：说明「为什么」进入（自动 / 临时态 / 默认设置），
     // 避免用户看到模式被切换却一头雾水。
     function wantRawReason(contentLen) {
@@ -1776,17 +1805,16 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     function toggleRawMode() {
         if (rawMode) {
             renderModeOnce = 'rich';
-            const len = rawEl ? (rawEl.value || '').length : 0;
-            if (len > RAW_AUTO_CHARS) {
-                showConfirm('切回富文本', '当前文档 ' + fmtSize(len) + '，恢复富文本渲染可能明显卡顿。确定切换吗？',
+            // 1.5.0：统一用 docBaseLen（与按钮显隐、自动降级同一口径），不再就地取长度
+            if (isBigDoc()) {
+                showConfirm('切回富文本', '当前文档 ' + fmtSize(docBaseLen) + '，恢复富文本渲染可能明显卡顿。确定切换吗？',
                     () => { exitRawMode(); updateRawModeBtn(); });
                 return;
             }
             exitRawMode();
         } else {
             renderModeOnce = 'raw';
-            const len = (getContent() || '').length;
-            enterRawMode(len > 0 ? ('已切换纯文本模式（' + fmtSize(len) + '），渲染已关闭') : '已切换纯文本模式，渲染已关闭');
+            enterRawMode(docBaseLen > 0 ? ('已切换纯文本模式（' + fmtSize(docBaseLen) + '），渲染已关闭') : '已切换纯文本模式，渲染已关闭');
         }
         updateRawModeBtn();
     }
@@ -1798,22 +1826,19 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     // （模块异步加载完成），`vditor.getValue()` 会抛错。该异常会中断
     // `initEditorAndFiles()`，导致其后的**所有**事件绑定（文档信息关闭、设置选项卡、
     // 深色模式、添加分区…）全部失效；`checkAuth` 的 catch 又会弹登录页。
-    // 现改为：仅在 Vditor 就绪（vditorReady）或已处于纯文本模式时才取长度，
-    // 并整体 try/catch 兜底——按钮显隐属于辅助功能，绝不能影响主流程。
+    //
+    // 1.5.0：判据从「实时取内容长度」改为「打开时记录的 docBaseLen」——
+    // 既与 decideRenderMode() 同源（不再出现「已进纯文本却看不到按钮」这类打架），
+    // 又完全不再触碰 Vditor API，从根上消除上述「未就绪即抛错」的风险。
     function updateRawModeBtn() {
         const b = document.getElementById('btn-raw-mode');
         if (!b) return;
-        let len = 0;
         try {
-            if (rawMode) len = (rawEl && rawEl.value || '').length;
-            else if (vditorReady && vditor) len = (getContent() || '').length;
-        } catch (e) {
-            len = 0;   // 取不到长度就按「小文档」处理，隐藏按钮，不抛错
-        }
-        b.hidden = !(currentPath && len > RAW_AUTO_CHARS);
-        b.textContent = rawMode ? '富文本' : '纯文本';
-        b.title = rawMode ? '切回富文本渲染模式（仅本次生效，刷新后回到默认设置）'
-                          : '切换为纯文本模式（关闭渲染，适合大文件；仅本次生效）';
+            b.hidden = !(currentPath && isBigDoc());
+            b.textContent = rawMode ? '富文本' : '纯文本';
+            b.title = rawMode ? '切回富文本渲染模式（仅本次生效，刷新后回到默认设置）'
+                              : '切换为纯文本模式（关闭渲染，适合大文件；仅本次生效）';
+        } catch (e) { /* 按钮显隐属辅助功能，绝不影响主流程 */ }
     }
 
     // 人类可读的文件规模（字数统计与提示复用）
@@ -1862,7 +1887,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         }
         if (reason) toast(reason);
         // 1.4 解耦：超大文档纯文本模式足以编辑，销毁 Vditor 释放内存与后台开销
-        if (typeof len === 'number' && len > RAW_AUTO_CHARS && vditor) {
+        // 1.5.0：改用 docBaseLen 口径，避免与判定/按钮两处再各说各话
+        if (isBigDoc() && vditor) {
             destroyVditor();
         }
         scheduleCounter();
@@ -2285,6 +2311,19 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     }
 
     // ---------- 文件列表（多分区）----------
+    // 1.5.0：分区可折叠，折叠状态按分区 id 记住（存 localStorage，与主题同属本地 UI 偏好，
+    // 不写入服务端设置）。localStorage 不可用时（隐私模式）静默降级为「不记忆」，功能仍可用。
+    const FOLD_KEY = 'vditor-folded-roots';
+    function loadFolded() {
+        try {
+            const raw = localStorage.getItem(FOLD_KEY);
+            const arr = raw ? JSON.parse(raw) : [];
+            return Array.isArray(arr) ? arr : [];
+        } catch (e) { return []; }
+    }
+    function saveFolded(list) {
+        try { localStorage.setItem(FOLD_KEY, JSON.stringify(list)); } catch (e) { /* 隐私模式下忽略 */ }
+    }
     function renderFiles(roots) {
         const box = document.getElementById('side-scroll');
         box.innerHTML = '';
@@ -2294,19 +2333,35 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             return;
         }
         firstRootId = roots[0].id;
+        const folded = loadFolded();
         roots.forEach(r => {
             const block = document.createElement('div');
             block.className = 'root-block';
             const head = document.createElement('div');
-            head.className = 'root-head';
+            head.className = 'root-head clickable';
+            // 折叠态：点标题行切换
+            const isFolded = folded.indexOf(r.id) >= 0;
+            if (isFolded) block.classList.add('collapsed');
+            const caret = document.createElement('span');
+            caret.className = 'rcaret';
+            caret.textContent = '▾';
             const name = document.createElement('span');
             name.className = 'rname'; name.textContent = '📁 ' + r.name;
             const path = document.createElement('span');
             path.className = 'rpath'; path.textContent = r.exists ? '' : '（目录不存在）';
             const btn = document.createElement('button');
             btn.className = 'rnew'; btn.textContent = '+'; btn.title = '在「' + r.name + '」中新建';
-            btn.addEventListener('click', () => newFile(r.id, r.name));
-            head.appendChild(name); head.appendChild(path); head.appendChild(btn);
+            btn.addEventListener('click', (e) => { e.stopPropagation(); newFile(r.id, r.name); });
+            head.appendChild(caret); head.appendChild(name); head.appendChild(path); head.appendChild(btn);
+            head.title = (isFolded ? '展开' : '折叠') + '「' + r.name + '」';
+            head.addEventListener('click', () => {
+                const now = !block.classList.contains('collapsed');
+                block.classList.toggle('collapsed', now);
+                head.title = (now ? '展开' : '折叠') + '「' + r.name + '」';
+                const cur = loadFolded();
+                const next = now ? cur.concat([r.id]) : cur.filter(x => x !== r.id);
+                saveFolded(next);
+            });
             block.appendChild(head);
             if (!r.exists) {
                 const w = document.createElement('div');
@@ -2332,6 +2387,13 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             block.appendChild(ul);
             box.appendChild(block);
         });
+        // 打开文件时若其所在分区处于折叠态，自动展开——否则用户点了文件却看不到选中项。
+        // 直接由高亮项回溯所属 .root-block，不去猜分区名。
+        const act = box.querySelector('.root-block > ul > li.active');
+        if (act && act.parentNode && act.parentNode.parentNode
+            && act.parentNode.parentNode.classList.contains('collapsed')) {
+            act.parentNode.parentNode.classList.remove('collapsed');
+        }
     }
 
     function refreshFiles() {
@@ -2367,6 +2429,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 });
                 // 渲染模式判定（1.4.1）：由 decideRenderMode() 统一决定，
                 // 口径 = 临时态 > 持久化默认行为（auto 时再按文档大小自动分级）。
+                // 1.5.0：先记录 docBaseLen，让纯文本判定与顶栏按钮显隐共用同一把尺子。
+                docBaseLen = content.length;
                 const wantRaw = decideRenderMode(content.length) === 'raw';
                 const modeChanged = wantRaw !== rawMode;
                 if (wantRaw) {
@@ -2418,6 +2482,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         }).catch(() => toast('新建失败'));
     }
 
+    // 1.5.0：silent 即「本次保存由自动保存触发」。
+    // 手动保存（silent=false）会带上 manual:true 告知服务端——超限大文档仅对手动保存生成历史版本。
     function saveToNas(silent) {
         if (!currentPath) {
             const raw = window.prompt('尚未选择文件，请输入要保存的文件名（.md）：', '未命名文档');
@@ -2442,7 +2508,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     function doSave(silent) {
         fetch('/api/save', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ root: currentRoot, path: currentPath, content: getContent() })
+            body: JSON.stringify({ root: currentRoot, path: currentPath, content: getContent(), manual: !silent })
         }).then(r => r.json()).then(d => {
             if (!d.ok) { toast('保存失败：' + (d.error || '')); return; }
             dirty = false;
@@ -2552,6 +2618,18 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         }
     }
 
+    // ---------- 1.5.0 自动保存总开关 ----------
+    // 关闭时把「自动保存间隔」置灰不可改，避免用户以为改了就生效。
+    // 注意：此开关只管自动保存，不管未保存提醒——beforeunload 提醒始终有效（见 dirty 提示）。
+    function syncAutosaveIntervalEnabled() {
+        const on = !!(document.getElementById('set-autosave-enabled') || {}).checked;
+        const inp = document.getElementById('set-autosave');
+        if (!inp) return;
+        inp.disabled = !on;
+        inp.style.opacity = on ? '' : '.5';
+        inp.style.cursor = on ? '' : 'not-allowed';
+    }
+
     // ---------- 设置面板 ----------
     function openSettings() {
         loadSettings();
@@ -2567,11 +2645,16 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         fetch('/api/settings').then(r => r.json()).then(d => {
             SETTINGS_UI = d.settings || {};
             autoSaveSec = SETTINGS_UI.autosave_interval || 60;
+            // 1.5.0：老配置无 autosave_enabled，缺省开启
+            autosaveEnabled = SETTINGS_UI.autosave_enabled !== false;
             document.getElementById('set-trust-proxy').checked = !!SETTINGS_UI.trust_proxy;
             document.getElementById('set-secure-cookie').checked = !!SETTINGS_UI.secure_cookie;
             document.getElementById('set-versioning').checked = SETTINGS_UI.versioning !== false;
             document.getElementById('set-max-versions').value = SETTINGS_UI.max_versions || 50;
+            // 1.5.0 自动保存总开关：老配置无此键，缺省视为开启（保持升级前的既有行为）
+            document.getElementById('set-autosave-enabled').checked = SETTINGS_UI.autosave_enabled !== false;
             document.getElementById('set-autosave').value = autoSaveSec;
+            syncAutosaveIntervalEnabled();
             // 1.4.1 渲染模式：服务端值 → 分段控件选中态
             renderModeSetting = (['auto', 'rich', 'raw'].indexOf(SETTINGS_UI.render_mode) >= 0)
                 ? SETTINGS_UI.render_mode : 'auto';
@@ -2597,6 +2680,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             trust_proxy: document.getElementById('set-trust-proxy').checked,
             secure_cookie: document.getElementById('set-secure-cookie').checked,
             versioning: document.getElementById('set-versioning').checked,
+            autosave_enabled: document.getElementById('set-autosave-enabled').checked,
             render_mode: currentSegValue(),
             max_versions: parseInt(document.getElementById('set-max-versions').value, 10) || 50,
             autosave_interval: parseInt(document.getElementById('set-autosave').value, 10) || 60,
@@ -2611,6 +2695,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             if (!d.ok) { toast('保存失败'); denyFeedback((d && d.error) || '保存失败'); return; }
             SETTINGS_UI = d.settings || SETTINGS_UI;
             autoSaveSec = SETTINGS_UI.autosave_interval || 60;
+            autosaveEnabled = SETTINGS_UI.autosave_enabled !== false;
             // 1.4.1：渲染模式以服务端回写为准（可能被归一化），同步刷新控件与提示
             if (['auto', 'rich', 'raw'].indexOf(SETTINGS_UI.render_mode) >= 0) {
                 renderModeSetting = SETTINGS_UI.render_mode;
@@ -3272,6 +3357,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             document.getElementById('btn-upload-favicon').addEventListener('click', uploadFavicon);
             const dmBox = document.getElementById('set-dark-mode');
             if (dmBox) dmBox.addEventListener('change', function () { applyTheme(this.checked ? 'dark' : 'light'); });
+            // 1.5.0 自动保存总开关：即时置灰「自动保存间隔」，落盘仍走「保存设置」
+            const asBox = document.getElementById('set-autosave-enabled');
+            if (asBox) asBox.addEventListener('change', syncAutosaveIntervalEnabled);
         });
         // 安全开关默认开启，手动关闭需二次确认（与删除文档 / 退出登录 / 导入备份统一使用自定义确认框）
         // 1.4.1：每个开关使用**各自的**风险文案（不再共用一句泛化提示），
@@ -3400,15 +3488,21 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 const vLabel = n.ipVersion === 6 ? 'IPv6' : (n.ipVersion === 4 ? 'IPv4' : '');
                 kv(dl, '客户端 IP', (n.clientIp || '—') + (vLabel ? '（' + vLabel + '）' : '') +
                    (viaProxy ? '（经代理，直连来源 ' + n.directIp + '）' : ''));
+                // 1.5.0：bindHost / dualStack / bindFamily 均来自服务端**实测**的监听结果
+                // （make_server() 按 bind 成败回填），不再按 HOST 配置推断——避免系统不支持
+                // IPv6 而已回退纯 IPv4 时，界面仍虚报「双栈」。
+                const dual = a.dualStack;
                 kv(dl, '监听地址',
-                   (a.bindHost || a.host || '::') + ':' + (a.port || '—') +
-                   (a.dualStack ? '（IPv4 / IPv6 双栈，同一端口；0.0.0.0 表示本机所有网卡）' : '（仅 IPv4）'));
+                   (a.bindHost || a.host || '—') + ':' + (a.port || '—') +
+                   (dual === true ? '（IPv4 / IPv6 双栈，同一端口；0.0.0.0 表示本机所有网卡）'
+                    : (dual === false ? '（仅 IPv4）' : '')));
                 kv(dl, '信任反向代理', n.trustProxy ? '已开启' : '未开启');
                 kv(dl, 'Cookie Secure', n.secureCookie ? '已开启' : '未开启');
                 kv(dl, '登录会话', s.hasSession ? '有效' : '已失效', s.hasSession ? 'ok' : 'warn');
                 kv(dl, '上传大小上限', (s.maxUploadMb || '—') + ' MB');
                 kv(dl, '历史版本', s.versioning ? '已开启' : '未开启');
-                kv(dl, '自动保存间隔', (s.autosaveSec || '—') + ' 秒');
+                kv(dl, '自动保存', s.autosaveEnabled === false ? '未开启' : '已开启');
+                kv(dl, '自动保存间隔', s.autosaveEnabled === false ? '—（自动保存未开启）' : ((s.autosaveSec || '—') + ' 秒'));
                 kv(dl, '日志文件', d.logFile || '—');
 
                 (a.docRoots || []).forEach(r => {
@@ -3501,9 +3595,12 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         });
 
         // 自动保存：按设置间隔（默认 60 秒），每轮读取最新值以动态生效
+        // 1.5.0：新增总开关 autosaveEnabled。关闭时定时器照常轮询但不做任何保存，
+        // 这样用户在设置里改回「开启」后无需刷新页面即可恢复，不必重启轮询链。
+        // beforeunload 的未保存提醒不受此开关影响（用户裁决：脏数据提醒始终保留）。
         (function scheduleAutosave() {
             setTimeout(() => {
-                if (currentRoot && currentPath && dirty) saveToNas(true);
+                if (autosaveEnabled && currentRoot && currentPath && dirty) saveToNas(true);
                 scheduleAutosave();
             }, Math.max(10, autoSaveSec) * 1000);
         })();

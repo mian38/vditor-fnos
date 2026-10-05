@@ -62,7 +62,7 @@ from vd_util import (
     _FILES_CACHE, _FILES_TTL, _UPLOAD_INDEX, _UPLOAD_INDEX_TTL,
     upload_headers, static_headers, trusted_forwarded_proto,
     invalidate_files_cache, invalidate_upload_index,
-    is_private_ip, ip_version_of, slugify, guess_mime,
+    is_private_ip, ip_version_of, normalize_client_ip, slugify, guess_mime,
     is_static_denied, is_public_static, safe_join,
     parse_multipart, _version_key, _legacy_version_key,
     _folder_note_path, _doc_asset_dir, _in_doc_folder,
@@ -71,7 +71,7 @@ from vd_util import (
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.5.0"
 
 # 超过此体积的文档不再生成「历史版本」快照。
 # 背景：快照机制是每次保存都存一份**全文**。配合默认 60 秒自动保存，
@@ -83,6 +83,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 进程启动时刻（用于「状态与日志」展示运行时长）
 START_TIME = time.time()
+
+# 真实生效的监听结果（1.5.0）：由 make_server() 按 bind 成败写入，
+# 供 /api/status 如实上报。默认值仅代表「尚未启动监听」（如测试直接调接口），
+# 不可用于推断——那正是 1.5.0 要修的虚报问题。
+ACTUAL_BIND = {"host": None, "dualStack": None, "family": None}
 
 # ---------------- 配置 ----------------
 def load_config():
@@ -127,6 +132,7 @@ DEFAULT_SETTINGS = {
     "trust_proxy": _bool_default_true("VDITOR_TRUST_PROXY"),  # 信任 X-Forwarded-For 取真实客户端 IP（默认开启）
     "secure_cookie": _bool_default_true("VDITOR_SECURE_COOKIE"),  # 强制 Cookie 带 Secure（全站 HTTPS，默认开启）
     "autosave_interval": 60,   # 自动保存间隔（秒），默认 1 分钟
+    "autosave_enabled": True,  # 1.5.0 自动保存总开关（默认开启；老配置无此键时保持既有行为）
     "render_mode": "auto",     # 默认渲染模式：auto=按大小自动 / rich=始终富文本 / raw=始终纯文本
     "versioning": True,        # 是否启用文件历史版本
     "max_versions": 50,        # 每个文件保留的最大历史版本数
@@ -167,6 +173,8 @@ def load_settings():
     s["trust_proxy"] = bool(s.get("trust_proxy"))
     s["secure_cookie"] = bool(s.get("secure_cookie"))
     s["versioning"] = bool(s.get("versioning", True))
+    # 1.5.0 自动保存总开关：显式 False 才算关闭，缺省 / 脏值均视为开启
+    s["autosave_enabled"] = bool(s.get("autosave_enabled", True))
     s["clear_on_uninstall"] = bool(s.get("clear_on_uninstall"))
     # 默认渲染模式（1.4.1）：非法值一律回落 auto，绝不让脏值进入决策路径
     # （前端 openFile 依赖它决定是否进纯文本，脏值会导致模式判断异常）。
@@ -305,12 +313,16 @@ def client_ip(handler):
     注意 XFF 由客户端可伪造，故「信任反向代理」务必只在**确实经过可信代理**时开启。
     若需更强的防伪造（直连公网时他人伪造 XFF 可绕过登录锁定、或伪造私有 IP 绕过 Secure Cookie 要求），
     可设 VDITOR_TRUST_PROXY_STRICT=1：届时仅当**直连来源为私有 / 回环网段**（确为本机 / 局域网代理）才采纳 XFF。
+
+    1.5.0：返回值统一经 normalize_client_ip() 归一化——双栈监听下 IPv4 客户端的
+    地址可能是 `::ffff:192.168.1.5`，不还原会让「应用状态」显示、防爆破计数键、
+    会话绑定键三处出现同一客户端的两种写法。原生 IPv6 原样保留。
     """
-    direct = handler.client_address[0]
+    direct = normalize_client_ip(handler.client_address[0])
     if SETTINGS["trust_proxy"]:
         xff = handler.headers.get("X-Forwarded-For", "")
         if xff:
-            first = xff.split(",")[0].strip()
+            first = normalize_client_ip(xff.split(",")[0].strip())
             strict = os.environ.get("VDITOR_TRUST_PROXY_STRICT") == "1"
             if (not strict) or is_private_ip(direct):
                 try:
@@ -673,12 +685,17 @@ def _version_dir(root_path, rel):
             return old_dir
     return new_dir
 
-def save_file_version(root_path, rel, content_bytes):
-    """覆盖写之前把旧内容快照为一个历史版本；仅在启用且内容发生变化时记录。"""
+def save_file_version(root_path, rel, content_bytes, manual=True):
+    """覆盖写之前把旧内容快照为一个历史版本；仅在启用且内容发生变化时记录。
+
+    manual=False 表示本次保存由**自动保存**触发：此时超大文档跳过快照
+    （详见 VERSION_SKIP_BYTES 注释）。手动保存（manual=True）不再受体积限制，
+    以保证「手动存过一次」这一动作始终可回溯。
+    """
     if not SETTINGS.get("versioning"):
         return
     # 超大文档跳过快照：避免自动保存把磁盘写满（详见 VERSION_SKIP_BYTES 注释）
-    if len(content_bytes) > VERSION_SKIP_BYTES:
+    if not manual and len(content_bytes) > VERSION_SKIP_BYTES:
         return
     try:
         vdir = _version_dir(root_path, rel)
@@ -962,8 +979,11 @@ class Handler(BaseHTTPRequestHandler):
                 "host": HOST,
                 # 实际生效的绑定地址与是否双栈（1.4.2）：HOST 默认 "0.0.0.0" 会在
                 # make_server() 中被提升为 "::"，故 HOST 本身并不能反映真实监听地址。
-                "bindHost": "::" if HOST in ("", "0.0.0.0") else HOST,
-                "dualStack": HOST in ("", "0.0.0.0"),
+                # 1.5.0：改为直接读 make_server() 写入的 ACTUAL_BIND——
+                # 若系统不支持 IPv6 而回退纯 IPv4，界面会如实显示 IPv4，不再虚报双栈。
+                "bindHost": ACTUAL_BIND["host"] or (HOST or "（未监听）"),
+                "dualStack": ACTUAL_BIND["dualStack"],
+                "bindFamily": ACTUAL_BIND["family"],
                 "docRoots": roots,
             },
             "network": {
@@ -989,6 +1009,8 @@ class Handler(BaseHTTPRequestHandler):
                 # 与 settings.json 内部存储键 autosave_interval 不同名，切勿写成 autosave_sec ——
                 # 1.2.0 之前误写为 autosave_sec，取不到值返回 null，前端「应用状态」显示「— 秒」。
                 "autosaveSec": SETTINGS.get("autosave_interval"),
+                # 1.5.0：自动保存总开关（缺省为 True，仅显式关闭才为 False）
+                "autosaveEnabled": bool(SETTINGS.get("autosave_enabled", True)),
             },
             "logFile": APP_LOG_FILE,
         }
@@ -1492,20 +1514,24 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": "invalid path"}, 400)
             return
         rel_stored = self._rel(root["path"], fp)
+        # 1.5.0：前端显式告知本次保存是手动（manual=true）还是自动保存触发。
+        # 缺省按手动处理——老前端不含该字段，行为与升级前一致（超限文档不产生快照）。
+        manual = bool(data.get("manual", True))
         try:
             parent = os.path.dirname(fp)
             if parent:
                 os.makedirs(parent, exist_ok=True)
             # 覆盖写之前，把旧内容快照为历史版本（内容有变化才记录）。
-            # 性能：仅在「确实会记录版本」时才读取旧内容——版本功能关闭或文档超限时
-            # 直接跳过，避免大文档每次保存白读一遍全文（10MB 级文件可省数十毫秒~数百毫秒）。
+            # 性能：仅在「确实会记录版本」时才读取旧内容——版本功能关闭，
+            # 或自动保存遇到超限大文档时直接跳过，避免每次保存白读一遍全文
+            # （10MB 级文件可省数十毫秒~数百毫秒）。手动保存则不看体积，一律读。
             if os.path.isfile(fp) and SETTINGS.get("versioning"):
                 try:
-                    if os.path.getsize(fp) <= VERSION_SKIP_BYTES:
+                    if manual or os.path.getsize(fp) <= VERSION_SKIP_BYTES:
                         with open(fp, "rb") as f:
                             prev = f.read()
                         if prev and prev != content.encode("utf-8"):
-                            save_file_version(root["path"], rel_stored, prev)
+                            save_file_version(root["path"], rel_stored, prev, manual=manual)
                 except OSError:
                     pass
             with open(fp, "w", encoding="utf-8") as f:
@@ -1580,7 +1606,8 @@ class Handler(BaseHTTPRequestHandler):
         errs = []
         if not isinstance(data, dict):
             return changed, ["配置格式无效"]
-        for k in ("trust_proxy", "secure_cookie", "versioning", "clear_on_uninstall"):
+        for k in ("trust_proxy", "secure_cookie", "versioning", "clear_on_uninstall",
+                  "autosave_enabled"):   # 1.5.0：自动保存总开关
             if k in data:
                 if isinstance(data[k], bool):
                     if SETTINGS.get(k) != data[k]:
@@ -1646,7 +1673,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"ok": True, "settings": dict(SETTINGS)})
 
     def _api_settings_export(self):
-        keys = ("trust_proxy", "secure_cookie", "render_mode", "versioning", "max_versions", "autosave_interval", "page_title", "favicon", "clear_on_uninstall", "upload_max_mb", "upload_deny", "upload_accept")
+        keys = ("trust_proxy", "secure_cookie", "render_mode", "versioning", "max_versions", "autosave_interval", "autosave_enabled", "page_title", "favicon", "clear_on_uninstall", "upload_max_mb", "upload_deny", "upload_accept")
         payload = {
             "app": "vditor-nas",
             "version": APP_VERSION,
@@ -2145,18 +2172,26 @@ def make_server(host, port, handler):
     """按可用性选择监听族，优先 IPv6 双栈，失败则回退 IPv4。
 
     返回可 serve_forever() 的 server 实例。
+    同时把**真实生效**的监听结果写入模块级 ACTUAL_BIND，供 /api/status 如实上报——
+    1.5.0 之前该字段是按 HOST 配置「推断」的（HOST=0.0.0.0 就声称双栈），
+    但本函数会因系统不支持而回退纯 IPv4，界面就会虚报。
     """
+    global ACTUAL_BIND
     errors = []
     # ① 首选 IPv6 双栈：HOST 为空 / '::' / '0.0.0.0' 时都尝试双栈，
     #    因为 '0.0.0.0' 在双栈语境下即「本机所有地址（v4 + v6）」。
     try:
         bind_host = host if host not in ("", "0.0.0.0") else "::"
-        return DualStackServer((bind_host, port), handler)
+        srv = DualStackServer((bind_host, port), handler)
+        ACTUAL_BIND = {"host": "::", "dualStack": True, "family": "IPv6（双栈）"}
+        return srv
     except OSError as e:
         errors.append("IPv6 双栈监听失败（%s: %s）" % (bind_host, e))
     # ② 回退：纯 IPv4（覆盖未启用 IPv6 的系统）
     try:
-        return ThreadingHTTPServer(("0.0.0.0", port), handler)
+        srv = ThreadingHTTPServer(("0.0.0.0", port), handler)
+        ACTUAL_BIND = {"host": "0.0.0.0", "dualStack": False, "family": "IPv4"}
+        return srv
     except OSError as e:
         errors.append("IPv4 监听失败（0.0.0.0: %s）" % e)
     raise OSError("无法监听端口 %d：%s" % (port, "；".join(errors)))

@@ -178,19 +178,46 @@ st, d, _ = req("GET", "/api/versions?root=%s&path=ver_small.md" % urllib.parse.q
 check("小文件仍生成历史版本快照", st == 200 and len(d.get("versions", [])) >= 1,
       "快照数=%d" % len(d.get("versions", [])))
 
-# 超大文件（>5MB）：应跳过快照，避免磁盘被自动保存写满
+# 超大文件（>5MB）：1.5.0 起区分保存来源——
+#   自动保存（manual=false）跳过快照以保护磁盘；手动保存（manual=true）仍生成，保证可回溯。
 huge = gen_content(6 * 1024 * 1024)
 req("POST", "/api/save", {"root": RID, "path": "ver_huge.md", "content": huge}, cookie=cookie)
-req("POST", "/api/save", {"root": RID, "path": "ver_huge.md", "content": huge + "\n改动"}, cookie=cookie)
+st, d0, _ = req("GET", "/api/versions?root=%s&path=ver_huge.md" % urllib.parse.quote(RID), cookie=cookie)
+huge_before = len(d0.get("versions", []))
+req("POST", "/api/save", {"root": RID, "path": "ver_huge.md", "content": huge + "\n手动改动"}, cookie=cookie)
 st, d, _ = req("GET", "/api/versions?root=%s&path=ver_huge.md" % urllib.parse.quote(RID), cookie=cookie)
-check("超大文件(>5MB)跳过历史版本快照（磁盘保护）",
-      st == 200 and len(d.get("versions", [])) == 0,
-      "快照数=%d（期望 0）" % len(d.get("versions", [])))
+check("超大文件(>5MB)手动保存仍生成历史版本（1.5.0 起不再一律跳过）",
+      st == 200 and len(d.get("versions", [])) == huge_before + 1,
+      "快照数 %d → %d（期望 +1）" % (huge_before, len(d.get("versions", []))))
+
+# 同一文档改用「自动保存」语义（manual=false）连续保存：不应再产生新快照
+n_after_manual = len(d.get("versions", []))
+for i in range(3):
+    req("POST", "/api/save",
+        {"root": RID, "path": "ver_huge.md", "content": huge + "\n自动改动%d" % i, "manual": False},
+        cookie=cookie)
+st, d, _ = req("GET", "/api/versions?root=%s&path=ver_huge.md" % urllib.parse.quote(RID), cookie=cookie)
+check("超大文件(>5MB)自动保存不生成历史版本（磁盘保护）",
+      st == 200 and len(d.get("versions", [])) == n_after_manual,
+      "快照数 %d → %d（期望不变）" % (n_after_manual, len(d.get("versions", []))))
+
+# 普通大小文档：自动保存仍应正常生成快照（阈值只针对超大文档）
+# 用相对增量断言，避免受该路径上历史残留快照影响。
+small = gen_content(64 * 1024)
+req("POST", "/api/save", {"root": RID, "path": "ver_small.md", "content": small}, cookie=cookie)
+st, d0, _ = req("GET", "/api/versions?root=%s&path=ver_small.md" % urllib.parse.quote(RID), cookie=cookie)
+n_before = len(d0.get("versions", []))
+req("POST", "/api/save", {"root": RID, "path": "ver_small.md", "content": small + "\n自动改动", "manual": False},
+    cookie=cookie)
+st, d, _ = req("GET", "/api/versions?root=%s&path=ver_small.md" % urllib.parse.quote(RID), cookie=cookie)
+check("普通文档自动保存正常生成历史版本（阈值只针对超大文档）",
+      st == 200 and len(d.get("versions", [])) == n_before + 1,
+      "快照数 %d → %d（期望 +1）" % (n_before, len(d.get("versions", []))))
 
 # 超大文件读取仍正常
 st, d, _ = req("GET", "/api/file?root=%s&path=ver_huge.md" % urllib.parse.quote(RID), cookie=cookie)
 check("超大文件跳过快照后仍可正常读取",
-      st == 200 and d.get("content", "").endswith("\n改动"), st)
+      st == 200 and d.get("content", "").endswith("自动改动2"), st)
 
 # ---------------- 文件列表在大文件下的响应 ----------------
 t0 = time.perf_counter()

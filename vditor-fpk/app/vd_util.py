@@ -274,6 +274,29 @@ def strip_ip_scope(ip):
     return ip
 
 
+def normalize_client_ip(ip):
+    """把 IPv4-mapped 的 IPv6 写法还原为纯 IPv4，其余原样返回。
+
+    1.5.0：双栈监听下，IPv4 客户端连上来的 `client_address[0]` 可能是
+    `::ffff:192.168.1.5` 这种 IPv4-mapped 形式。直接显示会让用户看到
+    一串本不相关的地址，也使「同一客户端」在显示、防爆破计数键、
+    会话绑定键之间出现两种写法。统一还原为 `192.168.1.5`。
+
+    **原生 IPv6（如 240e:37c:...、fe80::...）一律原样保留**——那是真实地址，
+    归一化会丢失可读性且无任何收益。
+    """
+    ip = strip_ip_scope(ip)
+    if not ip:
+        return ""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6 and getattr(addr, "ipv4_mapped", None) is not None:
+        return str(addr.ipv4_mapped)
+    return str(addr)
+
+
 def ip_version_of(ip):
     """返回地址族标识：4 / 6 / 0（无法解析）。
 
