@@ -36,6 +36,35 @@ check('新增 --c-btn-ghost-bg 双主题', (CSS.match(/--c-btn-ghost-bg:/g) || [
 check('移除 dark模式逐条 ghost 覆写',
   !/data-theme="dark"\] #topbar button\.ghost/.test(CSS));
 
+// ---------- 1.5.0.5：顶栏与设置区普通按钮为白底描边 ----------
+console.log('== 顶栏 / 设置区普通按钮 ==');
+// 关键的回归点：主按钮变体里不得再出现不带类名的裸容器选择器，
+// 否则其优先级高于 .btn--ghost，会把白底按钮强行染成蓝底。
+// ⚠️ 提取块时不能用「注释星级号 +---+」做锚点（CSS 注释里也有 * 号会提前截断），
+//    一律用「变体：xxx」这样的文字标记定位。
+function cssBlock(fromMark, toMark) {
+  const a = CSS.indexOf(fromMark), b = CSS.indexOf(toMark);
+  return (a >= 0 && b > a) ? CSS.slice(a, b) : '';
+}
+const primaryBlock = cssBlock('变体：主按钮', '变体：次按钮');
+const ghostBlock   = cssBlock('变体：次按钮', '变体：危险按钮');
+const hoverBlock   = cssBlock('hover：ghost', 'focus：键盘导航');
+
+check('主按钮变体不再含裸容器 #topbar button',
+  !/#topbar\s+button\s*(,|\{)/.test(primaryBlock), primaryBlock.slice(0, 200));
+// 注：`.modal-card button.action` 仍在主按钮块内——那是「保存设置」这类
+// 真正的主操作，语义正确，**不在本次修正范围**。本次只针对顶栏与设置区。
+check('主按钮变体不再含裸容器 .frow button',
+  !/\.frow\s+button\s*(,|\{)/.test(primaryBlock));
+check('白底变体覆盖 #topbar button', /#topbar\s+button\s*(,|\{)/.test(ghostBlock));
+check('白底变体覆盖 .frow button（设置区）', /\.frow\s+button\s*(,|\{)/.test(ghostBlock));
+check('白底按钮文字用 --c-text-2（浅色下为深色，可读）',
+  /color:\s*var\(--c-text-2\)/.test(ghostBlock));
+check('白底按钮底色用 --c-btn-ghost-bg（深色下切为近背景色）',
+  /background:\s*var\(--c-btn-ghost-bg\)/.test(ghostBlock));
+check('ghost hover 底色保持不变（不染蓝）',
+  /background:\s*var\(--c-btn-ghost-bg\)/.test(hoverBlock), hoverBlock.slice(0, 200));
+
 // ---------- 静态断言：体积标注移除 ----------
 console.log('== 列表体积标注 ==');
 check('移除 .fsize 样式', !/#file-list li \.fsize/.test(code));
@@ -50,11 +79,19 @@ console.log('== 10MB 门禁对话框 ==');
 const bigdocBlock = (html.match(/<div id="bigdoc-mask"[\s\S]*?<\/div>\s*<\/div>/) || [''])[0];
 check('输入框复用 .set-input', /id="bigdoc-input"[^>]*class="set-input"/.test(html));
 check('输入框已移除行内 style hack', !/id="bigdoc-input"[^>]*style=/.test(html));
-check('取消=primary（蓝底）', /id="bigdoc-cancel"[^>]*btn--primary|btn--primary[^>]*id="bigdoc-cancel"/.test(bigdocBlock));
+check('取消=primary（蓝底）', /class="btn btn--primary" id="bigdoc-cancel"/.test(bigdocBlock));
 check('仍然打开=ghost（白底）', /class="btn btn--ghost" id="bigdoc-ok"/.test(bigdocBlock));
-check('取消在左、仍然打开在右',
-  bigdocBlock.indexOf('bigdoc-cancel') < bigdocBlock.indexOf('bigdoc-ok'));
+// 二次确认的按钮位置沿用 1.5.0 定下的规范：确认在左、取消在右
+check('「仍然打开」在左、「取消」在右（与二次确认规范一致）',
+  bigdocBlock.indexOf('bigdoc-ok') < bigdocBlock.indexOf('bigdoc-cancel'));
 check('仍然打开默认禁用', /id="bigdoc-ok"[^>]*disabled/.test(bigdocBlock));
+check('门禁输入框禁止粘贴（防绕过亲手核对）',
+  /id="bigdoc-input"[^>]*onpaste="return false"/.test(html));
+check('门禁输入框不禁用复制/剪切（用户仍可编辑校对）',
+  !/id="bigdoc-input"[^>]*oncopy=/.test(html)
+  && !/id="bigdoc-input"[^>]*oncut=/.test(html));
+check('门禁输入框未被整体禁用选中（user-select 未禁用）',
+  !/#bigdoc-input\s*\{[^}]*user-select:\s*none/.test(CSS));
 
 // ---------- 运行时：renderFiles真调 ----------
 console.log('== renderFiles 运行时 ==');

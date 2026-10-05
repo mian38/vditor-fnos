@@ -441,7 +441,7 @@ check("已注册进 ESC 栈", "'bigdoc-mask'" in idx)
 check("门禁对话框：取消=primary 且在左",
       re.search(r'id="bigdoc-cancel"[^>]*', idx) is not None
       and 'btn--primary" id="bigdoc-cancel"' in idx
-      and idx.index('id="bigdoc-cancel"') < idx.index('id="bigdoc-ok"'))
+      and idx.index('id="bigdoc-ok"') < idx.index('id="bigdoc-cancel"'))
 check("门禁对话框：仍然打开=ghost（白底次按钮）",
       'btn--ghost" id="bigdoc-ok"' in idx)
 check("门禁输入框复用通用文本框类（.set-input）",

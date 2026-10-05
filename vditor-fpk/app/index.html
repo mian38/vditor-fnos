@@ -214,9 +214,7 @@
         /* ---- hover：主色类加深底色 ---- */
         .btn--primary:hover:not(:disabled),
         #sidebar .side-head button:hover:not(:disabled),
-        #topbar button:hover:not(:disabled),
         .modal-card button.action:hover:not(:disabled),
-        .frow button:hover:not(:disabled),
         #login-card button:hover:not(:disabled),
         #modal-card .danger:hover:not(:disabled) { background: var(--c-brand-hover); }
         #folders-list .fdel:hover:not(:disabled) { background: var(--c-danger-hover); }
@@ -227,7 +225,8 @@
         .btn--warn:hover:not(:disabled) { background: var(--c-warn-hover); }
         /* ---- hover：ghost 类只加边框与文字色，底色保持不变（1.5.0.4 修复核心） ---- */
         .btn--ghost:hover:not(:disabled),
-        #topbar button.ghost:hover:not(:disabled),
+        #topbar button:hover:not(:disabled),
+        .frow button:hover:not(:disabled),
         .modal-card button.ghost:hover:not(:disabled),
         #sidebar .side-head button.ghost:hover:not(:disabled),
         .set-head .close:hover:not(:disabled),
@@ -268,17 +267,24 @@
             background: inherit; color: inherit; border-color: inherit;
         }
 
-        /* ---- 变体：主按钮（蓝底） ---- */
+        /* ---- 变体：主按钮（蓝底） ----
+         * 1.5.0.5：此处**只保留语义明确的容器**。
+         * 此前写着不带类名的裸容器选择器（`#topbar button` / `.frow button` 等），
+         * 它们的选择器优先级高于 `.btn--ghost`，会把顶栏与设置区里已挂
+         * `btn--ghost` 的白底按钮强行染成蓝底——这正是「普通按钮不一致」的根因。
+         * 现在蓝底只给真正的主操作：登录、保存、恢复、导出等（显式挂 btn--primary）。 */
         .btn--primary,
         #sidebar .side-head button,
-        #topbar button,
         .modal-card button.action,
-        .frow button,
         #login-card button { background: var(--c-brand); color: #fff; }
 
-        /* ---- 变体：次按钮（白底描边） ---- */
+        /* ---- 变体：次按钮（白底描边） ----
+         * 顶栏与设置区的普通按钮走这里，与对话框右上角的关闭按钮完全同款。
+         * `--c-text-2` 在浅色下是深灰、深色下是浅灰，两种主题都清晰可读；
+         * 深色主题的底色由 --c-btn-ghost-bg 切为与背景接近的深灰。 */
         .btn--ghost,
-        #topbar button.ghost,
+        #topbar button,
+        .frow button,
         .modal-card button.ghost,
         #sidebar .side-head button.ghost,
         .set-head .close,
@@ -350,6 +356,10 @@
         }
         /* 弹层内的文本框占满整行（此前靠行内 style 实现，现收敛到类） */
         .modal-card .set-input { width: 100%; box-sizing: border-box; }
+        /* 10MB 门禁的「输入文档名」：这道确认的意义是让用户亲手核对文件名，
+           因此**禁止粘贴**——不能从别处复制文档名直接粘过来绕过核对。
+           只禁粘贴，不禁用复制/剪切/选中，用户仍可正常编辑与校对文字。 */
+        #bigdoc-input::placeholder { color: var(--c-text-3); }
         /* 「网页标题」输入框过短：与标签同为整行宽度，左右间距一致 */
         #set-page-title { width: 100%; }
         /* 「不允许上传的文件格式」输入框与「网页标题」同为整行宽度 */
@@ -1279,11 +1289,11 @@
         <p class="sub">若确实需要打开，请<b>原样输入下方的文档名</b>后点击「仍然打开」：</p>
         <p class="sub" style="margin:6px 0 4px;font-weight:600;word-break:break-all;" id="bigdoc-name"></p>
         <input type="text" id="bigdoc-input" class="set-input" autocomplete="off" spellcheck="false"
-               placeholder="在此输入文档名">
+               onpaste="return false" placeholder="在此输入文档名">
         <p class="sub" id="bigdoc-hint" style="margin-top:6px;"></p>
         <div class="set-foot">
-            <button class="btn btn--primary" id="bigdoc-cancel">取消</button>
             <button class="btn btn--ghost" id="bigdoc-ok" disabled>仍然打开</button>
+            <button class="btn btn--primary" id="bigdoc-cancel">取消</button>
         </div>
     </div>
 </div>
