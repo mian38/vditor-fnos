@@ -426,14 +426,26 @@ check("强确认：须原样输入文档名", "showBigDocGate" in idx and "check
 check("输入一致前按钮禁用", "ok.disabled = !match;" in idx)
 check("放行时再做一次防御性校验",
       re.search(r"if \(\(document\.getElementById\('bigdoc-input'\)\.value \|\| ''\) !== _bigDocName\) return;", idx) is not None)
-check("列表内标记超大文档", "li.classList.add('big-doc')" in idx)
-check("列表显示体积标签", "sz.className = 'fsize'" in idx)
+# 1.5.0.4：列表不再常驻显示体积、不再对超大文档做特殊标记，
+# 改为鼠标悬停时在 title 中提示；打开 >10MB 仍走强确认。
+check("列表已移除体积标签（.fsize）", "className = 'fsize'" not in idx)
+check("列表已移除超大文档橙色标记（big-doc）", "classList.add('big-doc')" not in idx)
+check("体积改为悬停提示（title 含体积）", "li.title = f.path" in idx)
+check("悬停提示对超大文档追加二次确认说明",
+      "超大文档，打开需二次确认" in idx)
 check("拦截发生在传输正文之前（用列表已知 size）",
       "knownSize > BIG_DOC_BYTES" in idx)
 check("未知体积时兜底再拦一次（passed 防重复弹窗）",
       "if (!passed && bytes > BIG_DOC_BYTES)" in idx)
 check("已注册进 ESC 栈", "'bigdoc-mask'" in idx)
-check("两套主题均定义 --c-warn（深色不靠 fallback）", idx.count("--c-warn:") >= 2)
+check("门禁对话框：取消=primary 且在左",
+      re.search(r'id="bigdoc-cancel"[^>]*', idx) is not None
+      and 'btn--primary" id="bigdoc-cancel"' in idx
+      and idx.index('id="bigdoc-cancel"') < idx.index('id="bigdoc-ok"'))
+check("门禁对话框：仍然打开=ghost（白底次按钮）",
+      'btn--ghost" id="bigdoc-ok"' in idx)
+check("门禁输入框复用通用文本框类（.set-input）",
+      'id="bigdoc-input" class="set-input"' in idx)
 check("门禁弹窗含风险自负与免责表述",
       "风险自负" in idx and "不承担责任" in idx)
 

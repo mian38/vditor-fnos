@@ -605,26 +605,18 @@ console.log('\n[15] 分组 try 隔离：单组失败不影响其余绑定');
   r = tryRender('空数组', []);
   check('renderFiles 不抛错（空分区列表）', r.err === null, r.err && r.err.message);
 
-  // ⑦ 结构性守卫：sz 的引用必须在同一 if 块内（正则抓不到跨作用域，靠本组兜底）
-  //    用括号配平从 `const sz` 所在 if 的 `{` 找到配对的 `}`，判断 `sz.title` 是否落在块内。
-  //    注意：源码里含大段中文注释，`const sz` 距函数开头约 1.5KB，窗口需放宽。
-  const RF = code.indexOf('function renderFiles');
-  const src = code.slice(RF, code.indexOf('\n    function ', RF + 10));
-  const declIdx = src.indexOf('const sz');
-  const useIdx = src.indexOf('sz.title');
-  let guardOk = false, guardInfo = { declIdx, useIdx };
-  if (declIdx >= 0 && useIdx >= 0) {
-    const ifIdx = src.lastIndexOf('if (', declIdx);
-    const braceStart = src.indexOf('{', ifIdx);
-    let depth = 0, braceEnd = -1;
-    for (let i = braceStart; i < src.length; i++) {
-      if (src[i] === '{') depth++;
-      else if (src[i] === '}') { depth--; if (depth === 0) { braceEnd = i; break; } }
-    }
-    guardOk = braceEnd > useIdx;   // `sz.title` 必须落在配对花括号之内
-    guardInfo = { declIdx, useIdx, braceStart, braceEnd, len: src.length };
-  }
-  check('sz 声明与 sz.title 处于同一 if 块内（防跨作用域回归）', guardOk, guardInfo);
+  // ⑦ 防跨作用域回归（1.5.0.4）：体积标签 `sz` 已移除，原「sz 与 sz.title 同块」
+  //    的结构断言随之失效。改为**在上面的 vm 真实调用里覆盖**——
+  //    跨作用域 ReferenceError 只有真调才会暴露，静态正则分析在此不可靠：
+  //    同名 const 在不同块（如两个 if 各自声明 li）是合法的，纯文本分析必然误报。
+  //    本组已用含 >10MB / 无 size / size=0 / 多分区等边界数据调用 renderFiles，
+  //    任一跨作用域引用都会让调用抛错并被上面的断言捕获。
+  //    这里只做一次显式的「渲染结果自检」：确认列表项真的产出了。
+  const RF2 = code.indexOf('function renderFiles');
+  const src2 = code.slice(RF2, code.indexOf('\n    function ', RF2 + 10));
+  check('renderFiles 内已无体积标签残留（sz / fsize / big-doc）',
+        src2.indexOf('sz.title') < 0 && src2.indexOf("'fsize'") < 0
+        && src2.indexOf("'big-doc'") < 0);
 })();
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');

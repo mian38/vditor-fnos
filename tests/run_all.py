@@ -31,6 +31,7 @@ CASES = [
     ("test_frontend.py",      True,  "前端静态一致性 + 访问层守卫 + 工具栏裁剪防护"),
     ("test_v141_net.py",      True,  "IPv6 双栈、公网访问策略、单分区、渲染模式、绑定隔离"),
     ("test_rawmode_v14.js",   True,  "纯文本模式解耦 / 渲染模式 / 二次确认（vm 驱动真实脚本）"),
+    ("test_ui_buttons_v1504.js", True, "按钮交互体系 / 列表体积悬停提示 / 10MB 门禁对话框"),
     ("test_core.py",          True,  "端到端：拉起真实服务跑完整业务流"),
     ("test_e2e_http.py",      True,  "端到端：按浏览器调用顺序驱动 HTTP 接口"),
     ("test_perf.py",          False, "性能基线"),

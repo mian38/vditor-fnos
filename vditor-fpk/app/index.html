@@ -38,7 +38,10 @@
             --c-brand-soft: #e8f0fe;
             --c-danger: #d73a49;
             --c-danger-hover: #b92534;
-            --c-warn: #b45309;           /* 1.5.0：警示（超大文档标记），与 danger 区分开 */
+            --c-warn: #b45309;           /* 1.5.0：警示（超大文档门禁），与 danger 区分开 */
+            --c-warn-hover: #92400e;    /* 1.5.0.4：警示按钮悬停色，替代原先的 filter: brightness */
+            --c-btn-ghost-bg: #ffffff;  /* 1.5.0.4：ghost 按钮底色令牌（深色模式下切换为深灰，
+                                          原先靠 html[data-theme="dark"] 逐条覆写，易漏新按钮） */
             --c-success: #237804;
             --c-info: #1a4ed8;
 
@@ -109,21 +112,12 @@
         #file-list li {
             padding: 7px 10px; border-radius: var(--r); font-size: var(--fs-md); cursor: pointer; line-height: 1.4;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--c-text);
-            display: flex; align-items: center; gap: 6px;
         }
         #file-list li:hover { background: var(--c-border-2); }
         #file-list li.active { background: var(--c-brand-soft); color: var(--c-brand-hover); font-weight: 600; }
-        /* 1.5.0：文件名 + 体积标记。flex 布局下文件名占据剩余空间并省略号截断，
-           体积标签固定在右侧不被挤压（white-space:nowrap 继承自父级 li）。 */
-        #file-list li .fname {
-            flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
-        }
-        #file-list li .fsize {
-            flex: 0 0 auto; font-size: var(--fs-xs); color: var(--c-text-3); font-weight: 400;
-        }
-        /* 超大文档警示：橙色体积标签 + 左侧警示条，提示「打开需二次确认」 */
-        #file-list li.big-doc .fsize { color: var(--c-warn, #d97706); font-weight: 600; }
-        #file-list li.big-doc { box-shadow: inset 2px 0 0 var(--c-warn, #d97706); }
+        /* 1.5.0.4：文件大小不再常驻显示，也不再对大文档做橙色标记，
+           改为鼠标悬停时通过原生 title 提示展示（见 renderFiles）。
+           打开超过 10MB 的文档仍会弹二次确认，见 showBigDocGate。 */
         #side-tip { padding: 10px 14px; font-size: var(--fs-sm); color: var(--c-text-3); border-top: 1px solid var(--c-border-2); line-height: 1.5; }
 
         /* ---------------- 主区 / 顶栏（浅色，与 Vditor 工具栏同系） ---------------- */
@@ -190,7 +184,20 @@
         }
         body.raw-mode #raw-mode-tip { display: block; }
 
-        /* ---------------- 通用控件：按钮 ---------------- */
+        /* ================= 按钮体系（1.5.0.4 统一） =================
+         * 此前按钮样式散落7 处各自为政（.ghost / .close / .danger / .vdiff / .vdel /
+         * .fdel / .rnew / #confirm-cancel / #bigdoc-ok），各写各的 hover，
+         * 导致同类按钮表现不一致（典型：白底按钮悬停变蓝底蓝字）。
+         * 现改为：**基类 .btn + 变体修饰类 + 统一四态**。
+         *
+         * 变体：.btn--primary 蓝底主按钮 / .btn--ghost 白底描边 / .btn--danger 红底 / .btn--warn 琥珀底
+         * 状态：hover 主色类加深底色，ghost 类只加边框与文字色（底色绝不变蓝）；
+         *       focus 用 :focus-visible 统一焦点环；active 统一下压1px；
+         *       disabled 统一降透明度 + not-allowed 且不响应 hover。
+         *
+         * 保留的例外：#confirm-mask 的按钮反色（见下方），是刻意的劝退设计，不参与归一。
+         */
+        .btn,
         #sidebar .side-head button,
         #topbar button,
         .modal-card button.action,
@@ -204,37 +211,98 @@
             cursor: pointer; white-space: nowrap;
             transition: background-color .15s, border-color .15s, color .15s;
         }
-        #sidebar .side-head button:active,
-        #topbar button:active,
-        .modal-card button.action:active,
-        .frow button:active,
-        #login-card button:active { transform: translateY(1px); }
+        /* ---- hover：主色类加深底色 ---- */
+        .btn--primary:hover:not(:disabled),
+        #sidebar .side-head button:hover:not(:disabled),
+        #topbar button:hover:not(:disabled),
+        .modal-card button.action:hover:not(:disabled),
+        .frow button:hover:not(:disabled),
+        #login-card button:hover:not(:disabled),
+        #modal-card .danger:hover:not(:disabled) { background: var(--c-brand-hover); }
+        #folders-list .fdel:hover:not(:disabled) { background: var(--c-danger-hover); }
+        #history-list .vitem .vrestore:hover:not(:disabled),
+        #folders-list .fdel.restore:hover:not(:disabled) { background: var(--c-brand-hover); }
+        .btn--danger:hover:not(:disabled),
+        #history-list .vitem .vdel:hover:not(:disabled) { background: var(--c-danger-hover); }
+        .btn--warn:hover:not(:disabled) { background: var(--c-warn-hover); }
+        /* ---- hover：ghost 类只加边框与文字色，底色保持不变（1.5.0.4 修复核心） ---- */
+        .btn--ghost:hover:not(:disabled),
+        #topbar button.ghost:hover:not(:disabled),
+        .modal-card button.ghost:hover:not(:disabled),
+        #sidebar .side-head button.ghost:hover:not(:disabled),
+        .set-head .close:hover:not(:disabled),
+        #history-list .vitem .vdiff:hover:not(:disabled) {
+            color: var(--c-brand); border-color: var(--c-brand); background: var(--c-btn-ghost-bg);
+        }
+        /* ---- focus：键盘导航可见焦点环，鼠标点击不显示 ---- */
+        .btn:focus-visible,
+        #sidebar .side-head button:focus-visible,
+        #topbar button:focus-visible,
+        .modal-card button:focus-visible,
+        .frow button:focus-visible,
+        #login-card button:focus-visible,
+        #folders-list .fdel:focus-visible,
+        #history-list .vitem button:focus-visible,
+        .set-head .close:focus-visible,
+        .set-tabs button:focus-visible,
+        .set-seg .seg:focus-visible {
+            outline: 2px solid var(--c-brand); outline-offset: 2px;
+        }
+        /* ---- active：全部按钮统一下压 1px ---- */
+        .btn:active:not(:disabled),
+        #sidebar .side-head button:active:not(:disabled),
+        #topbar button:active:not(:disabled),
+        .modal-card button:active:not(:disabled),
+        .frow button:active:not(:disabled),
+        #login-card button:active:not(:disabled),
+        #folders-list .fdel:active:not(:disabled),
+        #history-list .vitem button:active:not(:disabled),
+        .set-head .close:active:not(:disabled) { transform: translateY(1px); }
+        /* ---- disabled：统一降透明度 + 禁用光标，且不响应 hover ---- */
+        .btn:disabled, .modal-card button:disabled, .frow button:disabled,
+        #login-card button:disabled, .set-tabs button:disabled {
+            opacity: .45; cursor: not-allowed; transform: none;
+        }
+        .btn:disabled:hover, .modal-card button:disabled:hover,
+        .frow button:disabled:hover, #login-card button:disabled:hover {
+            background: inherit; color: inherit; border-color: inherit;
+        }
 
-        /* 主按钮 */
+        /* ---- 变体：主按钮（蓝底） ---- */
+        .btn--primary,
         #sidebar .side-head button,
         #topbar button,
         .modal-card button.action,
         .frow button,
         #login-card button { background: var(--c-brand); color: #fff; }
-        #sidebar .side-head button:hover,
-        #topbar button:hover,
-        .modal-card button.action:hover,
-        .frow button:hover,
-        #login-card button:hover { background: var(--c-brand-hover); }
 
-        /* 次级按钮（描边式） */
+        /* ---- 变体：次按钮（白底描边） ---- */
+        .btn--ghost,
         #topbar button.ghost,
         .modal-card button.ghost,
-        #sidebar .side-head button.ghost {
-            background: #fff; color: var(--c-text-2); border-color: var(--c-border);
+        #sidebar .side-head button.ghost,
+        .set-head .close,
+        #history-list .vitem .vdiff {
+            background: var(--c-btn-ghost-bg); color: var(--c-text-2); border-color: var(--c-border);
         }
-        #topbar button.ghost:hover,
-        .modal-card button.ghost:hover,
-        #sidebar .side-head button.ghost:hover { color: var(--c-brand); border-color: var(--c-brand); }
 
-        /* 危险按钮 */
-        .modal-card .danger { background: var(--c-danger); color: #fff; }
-        .modal-card .danger:hover { background: var(--c-danger-hover); }
+        /* ---- 变体：危险按钮（红底） ---- */
+        .btn--danger,
+        .modal-card .danger,
+        #history-list .vitem .vdel,
+        #folders-list .fdel { background: var(--c-danger); color: #fff; }
+
+        /* ---- 变体：警示按钮（琥珀底，10MB 门禁用） ---- */
+        .btn--warn { background: var(--c-warn); color: #fff; border-color: var(--c-warn); }
+
+        /* ---- 侧边栏「+」新建按钮 ---- */
+        .root-head .rnew { background: var(--c-brand); color: #fff; border: none; }
+        .root-head .rnew:hover:not(:disabled) { background: var(--c-brand-hover); }
+
+        /* ---- 选中态（日志折叠 / 设置选项卡） ---- */
+        .set-sub button.action.on { background: var(--c-brand); color: #fff; border-color: var(--c-brand); }
+        .set-tabs button:hover:not(:disabled) { background: var(--c-bg-fill); color: var(--c-text); }
+        .set-tabs button.on { background: var(--c-brand); color: #fff; font-weight: 600; }
 
         /* ---- 二次确认对话框按钮（1.4.1）：取消为主色蓝，确认置白 ----
            设计意图：二次确认的本质是「劝退」——引导用户别继续。
@@ -257,17 +325,17 @@
            而 showConfirm 用 textContent 赋值（天然转义，避免 XSS），
            故需 white-space:pre-line 才能让换行生效。 */
         #confirm-msg { white-space: pre-line; line-height: 1.65; }
-        /* 1.5.0：超大文档门禁。禁用态的「仍然打开」需明显不可用，
+        /* 1.5.0.4：超大文档门禁按钮样式已并入统一按钮体系
+           （.btn--warn 常态 / .btn:disabled 禁用态），此处不再重复定义。
+           「仍然打开」保持禁用直到输入与文档名完全一致，需明显不可用，
            否则用户会以为点了没反应（而实际是刻意禁用）。 */
-        #bigdoc-mask #bigdoc-ok:disabled {
-            opacity: .45; cursor: not-allowed;
-            background: var(--c-border-2); color: var(--c-text-3); border-color: var(--c-border);
-        }
-        #bigdoc-mask #bigdoc-ok:not(:disabled) { background: var(--c-warn); color: #fff; border-color: var(--c-warn); }
-        #bigdoc-mask #bigdoc-ok:not(:disabled):hover { filter: brightness(1.08); }
         #bigdoc-mask .sub-warn { line-height: 1.65; }
 
-        /* ---------------- 通用控件：输入框 ---------------- */
+        /* ---------------- 通用控件：输入框 ----------------
+         * 1.5.0.4：抽出 .set-input 作为**通用文本框类**，供设置页与弹层共用
+           （10MB 门禁的「输入文档名」即复用此类，避免浏览器默认外观）。
+           下方的选择器组保留，为未加类的既有输入框兜底。 */
+        .set-input,
         #login-card input,
         .set-num input,
         .set-sub input:not([type="checkbox"]),
@@ -280,16 +348,20 @@
             padding: 7px 10px; outline: none;
             transition: border-color .15s, box-shadow .15s;
         }
+        /* 弹层内的文本框占满整行（此前靠行内 style 实现，现收敛到类） */
+        .modal-card .set-input { width: 100%; box-sizing: border-box; }
         /* 「网页标题」输入框过短：与标签同为整行宽度，左右间距一致 */
         #set-page-title { width: 100%; }
         /* 「不允许上传的文件格式」输入框与「网页标题」同为整行宽度 */
         .set-ext-row input { flex: 1 1 auto; min-width: 0; }
+        .set-input:focus,
         #login-card input:focus,
         .set-num input:focus,
         .set-sub input:not([type="checkbox"]):focus,
         .frow input:focus,
         .set-ext-row input:focus,
         #set-page-title:focus { border-color: var(--c-brand); box-shadow: 0 0 0 3px var(--c-brand-soft); }
+        .set-input::placeholder,
         #login-card input::placeholder,
         .set-num input::placeholder,
         .set-sub input:not([type="checkbox"])::placeholder,
@@ -482,13 +554,13 @@
             text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto;
         }
         #folders-list .fitem .fdel {
-            background: var(--c-danger); color: #fff; border-radius: var(--r-sm);
+            border-radius: var(--r-sm);
             font-size: var(--fs-xs); padding: 3px 8px; flex: 0 0 auto;
         }
-        #folders-list .fitem .fdel:hover { background: var(--c-danger-hover); }
+        /* 1.5.0.4：底色与 hover 已统一到按钮体系（.btn--danger / .btn--danger:hover），
+           此处只保留尺寸规则，不再重复定义配色。 */
         /* 「恢复」与「删除/隐藏」同为行内小按钮，仅配色不同 */
         #folders-list .fitem .fdel.restore { background: var(--c-brand); }
-        #folders-list .fitem .fdel.restore:hover { background: var(--c-brand-hover); }
         /* 1.2.4 修复：原先 .frow 未设 flex-wrap，四个并排按钮（「应用状态 / 查看应用日志 /
          * 查看登录日志 / 刷新」）在移动端窄屏下总宽度超出对话框，撑出横向滚动条，
          * 导致整个设置对话框内容可横向滚动。改为允许换行，并让按钮在窄屏均分整行。 */
@@ -537,12 +609,8 @@
         #history-list .vitem button {
             margin-left: auto; border-radius: var(--r-sm); font-size: var(--fs-sm); padding: 4px 10px;
         }
-        #history-list .vitem .vrestore { background: var(--c-brand); color: #fff; }
-        #history-list .vitem .vrestore:hover { background: var(--c-brand-hover); }
-        #history-list .vitem .vdel { background: var(--c-danger); color: #fff; }
-        #history-list .vitem .vdel:hover { background: var(--c-danger-hover); }
-        #history-list .vitem .vdiff { background: #fff; color: var(--c-text-2); border: 1px solid var(--c-border); }
-        #history-list .vitem .vdiff:hover { color: var(--c-brand); border-color: var(--c-brand); }
+        /* 1.5.0.4：.vrestore（恢复）/ .vdel（删除）/ .vdiff（差异）的底色与 hover
+           已统一到按钮体系，此处不再重复定义——避免同一按钮两处规则走样。 */
         #history-path { font-size: var(--fs-sm); color: var(--c-text-3); margin: 2px 0 8px; word-break: break-all; line-height: 1.6; }
         #history-path code, .help-body code, #login-help code {
             background: var(--c-bg-subtle); padding: 1px 5px; border-radius: var(--r-sm); color: var(--c-text);
@@ -642,6 +710,8 @@
             --c-danger: #f85149;
             --c-danger-hover: #da3633;
             --c-warn: #e3a008;           /* 1.5.0：暗色下需提亮才看得清 */
+            --c-warn-hover: #f5b942;    /* 1.5.0.4：暗色下的警示悬停色 */
+            --c-btn-ghost-bg: #23272f;  /* 1.5.0.4：暗色下 ghost 按钮底色（原先为逐条覆写） */
             --c-success: #3fb950;
             --c-info: #58a6ff;
 
@@ -667,11 +737,9 @@
         html[data-theme="dark"] #folders-list .fitem,
         html[data-theme="dark"] #history-list .vitem,
         html[data-theme="dark"] #log-box { background: var(--c-bg-fill); }
-        html[data-theme="dark"] #topbar button.ghost,
-        html[data-theme="dark"] .modal-card button.ghost,
-        html[data-theme="dark"] #sidebar .side-head button.ghost,
-        html[data-theme="dark"] .set-head .close { background: var(--c-bg-fill); }
-        html[data-theme="dark"] #history-list .vitem .vdiff { background: var(--c-bg-fill); }
+        /* 1.5.0.4：ghost 按钮的暗色底色已由令牌 --c-btn-ghost-bg 接管，
+           此处原有的 html[data-theme="dark"] 逐条覆写已删除——
+           那种写法每新增一个按钮都要补一条，极易漏（本次归一的重点之一）。 */
         html[data-theme="dark"] #history-diff .d-add { background: rgba(63,185,80,.15); }
         html[data-theme="dark"] #history-diff .d-del { background: rgba(248,81,73,.15); }
         html[data-theme="dark"] .toast { background: var(--c-bg-fill); border: 1px solid var(--c-border); }
@@ -729,10 +797,7 @@
             background: transparent; color: var(--c-text-2);
             cursor: pointer; white-space: nowrap;
         }
-        .set-tabs button:hover { background: var(--c-bg-fill); color: var(--c-text); }
-        .set-tabs button.on {
-            background: var(--c-brand); color: #fff; font-weight: 600;
-        }
+        /* 1.5.0.4：hover / 选中态已在按钮体系统一定义，此处不重复。 */
         /* 选项卡面板：默认全部隐藏，仅显示当前选中项 */
         .set-page { display: none; }
         .set-page.on { display: block; }
@@ -838,7 +903,7 @@
     </aside>
     <div id="main">
         <div id="topbar">
-            <button id="btn-toggle-side" class="ghost" title="« 折叠文档栏">«</button>
+            <button id="btn-toggle-side" class="btn btn--ghost" title="« 折叠文档栏">«</button>
             <span class="fname">当前文件：<b id="cur-name">未选择</b></span>
             <span id="word-counter" class="word-counter" title="">
                 <span class="wc-item">正文 <b id="wc-text">0</b></span>
@@ -849,15 +914,15 @@
             </span>
             <div class="top-actions">
                 <span class="user" id="user-label"></span>
-                <button id="btn-logout" class="ghost">退出</button>
-                <button id="btn-settings" class="ghost">设置</button>
-                <button id="btn-export-md" class="ghost">导出 .md</button>
-                <button id="btn-export-html" class="ghost">导出 HTML</button>
-                <button id="btn-doc-info" class="ghost">信息</button>
+                <button id="btn-logout" class="btn btn--ghost">退出</button>
+                <button id="btn-settings" class="btn btn--ghost">设置</button>
+                <button id="btn-export-md" class="btn btn--ghost">导出 .md</button>
+                <button id="btn-export-html" class="btn btn--ghost">导出 HTML</button>
+                <button id="btn-doc-info" class="btn btn--ghost">信息</button>
                 <!-- 1.4.2：仅在打开大文档时出现（由 updateRawModeBtn 依据文档大小控制显隐） -->
-                <button id="btn-raw-mode" class="ghost" title="切换为纯文本模式（关闭渲染，适合大文件）" hidden>纯文本</button>
-                <button id="btn-theme" class="ghost" title="切换浅色 / 暗黑模式">🌙</button>
-                <button id="btn-save">保存</button>
+                <button id="btn-raw-mode" class="btn btn--ghost" title="切换为纯文本模式（关闭渲染，适合大文件）" hidden>纯文本</button>
+                <button id="btn-theme" class="btn btn--ghost" title="切换浅色 / 暗黑模式">🌙</button>
+                <button id="btn-save" class="btn btn--primary">保存</button>
             </div>
         </div>
         <div id="vditor"></div>
@@ -884,7 +949,7 @@
             <label>访问密码</label>
             <input id="login-pw" type="password" placeholder="请输入访问密码" autocomplete="current-password">
         </div>
-        <button id="login-btn">进入</button>
+        <button id="login-btn" class="btn btn--primary">进入</button>
         <div id="login-err"></div>
         <div id="login-lock"></div>
         <div id="login-help" style="display:none;">
@@ -898,15 +963,15 @@
     <div id="settings-card" class="modal-card">
         <div class="set-head">
             <h2>设置</h2>
-            <button class="close" id="settings-close">×</button>
+            <button class="btn btn--ghost close" id="settings-close">×</button>
         </div>
         <div class="set-tabs" id="set-tabs">
-            <button type="button" class="on" data-page="pg-folders">分区</button>
-            <button type="button" data-page="pg-file">文件</button>
-            <button type="button" data-page="pg-security">安全</button>
-            <button type="button" data-page="pg-appearance">外观</button>
-            <button type="button" data-page="pg-maint">维护</button>
-            <button type="button" data-page="pg-about">关于与帮助</button>
+            <button type="button" class="btn btn--primary on" data-page="pg-folders">分区</button>
+            <button type="button" data-page="pg-file" class="btn btn--primary">文件</button>
+            <button type="button" data-page="pg-security" class="btn btn--primary">安全</button>
+            <button type="button" data-page="pg-appearance" class="btn btn--primary">外观</button>
+            <button type="button" data-page="pg-maint" class="btn btn--primary">维护</button>
+            <button type="button" data-page="pg-about" class="btn btn--primary">关于与帮助</button>
         </div>
         <div class="set-body">
 
@@ -925,7 +990,7 @@
                         <input id="folder-path" type="text" placeholder="绝对路径，如 /vol1/1000/Notes">
                     </div>
                     <div class="frow">
-                        <button id="folder-add" class="ghost action">添加分区</button>
+                        <button id="folder-add" class="btn btn--ghost">添加分区</button>
                     </div>
                     <div id="folders-err"></div>
                     <p class="sub">在此添加 NAS 上已有的目录作为文档分区，各分区互相独立、互不混淆，可添加多个并为每个分区指定显示名。<br>若要自定义目录，需同时在 fnOS 系统「应用中心 → 已安装 → Vditor 编辑器 → 访问权限」中授权对应目录。</p>
@@ -939,9 +1004,9 @@
                 <div class="set-sub">
                     <h3>渲染模式</h3>
                     <div class="set-seg" id="set-render-mode" role="radiogroup" aria-label="默认渲染模式">
-                        <button type="button" class="seg" data-v="auto" role="radio" aria-checked="true">自动（推荐）</button>
-                        <button type="button" class="seg" data-v="rich" role="radio" aria-checked="false">始终富文本</button>
-                        <button type="button" class="seg" data-v="raw" role="radio" aria-checked="false">始终纯文本</button>
+                        <button type="button" class="btn btn--primary seg" data-v="auto" role="radio" aria-checked="true">自动（推荐）</button>
+                        <button type="button" class="btn btn--primary seg" data-v="rich" role="radio" aria-checked="false">始终富文本</button>
+                        <button type="button" class="btn btn--primary seg" data-v="raw" role="radio" aria-checked="false">始终纯文本</button>
                     </div>
                     <p class="sub" id="set-render-mode-desc"></p>
                     <p class="sub">本项保存后长期生效，对所有文档生效。超大文档的读写表现，与使用的设备和浏览器性能强相关。若本应用运行在性能较弱的设备或浏览器上，建议优先选用「自动」或「始终纯文本」模式。若只想临时切换<b>当前编辑的大文档</b>的渲染模式，请用顶栏右上角的「纯文本 / 富文本」切换按钮——该按钮仅在打开大文档时出现，切换只在本次会话有效，刷新后行为即回到本设置。</p>
@@ -974,8 +1039,8 @@
                         <label>不允许上传的文件格式（黑名单，可自由增删）</label>
                         <div class="set-ext-row">
                             <input id="set-upload-deny" type="text" placeholder="输入扩展名，如 exe；多个用逗号分隔" maxlength="400" autocomplete="off" spellcheck="false">
-                            <button class="action" id="btn-deny-add" type="button">添加</button>
-                            <button class="ghost action" id="btn-deny-reset" type="button">恢复默认</button>
+                            <button class="btn btn--primary action" id="btn-deny-add" type="button">添加</button>
+                            <button class="btn btn--ghost" id="btn-deny-reset" type="button">恢复默认</button>
                         </div>
                         <div id="deny-list" class="set-ext-list"></div>
                         <div id="upload-deny-err"></div>
@@ -1006,7 +1071,7 @@
                     <label>确认新密码</label>
                     <input id="pw-confirm" type="password" placeholder="再次输入新密码" autocomplete="new-password">
                     <div class="frow">
-                        <button class="ghost action" id="pw-change">修改密码</button>
+                        <button class="btn btn--ghost" id="pw-change">修改密码</button>
                     </div>
                     <div id="pw-err"></div>
                 </div>
@@ -1025,7 +1090,7 @@
                     <label>网页图标（上传图片，将作为浏览器标签页图标；支持 png / jpg / svg / ico 等）</label>
                     <input id="set-favicon" type="file" accept="image/*">
                     <div class="frow">
-                        <button class="ghost action" id="btn-upload-favicon">上传图标</button>
+                        <button class="btn btn--ghost" id="btn-upload-favicon">上传图标</button>
                     </div>
                     <div id="favicon-err" class="sub"></div>
                     <p class="sub">此处仅控制前端网页标题与图标，fnOS 内显示的本应用名与图标不受此处影响。</p>
@@ -1039,10 +1104,10 @@
                 <div class="set-sub">
                     <h3>备份与恢复</h3>
                     <div class="frow">
-                        <button class="ghost action" id="btn-backup">导出备份（配置 + 文档）</button>
-                        <button class="ghost action" id="btn-restore-backup">导入备份（配置 + 文档）</button>
-                        <button class="ghost action" id="btn-export-config">导出配置（JSON）</button>
-                        <button class="ghost action" id="btn-import-config">导入配置（JSON）</button>
+                        <button class="btn btn--ghost" id="btn-backup">导出备份（配置 + 文档）</button>
+                        <button class="btn btn--ghost" id="btn-restore-backup">导入备份（配置 + 文档）</button>
+                        <button class="btn btn--ghost" id="btn-export-config">导出配置（JSON）</button>
+                        <button class="btn btn--ghost" id="btn-import-config">导入配置（JSON）</button>
                     </div>
                     <input type="file" id="restore-backup-file" accept=".tar.gz,.tgz,application/gzip" style="display:none;">
                     <input type="file" id="import-config-file" accept="application/json,.json" style="display:none;">
@@ -1056,10 +1121,10 @@
                     <h3>状态与日志</h3>
                     <p class="sub">查看应用当前所处状态（浏览器、网络环境、服务器信息）与运行日志，便于排查问题。点击按钮展开对应面板，再次点击收回；打开新面板时会自动收回先前展开的。</p>
                     <div class="frow">
-                        <button class="ghost action" id="btn-refresh-status" data-logpanel="status">应用状态</button>
-                        <button class="ghost action" id="btn-view-app-log" data-logpanel="applog">查看应用日志</button>
-                        <button class="ghost action" id="btn-view-log" data-logpanel="loginlog">查看登录日志</button>
-                        <button class="ghost action" id="btn-refresh-current">刷新</button>
+                        <button class="btn btn--ghost" id="btn-refresh-status" data-logpanel="status">应用状态</button>
+                        <button class="btn btn--ghost" id="btn-view-app-log" data-logpanel="applog">查看应用日志</button>
+                        <button class="btn btn--ghost" id="btn-view-log" data-logpanel="loginlog">查看登录日志</button>
+                        <button class="btn btn--ghost" id="btn-refresh-current">刷新</button>
                     </div>
                     <div class="log-panel" id="status-panel" style="display:none;">
                         <dl class="kv-list" id="status-list"></dl>
@@ -1086,8 +1151,8 @@
                     <h3>帮助与快捷键</h3>
                     <p class="sub">本应用的完整功能说明与上手指引，以及本应用与内置编辑器支持的常用快捷键。</p>
                     <div class="frow">
-                        <button id="btn-word-help" class="ghost action" title="使用指南（点击查看本应用功能详解）">？ 使用指南</button>
-                        <button id="btn-kb-help" class="ghost action" title="快捷键（点击查看本应用与编辑器支持的常用快捷键）">⌨ 快捷键</button>
+                        <button id="btn-word-help" class="btn btn--ghost" title="使用指南（点击查看本应用功能详解）">？ 使用指南</button>
+                        <button id="btn-kb-help" class="btn btn--ghost" title="快捷键（点击查看本应用与编辑器支持的常用快捷键）">⌨ 快捷键</button>
                     </div>
                 </div>
 
@@ -1137,8 +1202,8 @@
         </div>
 
         <div class="set-foot">
-            <button class="action" id="settings-save">保存设置</button>
-            <button class="ghost action" id="settings-close2">关闭</button>
+            <button class="btn btn--primary action" id="settings-save">保存设置</button>
+            <button class="btn btn--ghost" id="settings-close2">关闭</button>
         </div>
     </div>
 </div>
@@ -1151,7 +1216,7 @@
         <p class="sess-title">已退出登录</p>
         <p class="sess-desc">因长时间未操作，登录会话已过期。<br>为保障文档安全，应用已自动退出登录，请重新登录后继续使用。</p>
         <div class="sess-actions">
-            <button class="action" id="btn-session-reload">刷新页面并重新登录</button>
+            <button class="btn btn--primary action" id="btn-session-reload">刷新页面并重新登录</button>
         </div>
     </div>
 </div>
@@ -1161,7 +1226,7 @@
         <div id="history-card" class="modal-card" style="width:560px;">
             <div class="set-head">
                 <h2>历史版本</h2>
-                <button class="close" id="history-close">×</button>
+                <button class="btn btn--ghost close" id="history-close">×</button>
             </div>
             <div id="history-file" class="sub"></div>
             <div id="history-path" class="sub"></div>
@@ -1183,8 +1248,8 @@
         <div class="set-foot">
             <!-- 1.5.0：确认在左、取消在右。安全相关的二次确认一律把「取消（推荐）」设为主色，
                  放在右手侧符合「右手离开提交键」的肌肉记忆，也与 Windows 侧栏一致。 -->
-            <button class="ghost action" id="confirm-ok">确认</button>
-            <button class="ghost action" id="confirm-cancel">取消</button>
+            <button class="btn btn--ghost" id="confirm-ok">确认</button>
+            <button class="btn btn--primary" id="confirm-cancel">取消</button>
         </div>
     </div>
 </div>
@@ -1199,7 +1264,7 @@
         <p id="backup-stat">正在扫描文件…</p>
         <p id="backup-hint">已经开始打包，打包内容包含添加的分区内全部内容（包括 .md 文件、文件夹内原有及上传的附件、历史版本等），以及配置文件（登录密码、Web 设置等）。可能需要较长时间。完成后将自动开始下载，请勿关闭页面。</p>
         <div class="set-foot">
-            <button class="ghost action" id="backup-cancel">取消</button>
+            <button class="btn btn--ghost" id="backup-cancel">取消</button>
         </div>
     </div>
 </div>
@@ -1213,12 +1278,12 @@
         <p class="sub sub-warn" id="bigdoc-msg"></p>
         <p class="sub">若确实需要打开，请<b>原样输入下方的文档名</b>后点击「仍然打开」：</p>
         <p class="sub" style="margin:6px 0 4px;font-weight:600;word-break:break-all;" id="bigdoc-name"></p>
-        <input type="text" id="bigdoc-input" autocomplete="off" spellcheck="false"
-               style="width:100%;box-sizing:border-box;" placeholder="在此输入文档名">
+        <input type="text" id="bigdoc-input" class="set-input" autocomplete="off" spellcheck="false"
+               placeholder="在此输入文档名">
         <p class="sub" id="bigdoc-hint" style="margin-top:6px;"></p>
         <div class="set-foot">
-            <button class="ghost action" id="bigdoc-ok" disabled>仍然打开</button>
-            <button class="ghost action" id="bigdoc-cancel">取消</button>
+            <button class="btn btn--primary" id="bigdoc-cancel">取消</button>
+            <button class="btn btn--ghost" id="bigdoc-ok" disabled>仍然打开</button>
         </div>
     </div>
 </div>
@@ -1228,7 +1293,7 @@
         <div id="doc-info-card" class="modal-card" style="width:480px;">
             <div class="set-head">
                 <h2>文档信息</h2>
-                <button class="close" id="doc-info-close">×</button>
+                <button class="btn btn--ghost close" id="doc-info-close">×</button>
             </div>
             <dl class="kv-list" id="doc-info-list">
                 <dt>相对路径</dt><dd id="doc-info-path"></dd>
@@ -1238,9 +1303,9 @@
                 <dt>历史版本数</dt><dd id="doc-info-versions"></dd>
             </dl>
             <div class="set-foot">
-                <button class="ghost action" id="btn-history">历史版本</button>
-                <button class="ghost action" id="doc-info-delete">删除文档（含全部历史版本）</button>
-                <button class="ghost action" id="doc-info-close2">关闭</button>
+                <button class="btn btn--ghost" id="btn-history">历史版本</button>
+                <button class="btn btn--danger" id="doc-info-delete">删除文档（含全部历史版本）</button>
+                <button class="btn btn--ghost" id="doc-info-close2">关闭</button>
             </div>
         </div>
     </div>
@@ -1250,7 +1315,7 @@
         <div id="word-help-card" class="modal-card" style="width:600px;">
             <div class="set-head">
                 <h2>使用指南</h2>
-                <button class="close" id="word-help-close">×</button>
+                <button class="btn btn--ghost close" id="word-help-close">×</button>
             </div>
             <div class="help-body">
                 <p class="g-h">一、编辑器（中间区域）</p>
@@ -1301,7 +1366,7 @@
         <div id="kb-help-card" class="modal-card" style="width:600px;">
             <div class="set-head">
                 <h2>快捷键</h2>
-                <button class="close" id="kb-help-close">×</button>
+                <button class="btn btn--ghost close" id="kb-help-close">×</button>
             </div>
             <div class="help-body">
                 <p>本应用与内置编辑器支持的常用快捷键。表格中的按键需在<b>编辑器或本页面获得焦点</b>时使用。</p>
@@ -2449,7 +2514,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             const path = document.createElement('span');
             path.className = 'rpath'; path.textContent = r.exists ? '' : '（目录不存在）';
             const btn = document.createElement('button');
-            btn.className = 'rnew'; btn.textContent = '+'; btn.title = '在「' + r.name + '」中新建';
+            btn.className = 'btn btn--primary rnew'; btn.textContent = '+'; btn.title = '在「' + r.name + '」中新建';
             btn.addEventListener('click', (e) => { e.stopPropagation(); newFile(r.id, r.name); });
             head.appendChild(caret); head.appendChild(name); head.appendChild(path); head.appendChild(btn);
             head.title = (isFolded ? '展开' : '折叠') + '「' + r.name + '」';
@@ -2476,27 +2541,16 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             } else {
                 r.files.forEach(f => {
                     const li = document.createElement('li');
-                    // 1.5.0：文件名与体积标签分列（flex），体积固定在右侧不被文件名挤压
-                    const nm = document.createElement('span');
-                    nm.className = 'fname'; nm.textContent = f.name;
-                    li.appendChild(nm);
-                    if (typeof f.size === 'number' && f.size >= 0) {
-                        const sz = document.createElement('span');
-                        sz.className = 'fsize';
-                        sz.textContent = fmtSize(f.size);
-                        // 1.5.0：超过 BIG_DOC_BYTES 的文档在列表里就给出警示，
-                        // 让用户在点开之前就知道「这个打开要二次确认、可能卡」。
-                        // ⚠️ 此判定必须与体积标签写在**同一个 if 块内**：
-                        // sz 是块级 const，写在块外访问会抛 ReferenceError，
-                        // 且异常冒泡会中断 fetch().then() 回调 → box.innerHTML=''
-                        // 已执行但 appendChild 从未执行 → 整个侧边栏空白（1.5.0beta2 实机教训）。
-                        if (f.size > BIG_DOC_BYTES) {
-                            li.classList.add('big-doc');
-                            sz.title = '超大文档：打开需二次确认，渲染可能明显卡顿';
-                        }
-                        li.appendChild(sz);
-                    }
-                    li.title = f.path + (typeof f.size === 'number' ? '（' + fmtSize(f.size) + '）' : '');
+                    li.textContent = f.name;
+                    // 1.5.0.4：文件大小改为**悬停提示**，不再常驻显示在文件名右侧，
+                    // 也不再对超大文档做橙色标记（视觉噪音）。打开 >10MB 仍会弹二次确认。
+                    // ⚠️ 1.5.0beta2 曾因体积标签的 const 声明在 if 块内、而标记行在块外，
+                    // 抛 ReferenceError 中断整个 forEach → 侧边栏整体空白（清空已执行、
+                    // 挂载未执行）。改动渲染逻辑时务必用 vm 真调一次并喂边界数据。
+                    const hasSize = typeof f.size === 'number' && f.size >= 0;
+                    li.title = f.path
+                        + (hasSize ? '（' + fmtSize(f.size) + '）' : '')
+                        + (hasSize && f.size > BIG_DOC_BYTES ? ' · 超大文档，打开需二次确认' : '');
                     li.dataset.root = f.root; li.dataset.path = f.path;
                     if (f.root === currentRoot && f.path === currentPath) li.classList.add('active');
                     li.addEventListener('click', () => openFile(f.root, f.path, f.size));
@@ -2913,7 +2967,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 const ph = document.createElement('span');
                 ph.className = 'fpath'; ph.textContent = r.path;
                 const btn = document.createElement('button');
-                btn.className = 'fdel';
+                btn.className = 'btn btn--danger fdel';
                 if (r.managed) { btn.textContent = '删除'; btn.title = '从应用内移除该文件夹'; }
                 else { btn.textContent = '隐藏'; btn.title = '在本应用隐藏该系统分区（不删除磁盘文件）'; }
                 btn.addEventListener('click', () => folderAction('remove', r.path, r.managed));
@@ -2928,7 +2982,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 const ph = document.createElement('span');
                 ph.className = 'fpath'; ph.textContent = p;
                 const btn = document.createElement('button');
-                btn.className = 'fdel restore'; btn.textContent = '恢复';
+                btn.className = 'btn btn--primary fdel restore'; btn.textContent = '恢复';
                 btn.title = '恢复显示该分区';
                 btn.addEventListener('click', () => folderAction('restore', p, false));
                 item.appendChild(nm); item.appendChild(ph); item.appendChild(btn);
@@ -3175,13 +3229,13 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                     const s = document.createElement('span');
                     s.className = 'vsize'; s.textContent = (v.size / 1024).toFixed(1) + ' KB';
                     const restore = document.createElement('button');
-                    restore.className = 'vrestore'; restore.textContent = '恢复';
+                    restore.className = 'btn btn--primary vrestore'; restore.textContent = '恢复';
                     restore.addEventListener('click', () => restoreVersion(v.ts));
                     const del = document.createElement('button');
-                    del.className = 'vdel'; del.textContent = '删除';
+                    del.className = 'btn btn--danger vdel'; del.textContent = '删除';
                     del.addEventListener('click', () => deleteVersion(v.ts));
                     const diff = document.createElement('button');
-                    diff.className = 'vdiff'; diff.textContent = '差异';
+                    diff.className = 'btn btn--ghost vdiff'; diff.textContent = '差异';
                     diff.addEventListener('click', () => showDiff(v.ts));
                     item.appendChild(t); item.appendChild(s); item.appendChild(restore); item.appendChild(del); item.appendChild(diff);
                     list.appendChild(item);
