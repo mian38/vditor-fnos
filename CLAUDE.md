@@ -7,6 +7,8 @@
 1. **人在环发版门禁**：实机（fnOS）测试只能由人类（mian38）手动完成。你构建 / 交付的每一个 fpk 一律是
    **测试版 · 未发布**；**你绝不自行创建 GitHub Release、绝不打 release tag、绝不对外宣布发布**。
    只有人类显式说「发布 vX.Y.Z」你才可发布。
+   正式发布前**版本号不变、只递增 beta 标识**（首轮 `beta1`，次轮 `beta2`……），
+   且每轮构建的 fpk 必须带 beta 编号**完整归档到 `releases/`、严禁覆盖上一轮的包**（详见 `AGENTS.md` §0.1）。
 2. **版本号规则（x.y.z）**：用户可见功能范围扩大→升 y（z 归零）；修 bug / 细节优化→升 z；架构不兼容→升 x；纯文档不改版本。
 3. **测试门禁**：交付任何 fpk 前必须 `rm -rf vditor-fpk/app/__pycache__ && python tests/run_all.py --all` 且 **0 失败**。
 
