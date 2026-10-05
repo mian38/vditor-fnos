@@ -117,7 +117,7 @@
         #file-list li.active { background: var(--c-brand-soft); color: var(--c-brand-hover); font-weight: 600; }
         /* 1.5.0.4：文件大小不再常驻显示，也不再对大文档做橙色标记，
            改为鼠标悬停时通过原生 title 提示展示（见 renderFiles）。
-           打开超过 10MB 的文档仍会弹二次确认，见 showBigDocGate。 */
+           打开超过 10MB 的文档仍会弹二次确认，见 showBigDocConfirm。 */
         #side-tip { padding: 10px 14px; font-size: var(--fs-sm); color: var(--c-text-3); border-top: 1px solid var(--c-border-2); line-height: 1.5; }
 
         /* ---------------- 主区 / 顶栏（浅色，与 Vditor 工具栏同系） ---------------- */
@@ -298,7 +298,7 @@
         #history-list .vitem .vdel,
         #folders-list .fdel { background: var(--c-danger); color: #fff; }
 
-        /* ---- 变体：警示按钮（琥珀底，10MB 门禁用） ---- */
+        /* ---- 变体：警示按钮（琥珀底）---- */
         .btn--warn { background: var(--c-warn); color: #fff; border-color: var(--c-warn); }
 
         /* ---- 侧边栏「+」新建按钮 ---- */
@@ -336,10 +336,14 @@
            「仍然打开」保持禁用直到输入与文档名完全一致，需明显不可用，
            否则用户会以为点了没反应（而实际是刻意禁用）。 */
         #bigdoc-mask .sub-warn { line-height: 1.65; }
+        /* 强确认与二次确认的正文都含多段落（\n\n 分段），而 showConfirm /
+           showTypedConfirm 都用 textContent 赋值（天然转义，避免 XSS），
+           故需 white-space:pre-line 才能让换行生效。 */
+        #bigdoc-mask #bigdoc-msg { white-space: pre-line; line-height: 1.65; }
 
         /* ---------------- 通用控件：输入框 ----------------
          * 1.5.0.4：抽出 .set-input 作为**通用文本框类**，供设置页与弹层共用
-           （10MB 门禁的「输入文档名」即复用此类，避免浏览器默认外观）。
+           （删除文档的强确认「输入文件名」即复用此类，避免浏览器默认外观）。
            下方的选择器组保留，为未加类的既有输入框兜底。 */
         .set-input,
         #login-card input,
@@ -356,8 +360,8 @@
         }
         /* 弹层内的文本框占满整行（此前靠行内 style 实现，现收敛到类） */
         .modal-card .set-input { width: 100%; box-sizing: border-box; }
-        /* 10MB 门禁的「输入文档名」：这道确认的意义是让用户亲手核对文件名，
-           因此**禁止粘贴**——不能从别处复制文档名直接粘过来绕过核对。
+        /* 删除文档强确认的「输入文件名」：这道确认的意义是让用户亲手核对文件名，
+           因此**禁止粘贴**——不能从别处复制文件名直接粘过来绕过核对。
            只禁粘贴，不禁用复制/剪切/选中，用户仍可正常编辑与校对文字。 */
         #bigdoc-input::placeholder { color: var(--c-text-3); }
         /* 「网页标题」输入框过短：与标签同为整行宽度，左右间距一致 */
@@ -498,15 +502,20 @@
         .set-seg {
             display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px;
         }
-        .set-seg .seg {
-            font-family: inherit; font-size: var(--fs-sm); line-height: 1.4;
-            padding: 7px 14px; border-radius: var(--r); cursor: pointer;
-            border: 1px solid var(--c-border); background: #fff; color: var(--c-text-2);
-            transition: background-color .15s, border-color .15s, color .15s;
-        }
-        .set-seg .seg:hover { color: var(--c-brand); border-color: var(--c-brand); }
+        /* 1.5.0.6：分段控件接入统一按钮体系。
+           未选中项 = 白底描边（.btn--ghost，与其它普通按钮同款）；
+           选中项 = 主色蓝底（靠 [aria-checked] 覆写，语义等价于「已选中的主操作」）。
+           四态（hover / focus-visible / active / disabled）全部由按钮体系提供，此处不重复定义。 */
         .set-seg .seg[aria-checked="true"] {
             background: var(--c-brand); color: #fff; border-color: var(--c-brand);
+        }
+        .set-seg .seg[aria-checked="true"]:hover:not(:disabled) { background: var(--c-brand-hover); }
+        .set-seg .seg[aria-checked="true"]:active:not(:disabled) {
+            background: var(--c-brand-hover); transform: translateY(1px);
+        }
+        /* 未选中项按下时也给反馈（.btn:active 已覆盖 transform，此处仅补背景还原） */
+        .set-seg .seg[aria-checked="false"]:active:not(:disabled) {
+            background: var(--c-btn-ghost-bg); color: var(--c-brand);
         }
         .set-toggle input { accent-color: var(--c-brand); width: 14px; height: 14px; margin: 3px 0 0; flex: 0 0 auto; }
         .set-num { margin: 12px 0; }
@@ -1014,9 +1023,9 @@
                 <div class="set-sub">
                     <h3>渲染模式</h3>
                     <div class="set-seg" id="set-render-mode" role="radiogroup" aria-label="默认渲染模式">
-                        <button type="button" class="btn btn--primary seg" data-v="auto" role="radio" aria-checked="true">自动（推荐）</button>
-                        <button type="button" class="btn btn--primary seg" data-v="rich" role="radio" aria-checked="false">始终富文本</button>
-                        <button type="button" class="btn btn--primary seg" data-v="raw" role="radio" aria-checked="false">始终纯文本</button>
+                        <button type="button" class="btn btn--ghost seg" data-v="auto" role="radio" aria-checked="true">自动（推荐）</button>
+                        <button type="button" class="btn btn--ghost seg" data-v="rich" role="radio" aria-checked="false">始终富文本</button>
+                        <button type="button" class="btn btn--ghost seg" data-v="raw" role="radio" aria-checked="false">始终纯文本</button>
                     </div>
                     <p class="sub" id="set-render-mode-desc"></p>
                     <p class="sub">本项保存后长期生效，对所有文档生效。超大文档的读写表现，与使用的设备和浏览器性能强相关。若本应用运行在性能较弱的设备或浏览器上，建议优先选用「自动」或「始终纯文本」模式。若只想临时切换<b>当前编辑的大文档</b>的渲染模式，请用顶栏右上角的「纯文本 / 富文本」切换按钮——该按钮仅在打开大文档时出现，切换只在本次会话有效，刷新后行为即回到本设置。</p>
@@ -1284,15 +1293,15 @@
      ESC 栈中排第一位（与 confirm 同级，后开先关）。 -->
 <div id="bigdoc-mask" class="modal-mask">
     <div class="modal-card" style="width:440px;">
-        <h2>文档较大，打开需确认</h2>
-        <p class="sub sub-warn" id="bigdoc-msg"></p>
-        <p class="sub">若确实需要打开，请<b>原样输入下方的文档名</b>后点击「仍然打开」：</p>
+        <h2 id="bigdoc-title">请确认</h2>
+        <p class="sub" id="bigdoc-msg"></p>
+        <p class="sub" id="bigdoc-label"></p>
         <p class="sub" style="margin:6px 0 4px;font-weight:600;word-break:break-all;" id="bigdoc-name"></p>
         <input type="text" id="bigdoc-input" class="set-input" autocomplete="off" spellcheck="false"
-               onpaste="return false" placeholder="在此输入文档名">
+               onpaste="return false" placeholder="在此输入文件名">
         <p class="sub" id="bigdoc-hint" style="margin-top:6px;"></p>
         <div class="set-foot">
-            <button class="btn btn--ghost" id="bigdoc-ok" disabled>仍然打开</button>
+            <button class="btn btn--ghost" id="bigdoc-ok" disabled>确认</button>
             <button class="btn btn--primary" id="bigdoc-cancel">取消</button>
         </div>
     </div>
@@ -2471,7 +2480,19 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     }
     function closeDocInfo() { document.getElementById('doc-info-mask').style.display = 'none'; }
     function deleteCurrentDoc() {
-        showConfirm('删除文档', '确定删除「' + (currentPath || '') + '」及其全部历史版本吗？此操作不可恢复！', () => {
+        const nm = String(currentPath || '').split('/').pop() || String(currentPath || '');
+        // 1.5.0.6：删除是不可逆的破坏性操作，改用**强确认**——
+        // 须原样输入文档名才放行（从「打开超大文档」平移而来，那边已降级为普通确认）。
+        // 亲手敲一遍文件名，是「我真的要删这个」的最后一道保险；
+        // 且输入框禁止粘贴，防止复制文件名直接粘来绕过。
+        showTypedConfirm({
+            title: '删除文档',
+            msg: '即将删除「' + nm + '」及其全部历史版本。此操作不可恢复！',
+            label: '请原样输入下方的文件名后点击「删除」：',
+            name: nm,
+            okText: '删除',
+            danger: true
+        }, () => {
             fetch('/api/doc/delete', { method: 'POST', headers: {'Content-Type':'application/json'},
                 body: JSON.stringify({ root: currentRoot, path: currentPath }) })
                 .then(r => r.json()).then(d => {
@@ -2596,23 +2617,29 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         return 'document';
     }
 
-    // ---------- 1.5.0 超大文档（>10MB）打开门禁 ----------
-    // 超过 BIG_DOC_BYTES 的文档，打开前须原样输入文档名才放行。
-    // 为什么用「强确认」而非普通二次确认：这类文档用富文本打开极易长时间无响应，
-    // 误点的代价是浏览器标签页假死、用户以为应用崩了；要求输入文件名可有效阻断误触，
-    // 而对确实要编辑大文件的人只多打几个字。
+    // ---------- 超大文档（>10MB）体积阈值 ----------
+    // 1.5.0 起用于「打开超大文档前提示」；1.5.0.6 起该提示已降级为普通二次确认
+    // （强确认平移给了「删除文档」）。
     const BIG_DOC_BYTES = 10 * 1024 * 1024;
-    let _bigDocCb = null;         // 通过门禁后的回调
-    let _bigDocName = '';         // 期望输入的文档名
-    function showBigDocGate(name, bytes, onPass) {
+
+    /* ---------- 通用「输入文件名」强确认（1.5.0.6） ----------
+     * 用于不可逆的破坏性操作，目前只有「删除文档」。
+     * 设计：用户必须原样输入目标文件名才放行——亲手敲一遍文件名，
+     * 是「我真的要删这个」的最后一道确认。且**禁止粘贴**，
+     * 防止从别处复制文件名直接粘来绕过。 */
+    let _bigDocCb = null;         // 通过确认后的回调
+    let _bigDocName = '';         // 期望输入的文件名
+    function showTypedConfirm(opts, onPass) {
         _bigDocCb = onPass || null;
-        _bigDocName = name || '';
+        _bigDocName = (opts && opts.name) || '';
+        document.getElementById('bigdoc-title').textContent = (opts && opts.title) || '请确认';
+        document.getElementById('bigdoc-msg').textContent = (opts && opts.msg) || '';
+        document.getElementById('bigdoc-label').textContent = (opts && opts.label) || '';
         document.getElementById('bigdoc-name').textContent = _bigDocName;
-        document.getElementById('bigdoc-msg').innerHTML =
-            '<b>⚠️ 风险自负</b>：该文档体积为 <b>' + fmtSize(bytes) + '</b>，'
-            + '已超过 <b>10 MB</b>。用富文本渲染打开时，浏览器<b>可能长时间卡顿甚至无响应</b>，'
-            + '期间界面会看起来没有反应。建议先在顶栏切换为<b>纯文本模式</b>再编辑；'
-            + '若坚持用当前默认方式打开，开发者不对由此产生的任何数据损失与损坏承担责任。';
+        const ok = document.getElementById('bigdoc-ok');
+        ok.textContent = (opts && opts.okText) || '确认';
+        // 破坏性操作用红底危险按钮，普通强确认用白底次按钮
+        ok.className = 'btn ' + ((opts && opts.danger) ? 'btn--danger' : 'btn--ghost');
         const inp = document.getElementById('bigdoc-input');
         inp.value = '';
         document.getElementById('bigdoc-hint').textContent = '';
@@ -2624,33 +2651,50 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         document.getElementById('bigdoc-mask').style.display = 'none';
         _bigDocCb = null; _bigDocName = '';
     }
-    // 输入与文档名完全一致才放行（严格相等，区分大小写：文件名本身区分）
+    // 输入与文件名完全一致才放行（严格相等，区分大小写：文件名本身区分）
     function checkBigDocInput() {
         const inp = document.getElementById('bigdoc-input');
         const ok = document.getElementById('bigdoc-ok');
         const hint = document.getElementById('bigdoc-hint');
         const match = (inp.value || '') === _bigDocName && _bigDocName !== '';
         ok.disabled = !match;
-        if (!match && inp.value) hint.textContent = '与文档名不一致，请原样输入';
+        if (!match && inp.value) hint.textContent = '与文件名不一致，请原样输入';
         else hint.textContent = '';
+    }
+
+    /* ---------- 超过 10MB 的文档：普通二次确认（1.5.0.6） ----------
+     * 只提示风险、不要求输入文件名。确认后**强制以纯文本模式打开**——
+     * 超大文档走富文本渲染几乎必然卡死，这样比让用户自己再切一次更稳妥。 */
+    function showBigDocConfirm(bytes, onPass) {
+        showConfirm(
+            '文档较大，打开需确认',
+            '⚠️ 风险自负：该文档体积为 ' + fmtSize(bytes) + '，已超过 10 MB。'
+            + '打开时，浏览器可能长时间卡顿甚至无响应。\n\n'
+            + '打开后，默认以纯文本模式渲染，且浏览器可能会长时间无响应。'
+            + '富文本模式此时几乎无法正常使用，强烈不建议切换为富文本模式。\n\n'
+            + '如坚持打开，开发者不对由此产生的任何数据损失与损坏承担责任。',
+            onPass);
     }
 
     // ---------- 打开 / 新建 / 保存 ----------
     // knownSize：列表点击时随 size 一并传入（1.5.0），用于超大文档门禁的前置拦截，
     // 避免「先下载十几兆再问要不要打开」。缺省（undefined）表示未知，此时读到正文后再判。
     function openFile(root, path, knownSize) {
-        // 1.5.0：超过 10MB 的文档先过门禁——须原样输入文档名才放行。
-        // 这是「前置拦截」而非事后补救：knownSize 来自列表接口的 os.stat，
+        // 1.5.0.6：超过 10MB 的文档改为**普通二次确认**（仅提示，无需输入文件名）。
+        // 强确认（需原样输入文档名）已平移到「信息 → 删除文档」—— 删除是不可逆的
+        // 破坏性操作，比「打开」更需要这道防线；打开只需让用户知情即可。
+        // 这仍是「前置拦截」：knownSize 来自列表接口的 os.stat，
         // 因此在**传输正文之前**就拦下，不浪费带宽也不会让浏览器先卡住。
-        // passed=true 表示已通过门禁（用于放行兜底分支，避免对同一文件重复弹窗）。
-        const nm = String(path).split('/').pop() || String(path);
+        // passed=true 表示已确认过（用于放行兜底分支，避免对同一文件重复弹窗）。
         if (typeof knownSize === 'number' && knownSize > BIG_DOC_BYTES) {
-            showBigDocGate(nm, knownSize, () => doOpenFile(root, path, knownSize, true));
+            showBigDocConfirm(knownSize, () => doOpenFile(root, path, knownSize, true));
             return;
         }
         doOpenFile(root, path, knownSize, false);
     }
     function doOpenFile(root, path, knownSize, passed) {
+        // forceRaw（1.5.0.6）：用户已确认要打开超大文档 → 强制纯文本渲染。
+        // 即便设置里选了「始终富文本」，超大文档也走纯文本——此时富文本几乎必然卡死。
         const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
         fetch('/api/file?root=' + encodeURIComponent(root) + '&path=' + encodeURIComponent(path))
             .then(r => r.json()).then(d => {
@@ -2661,8 +2705,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 // 在此读到正文后再拦一次；已通过门禁的（passed）不重复弹窗。
                 const bytes = byteLength(content);
                 if (!passed && bytes > BIG_DOC_BYTES) {
-                    const nm = String(d.name || path).split('/').pop() || String(path);
-                    showBigDocGate(nm, bytes, () => doOpenFile(root, path, bytes, true));
+                    showBigDocConfirm(bytes, () => doOpenFile(root, path, bytes, true));
                     return;
                 }
                 currentRoot = d.root; currentPath = d.path; dirty = false;
@@ -2676,7 +2719,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 // 口径 = 临时态 > 持久化默认行为（auto 时再按文档大小自动分级）。
                 // 1.5.0：先记录 docBaseBytes，让纯文本判定与顶栏按钮显隐共用同一把尺子。
                 docBaseBytes = bytes;
-                const wantRaw = decideRenderMode(bytes) === 'raw';
+                const wantRaw = (passed && bytes > BIG_DOC_BYTES)
+                    ? true
+                    : decideRenderMode(bytes) === 'raw';
                 const modeChanged = wantRaw !== rawMode;
                 if (wantRaw) {
                     if (!rawMode) {

@@ -65,6 +65,47 @@ check('白底按钮底色用 --c-btn-ghost-bg（深色下切为近背景色）',
 check('ghost hover 底色保持不变（不染蓝）',
   /background:\s*var\(--c-btn-ghost-bg\)/.test(hoverBlock), hoverBlock.slice(0, 200));
 
+// ---------- 1.5.0.6：10MB 门禁降级 + 强确认平移到删除 + 渲染模式分段控件 ----------
+console.log('== 10MB 打开确认 / 删除强确认 / 渲染模式分段==');
+const bdBlock = (html.match(/<div id="bigdoc-mask"[\s\S]*?<\/div>\s*<\/div>/) || [''])[0];
+
+// ① 10MB 打开改为普通二次确认（复用 confirm-mask，不再要求输入文件名）
+check('10MB 打开改用 showConfirm（普通二次确认）',
+  /function showBigDocConfirm\(bytes, onPass\)/.test(code)
+  && /showConfirm\(\s*\n?\s*'文档较大，打开需确认'/.test(code));
+check('10MB 确认文案含「默认以纯文本模式渲染」',
+  /默认以纯文本模式渲染/.test(code));
+check('10MB 确认文案含「强烈不建议切换为富文本模式」',
+  /强烈不建议切换为富文本模式/.test(code));
+check('10MB 确认文案含风险自负与免责',
+  /⚠️ 风险自负/.test(code) && /开发者不对由此产生的任何数据损失与损坏承担责任/.test(code));
+check('openFile 不再调用 showBigDocGate（强确认已移走）',
+  !/openFile[\s\S]{0,400}showBigDocGate\(/.test(code));
+check('确认后强制纯文本渲染（forceRaw）',
+  /passed && bytes > BIG_DOC_BYTES/.test(code) && /\? true\s*:/.test(code));
+
+// ② 强确认平移到删除文档
+check('删除文档改用 showTypedConfirm（强确认）',
+  /function deleteCurrentDoc\(\)[\s\S]{0,500}showTypedConfirm\(/.test(code));
+check('删除确认要求原样输入文件名', /name:\s*nm,/.test(code) && /okText:\s*'删除'/.test(code));
+check('删除确认按钮为危险色（danger: true）', /danger:\s*true/.test(code));
+check('强确认组件支持 danger 态切换按钮类',
+  /\(opts && opts\.danger\)\s*\?\s*'btn--danger'\s*:\s*'btn--ghost'/.test(code));
+check('删除仍走原接口 /api/doc/delete', /\/api\/doc\/delete/.test(code));
+check('强确认输入框仍禁止粘贴', /id="bigdoc-input"[^>]*onpaste="return false"/.test(html));
+
+// ③ 渲染模式分段控件接入统一体系
+const segBlock = (html.match(/<div class="set-seg"[\s\S]*?<\/div>/) || [''])[0];
+check('渲染模式三个按钮均为 btn--ghost（未选中白底）',
+  (segBlock.match(/btn btn--ghost seg/g) || []).length === 3, segBlock);
+check('渲染模式按钮已摘掉 btn--primary',
+  !/btn--primary seg/.test(segBlock));
+const segCss = (CSS.match(/\.set-seg \.seg\[aria-checked="true"\][\s\S]*?\n\s*\}/) || [''])[0];
+check('渲染模式选中项为主色蓝底', /background:\s*var\(--c-brand\)/.test(segCss));
+check('渲染模式选中项 hover 加深', /aria-checked="true"\]:hover/.test(CSS));
+check('渲染模式样式已删除旧的裸 .seg 定义',
+  !/\.set-seg \.seg \{[^}]*background:\s*#fff/.test(CSS));
+
 // ---------- 静态断言：体积标注移除 ----------
 console.log('== 列表体积标注 ==');
 check('移除 .fsize 样式', !/#file-list li \.fsize/.test(code));

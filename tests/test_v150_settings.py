@@ -420,9 +420,14 @@ check("前端轮询进度", "function pollBackup()" in idx)
 check("进度条含 indeterminate 态（总量未知时也在动）", "indeterminate" in idx)
 check("完成后才触发下载", "a.href = '/api/backup/file'" in idx)
 
-print("\n[13] 超大文档（>10MB）打开门禁")
+print("\n[13] 超大文档（>10MB）打开确认")
 check("定义 10MB 阈值", "const BIG_DOC_BYTES = 10 * 1024 * 1024;" in idx)
-check("强确认：须原样输入文档名", "showBigDocGate" in idx and "checkBigDocInput" in idx)
+# 1.5.0.6：强确认（输入文件名）已平移到「删除文档」，打开改为普通二次确认
+check("打开确认：复用 showConfirm（普通二次确认）",
+      "function showBigDocConfirm(bytes, onPass)" in idx)
+check("强确认组件：showTypedConfirm（供删除文档使用）",
+      "function showTypedConfirm(opts, onPass)" in idx)
+check("强确认：须原样输入文件名", "checkBigDocInput" in idx)
 check("输入一致前按钮禁用", "ok.disabled = !match;" in idx)
 check("放行时再做一次防御性校验",
       re.search(r"if \(\(document\.getElementById\('bigdoc-input'\)\.value \|\| ''\) !== _bigDocName\) return;", idx) is not None)
@@ -438,12 +443,11 @@ check("拦截发生在传输正文之前（用列表已知 size）",
 check("未知体积时兜底再拦一次（passed 防重复弹窗）",
       "if (!passed && bytes > BIG_DOC_BYTES)" in idx)
 check("已注册进 ESC 栈", "'bigdoc-mask'" in idx)
-check("门禁对话框：取消=primary 且在左",
-      re.search(r'id="bigdoc-cancel"[^>]*', idx) is not None
-      and 'btn--primary" id="bigdoc-cancel"' in idx
+check("强确认框：确认在左、取消在右（与二次确认规范一致）",
+      re.search(r'id="bigdoc-ok"[^>]*', idx) is not None
+      and 'btn--ghost" id="bigdoc-ok"' in idx
       and idx.index('id="bigdoc-ok"') < idx.index('id="bigdoc-cancel"'))
-check("门禁对话框：仍然打开=ghost（白底次按钮）",
-      'btn--ghost" id="bigdoc-ok"' in idx)
+check("强确认框：取消=primary（蓝底）", 'btn--primary" id="bigdoc-cancel"' in idx)
 check("门禁输入框复用通用文本框类（.set-input）",
       'id="bigdoc-input" class="set-input"' in idx)
 check("门禁弹窗含风险自负与免责表述",
