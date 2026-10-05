@@ -11,6 +11,7 @@
 """
 import os, sys, io, re, json, time, socket, tempfile, subprocess, shutil
 import urllib.request, urllib.error
+import http.client as _hc
 
 # 本文件位于 tests/ 下，仓库根为其上一级目录
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -185,11 +186,81 @@ st, d, _, _ = req("POST", "/api/folders",
 check("folders remove 移除分区", st == 200 and "tmp" not in [r.get("id") for r in d.get("roots", [])], (st, d))
 
 # ---------- 6) 备份导出 ----------
-st, raw, hdrs, _ = req("GET", "/api/backup", cookie=cookie, raw=True)
+# 1.5.0：备份改为「启动后台任务 → 轮询进度 → 完成后下载」三段式。
+# 旧断言（/api/backup 直接返回 gzip 流）已不适用——该接口现在**立即返回 job 信息**，
+# 真实文件从 /api/backup/file 下载。此处按新契约完整走一遍全流程，
+# 并额外验证「下载后临时文件被删除」这一用户自查提出的诉求。
+st, d, _, _ = req("GET", "/api/backup", cookie=cookie)
+check("backup 启动返回 ok（1.5.0 异步任务）", st == 200 and d.get("ok") is True, (st, d))
+
+# 轮询直到 done（打包很快，给足超时；每 50ms 一次）
+_got = {}
+for _i in range(200):
+    st, d, _, _ = req("GET", "/api/backup/status", cookie=cookie)
+    _got = d
+    if d.get("state") in ("done", "error"):
+        break
+    time.sleep(0.05)
+check("backup/status 终态为 done", _got.get("state") == "done", _got)
+check("backup/status 含进度字段（供前端算百分比）",
+      all(k in _got for k in ("files", "bytes", "total", "totalBytes", "percent")), _got)
+check("backup/status 进度非负且 total>0", _got.get("total", 0) > 0
+      and _got.get("files", -1) >= 0 and _got.get("bytes", -1) >= 0, _got)
+
+# 下载真实文件
+# 关键回归（1.5.0）：下载后临时文件必须被删除。
+# 用**增量**断言而非「目录里一个都不该有」——开发机上可能存在其它来源的旧残留，
+# 那样断言会假红。真正要验的是「本次导出的文件有没有留下」。
+_TMPDIR = tempfile.gettempdir()
+_before = set(x for x in os.listdir(_TMPDIR) if x.startswith("vditor-backup-"))
+
+st, raw, hdrs, _ = req("GET", "/api/backup/file", cookie=cookie, raw=True,
+                       headers={"Connection": "close"})
 is_gzip = raw[:2] == b"\x1f\x8b"
 cd = hdrs.get("Content-Disposition") or ""
-check("backup 返回 gzip 流", st == 200 and is_gzip, (st, len(raw)))
-check("backup 强制下载（attachment）", "attachment" in cd, cd)
+check("backup/file 返回 gzip 流", st == 200 and is_gzip, (st, len(raw)))
+check("backup/file 强制下载（attachment）", "attachment" in cd, cd)
+
+# 关键回归：下载后临时文件必须被删除（1.5.0 用 finally 保证，此前会残留）。
+# 服务在子进程中运行，无法直接读其模块变量，故检查系统临时目录的**增量**——
+# 这才是「本次是否泄漏到磁盘」的真凭据。
+_after = set(x for x in os.listdir(_TMPDIR) if x.startswith("vditor-backup-"))
+_leak = sorted(_after - _before)
+check("下载后无临时文件残留（用户自查项，finally 清理生效）", not _leak, _leak)
+# 重复下载应被拒（文件已删除，不会二次取到已删文件）。
+# 容忍 200：客户端读完响应头就断开时，服务端 copyfileobj 写失败，
+# 其 finally 里的 `_BACKUP_JOB = None` 可能尚未执行完（毫秒级竞态）。
+# 因此重试几次，只关心「最终一定不是 200」。
+_st2 = None
+for _try in range(10):
+    _c = _hc.HTTPConnection("127.0.0.1", port, timeout=15)
+    try:
+        _c.request("GET", "/api/backup/file", headers={"Cookie": cookie, "Connection": "close"})
+        _st2 = _c.getresponse().status
+    except Exception:
+        _st2 = None
+    finally:
+        try:
+            _c.close()
+        except Exception:
+            pass
+    if _st2 == 409:
+        break
+    time.sleep(0.2)
+check("重复下载被拒（文件已删除，不会二次取到已删文件）", _st2 == 409, _st2)
+
+# 取消路径：启动 → 取消 → 确认产物被丢弃（不应留在磁盘上）
+st, _, _, _ = req("GET", "/api/backup", cookie=cookie)
+for _i in range(200):
+    st, d3, _, _ = req("GET", "/api/backup/status", cookie=cookie)
+    if d3.get("state") in ("done", "error"):
+        break
+    time.sleep(0.05)
+_mid = set(x for x in os.listdir(_TMPDIR) if x.startswith("vditor-backup-"))
+req("GET", "/api/backup/status?cancel=1", cookie=cookie)
+time.sleep(0.2)
+_end = set(x for x in os.listdir(_TMPDIR) if x.startswith("vditor-backup-"))
+check("取消后产物被丢弃（无新增残留）", not (_end - _mid), sorted(_end - _mid))
 
 # ---------- 7) 设置导出含版本 ----------
 st, d, _, _ = req("GET", "/api/settings/export", cookie=cookie)

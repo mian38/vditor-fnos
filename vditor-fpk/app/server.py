@@ -46,6 +46,7 @@ import ipaddress
 import socket
 import threading
 import gzip
+import atexit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 
@@ -88,6 +89,11 @@ START_TIME = time.time()
 # 供 /api/status 如实上报。默认值仅代表「尚未启动监听」（如测试直接调接口），
 # 不可用于推断——那正是 1.5.0 要修的虚报问题。
 ACTUAL_BIND = {"host": None, "dualStack": None, "family": None}
+
+# 当前备份打包任务（1.5.0）。原先备份是「同步打包完才响应」，大备份时浏览器
+# 毫无反馈；现改为后台线程打包 + 轮询进度 + 完成后下载，本变量保存任务状态。
+# 结构：{state: running|done|error, phase, files, bytes, total, totalBytes, path, name, error}
+_BACKUP_JOB = None
 
 # ---------------- 配置 ----------------
 def load_config():
@@ -944,7 +950,11 @@ class Handler(BaseHTTPRequestHandler):
 
         全部为**只读**信息，不含任何密钥、口令或哈希；供用户排查问题。
         """
-        direct = self.client_address[0]
+        # 必须与 client_ip() 走同一套归一化，否则 via_proxy 会恒为真：
+        # 双栈监听下 IPv4 客户端的 client_address 是 '::ffff:192.168.1.5'，
+        # 而 client_ip() 返回的是已还原的 '192.168.1.5'，两者字符串永不相等，
+        # 于是**局域网直连**会被误报成「经代理」（用户实机反馈的现象）。
+        direct = normalize_client_ip(self.client_address[0])
         # 「访问来源」按**真实客户端 IP** 判定，而非 TCP 直连来源。
         # 原因（1.2.4 修复）：经内网穿透 / 反向代理访问时，TCP 直连来源是本机的
         # 内网 IP（fnOS 自身或局域网代理），用 direct 判定会把公网访问误报成
@@ -1076,6 +1086,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/backup":
             if not self._require_auth(): return
             self._api_backup()
+            return
+        if path == "/api/backup/status":
+            if not self._require_auth(): return
+            self._api_backup_status(qs)
+            return
+        if path == "/api/backup/file":
+            if not self._require_auth(): return
+            self._api_backup_file(qs)
             return
 
         if path == "/api/doc/info":
@@ -1987,48 +2005,175 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": str(e)}, 500)
 
     def _api_backup(self):
-        import tarfile as _tarfile
-        import tempfile
-        fd, tmp = tempfile.mkstemp(prefix="vditor-backup-", suffix=".tar.gz")
-        os.close(fd)
-        with _tarfile.open(tmp, mode="w:gz") as tar:
-            # ① 应用配置：配置目录下全部文件（Web 设置 / 文件夹列表 / 密码哈希 / 登录日志 / 图标等）
-            if os.path.isdir(CONFIG_DIR):
-                for nm in sorted(os.listdir(CONFIG_DIR)):
-                    fp = os.path.join(CONFIG_DIR, nm)
-                    if os.path.isfile(fp):
-                        tar.add(fp, arcname="config/" + nm)
-            # ② 各分区内容：全部 Markdown 文档 + 历史版本缓存 + 上传的图片/音频等
-            for r in DOC_ROOTS:
-                base = r["path"]
-                if not os.path.isdir(base):
-                    continue
-                for root2, dirs, names in os.walk(base):
-                    for n in names:
-                        full = os.path.join(root2, n)
+        """打包全部配置与文档为 .tar.gz 并下载。
+
+        1.5.0 起改为**后台任务 + 进度查询 + 完成后下载**三段式：
+        此前本接口是「打包完才响应」的同步阻塞式，备份很大时（GB 级）浏览器长时间
+        毫无反馈，用户会以为应用卡死或出 bug（实机反馈）。现在：
+          GET  /api/backup         → 启动后台打包，立刻返回（此路由挂在 do_GET）
+          GET  /api/backup/status  → 轮询进度（已处理文件数 / 字节数 / 阶段）；?cancel=1 丢弃产物
+          GET  /api/backup/file    → 打包完成后下载，**下载即从磁盘删除**（finally 清理）
+        临时文件改为在下载完成（或失败 / 进程退出）后由 finally 清理，
+        修复此前「客户端中途取消下载 → 临时文件残留」的问题。
+        """
+        global _BACKUP_JOB
+        if _BACKUP_JOB and _BACKUP_JOB.get("state") == "running":
+            self._send_json({"ok": False, "error": "已有备份任务正在进行中"}, 409)
+            return
+        job = {"state": "running", "files": 0, "bytes": 0, "total": 0,
+               "phase": "scanning", "name": None, "error": None}
+        _BACKUP_JOB = job
+
+        def work():
+            import tarfile as _tarfile
+            import tempfile
+            fd, tmp = tempfile.mkstemp(prefix="vditor-backup-", suffix=".tar.gz")
+            os.close(fd)
+            try:
+                # ① 先扫描一遍拿到总量，供前端算百分比（否则只有「已处理 N 个」，
+                #    用户仍不知道还剩多少——这正是「不知道要等多久」的根源）。
+                all_files = []
+                for r in DOC_ROOTS:
+                    base = r["path"]
+                    if not os.path.isdir(base):
+                        continue
+                    for root2, dirs, names in os.walk(base):
+                        for n in names:
+                            full = os.path.join(root2, n)
+                            try:
+                                rel = self._rel(base, full)
+                            except OSError:
+                                continue
+                            top = rel.split("/", 1)[0]
+                            # 收录：文档(.md)、历史版本目录、以及「文档文件夹」内的上传物（图片 / 音频等）
+                            if not (top == VERSIONS_DIRNAME or n.lower().endswith(".md")
+                                    or _in_doc_folder(base, rel)):
+                                continue
+                            try:
+                                all_files.append((base, full, rel, r["id"], os.path.getsize(full)))
+                            except OSError:
+                                continue
+                total_bytes = sum(x[4] for x in all_files)
+                # 配置目录的文件也算进总量，避免「总数对不上」的困惑
+                cfg_files = []
+                if os.path.isdir(CONFIG_DIR):
+                    for nm in sorted(os.listdir(CONFIG_DIR)):
+                        fp = os.path.join(CONFIG_DIR, nm)
+                        if os.path.isfile(fp):
+                            try:
+                                cfg_files.append((fp, os.path.getsize(fp)))
+                            except OSError:
+                                pass
+                job["total"] = len(all_files) + len(cfg_files)
+                job["totalBytes"] = total_bytes + sum(x[1] for x in cfg_files)
+                job["phase"] = "packing"
+                # ② 边打包边更新进度
+                def tick(nf, nb):
+                    job["files"] = nf
+                    job["bytes"] = nb
+                with _tarfile.open(tmp, mode="w:gz") as tar:
+                    nf = nb = 0
+                    for fp, sz in cfg_files:
                         try:
-                            rel = self._rel(base, full)
+                            tar.add(fp, arcname="config/" + os.path.basename(fp))
+                            nf += 1; nb += sz
                         except OSError:
                             continue
-                        top = rel.split("/", 1)[0]
-                        # 收录：文档(.md)、历史版本目录、以及「文档文件夹」内的上传物（图片 / 音频等）
-                        if not (top == VERSIONS_DIRNAME or n.lower().endswith(".md")
-                                or _in_doc_folder(base, rel)):
-                            continue
+                        tick(nf, nb)
+                    for base, full, rel, rid, sz in all_files:
                         try:
-                            tar.add(full, arcname="docs/%s/%s" % (r["id"], rel))
+                            tar.add(full, arcname="docs/%s/%s" % (rid, rel))
+                            nf += 1; nb += sz
                         except OSError:
                             continue
-        # 流式返回（不把整个备份包读入内存），返回后删除临时文件
-        self._send_file(tmp, {
-            "Content-Type": "application/gzip",
-            "Content-Disposition": "attachment; filename=vditor-backup-%s.tar.gz" % time.strftime("%Y%m%d-%H%M%S"),
-            "Cache-Control": "no-store",
-        })
+                        tick(nf, nb)
+                job["phase"] = "done"
+                job["name"] = os.path.basename(tmp)
+                job["path"] = tmp
+                # 1.5.0：若打包期间用户已取消（放弃下载）或已启动新任务，
+                # 本产物将无人取用——立即删除，避免 /tmp 里堆积无人认领的大文件。
+                # 这正是用户提出的「如有也应在导出后及时删除」的诉求。
+                if _BACKUP_JOB is not job or job.get("canceled"):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                    job["state"] = "canceled"
+                    job["path"] = None
+                else:
+                    # 成功终态：state 必须一并置 done，否则前端轮询见 phase=done
+                    # 但 state 仍为 running，会一直转圈到天荒地老（实测踩到）。
+                    job["state"] = "done"
+            except Exception as e:      # 打包线程绝不能因异常静默死掉——否则前端会一直转圈
+                job["state"] = "error"
+                job["error"] = str(e)
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+
+        threading.Thread(target=work, daemon=True).start()
+        self._send_json({"ok": True, "jobId": "backup"})
+
+    def _api_backup_status(self, qs):
+        """查询备份打包进度（1.5.0）。前端每 200ms 轮询一次。"""
+        job = _BACKUP_JOB
+        if not job:
+            self._send_json({"state": "idle"})
+            return
+        # 用户主动取消（前端停止轮询后显式通知）：立刻删除已生成的临时文件，
+        # 并打标记让后台线程收尾时再次确认（两者任一命中即清理）。
+        # 注意要覆盖 state==done：此刻文件已生成、只是用户放弃了下载，
+        # 同样必须删除（此前只判 running，导致「打包已完成但用户已取消」时文件残留）。
+        if qs.get("cancel") and job:
+            job["canceled"] = True
+            p = job.get("path")
+            if p:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+                job["path"] = None
+            if job.get("state") == "done":
+                job["state"] = "canceled"
+        out = {"state": job["state"], "phase": job.get("phase"),
+               "files": job.get("files", 0), "bytes": job.get("bytes", 0),
+               "total": job.get("total", 0), "totalBytes": job.get("totalBytes", 0),
+               "error": job.get("error")}
+        # 体积已知时给出百分比：前端直接用，避免自己算错
+        tb = out["totalBytes"]
+        out["percent"] = (min(99, int(out["bytes"] * 100 / tb)) if tb else 0)
+        self._send_json(out)
+
+    def _api_backup_file(self, qs):
+        """打包完成后下载。文件在**响应发送完毕后**即从磁盘删除。
+
+        用 finally 而非「发送后顺序 remove」：客户端中途取消 / 断网时
+        发送会抛异常，此前残留的临时文件将永久留在 /tmp（此前即有此泄漏）。
+        """
+        # 必须声明 global：本函数末尾要把 _BACKUP_JOB 置空，
+        # 若不声明，Python 会把整份模块级状态视为局部变量，
+        # 函数开头的读取直接抛 UnboundLocalError（连接被服务端中断 → 浏览器下载失败）。
+        global _BACKUP_JOB
+        job = _BACKUP_JOB
+        if not job or job.get("state") != "done" or not job.get("path"):
+            self._send_json({"ok": False, "error": "备份尚未就绪"}, 409)
+            return
+        tmp = job["path"]
         try:
-            os.remove(tmp)
-        except OSError:
-            pass
+            self._send_file(tmp, {
+                "Content-Type": "application/gzip",
+                "Content-Disposition": "attachment; filename=vditor-backup-%s.tar.gz" % time.strftime("%Y%m%d-%H%M%S"),
+                "Cache-Control": "no-store",
+            })
+        finally:
+            # 无论发送成功、客户端取消还是抛异常，临时文件都不留残留
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            # 清空 job，避免二次下载拿到已删除的文件
+            _BACKUP_JOB = None
 
     def _api_backup_restore(self):
         """从上传的 .tar.gz 备份一键恢复：应用配置 + 文档 + 历史版本 + 上传物（覆盖同名文件）。"""
@@ -2197,6 +2342,29 @@ def make_server(host, port, handler):
     raise OSError("无法监听端口 %d：%s" % (port, "；".join(errors)))
 
 
+def _cleanup_backup_on_exit():
+    """进程退出时清理「已生成但未被下载」的备份临时文件（1.5.0）。
+
+    为什么需要：正常路径上 _api_backup_file 的 finally 会删，
+    但若进程在下载完成前被终止（服务重启 / 停止 / 被杀），
+    finally 不会执行，产物就永久留在临时目录里。
+    实测（开发机）曾堆积数十个此类文件，故补此兜底。
+    """
+    job = _BACKUP_JOB
+    if not job:
+        return
+    p = job.get("path")
+    if p:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+    job["path"] = None
+
+
+atexit.register(_cleanup_backup_on_exit)
+
+
 def main():
     server = make_server(HOST, PORT, Handler)
     print("=" * 56)
@@ -2231,6 +2399,11 @@ def main():
     except KeyboardInterrupt:
         print("\n正在关闭...")
         server.shutdown()
+    finally:
+        # 退出前清掉未取走的备份产物。
+        # atexit 只覆盖正常退出（含 SIGTERM 导致的解释器退出），
+        # 但 SIGKILL 无法捕获——那种情况只能靠临时目录的操作系统级清理。
+        _cleanup_backup_on_exit()
 
 
 if __name__ == "__main__":

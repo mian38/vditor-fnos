@@ -59,11 +59,18 @@ for token, desc in [
     ("function exitRawMode(", "退出纯文本模式 exitRawMode()"),
     ("function toggleRawMode(", "手动切换 toggleRawMode()"),
     ("function stripMarkdown(", "Markdown 语法剥离 stripMarkdown()"),
-    ("RAW_AUTO_CHARS", "自动降级阈值 RAW_AUTO_CHARS"),
+    # 1.5.0：阈值判定口径由「字符数」改为「UTF-8 字节数」——
+    # 中文一字 3 字节，按字符判定会严重高估体积；且「1MB 文件 ≠ 100 万字符」。
+    ("RAW_AUTO_BYTES", "自动降级阈值 RAW_AUTO_BYTES（字节口径）"),
+    ("function byteLength(", "UTF-8 字节数换算 byteLength()"),
     ("COUNT_FAST_CHARS", "语法剥离上限 COUNT_FAST_CHARS"),
     ("COUNT_SAMPLE_CHARS", "采样统计阈值 COUNT_SAMPLE_CHARS"),
 ]:
     check("存在 %s" % desc, token in html)
+
+# 1.5.0：旧的字符数口径必须已彻底移除，避免两套阈值并存导致判定打架
+check("旧字符数阈值 RAW_AUTO_CHARS 已移除", "RAW_AUTO_CHARS" not in html)
+check("旧字符数变量 docBaseLen 已移除", "docBaseLen" not in html)
 
 # ---------- 3) 高开销渲染特性保持关闭 ----------
 # 代码块行号：为「每行」生成 DOM，大文件上是主要放大项之一

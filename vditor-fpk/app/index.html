@@ -38,6 +38,7 @@
             --c-brand-soft: #e8f0fe;
             --c-danger: #d73a49;
             --c-danger-hover: #b92534;
+            --c-warn: #b45309;           /* 1.5.0：警示（超大文档标记），与 danger 区分开 */
             --c-success: #237804;
             --c-info: #1a4ed8;
 
@@ -108,9 +109,21 @@
         #file-list li {
             padding: 7px 10px; border-radius: var(--r); font-size: var(--fs-md); cursor: pointer; line-height: 1.4;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--c-text);
+            display: flex; align-items: center; gap: 6px;
         }
         #file-list li:hover { background: var(--c-border-2); }
         #file-list li.active { background: var(--c-brand-soft); color: var(--c-brand-hover); font-weight: 600; }
+        /* 1.5.0：文件名 + 体积标记。flex 布局下文件名占据剩余空间并省略号截断，
+           体积标签固定在右侧不被挤压（white-space:nowrap 继承自父级 li）。 */
+        #file-list li .fname {
+            flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+        }
+        #file-list li .fsize {
+            flex: 0 0 auto; font-size: var(--fs-xs); color: var(--c-text-3); font-weight: 400;
+        }
+        /* 超大文档警示：橙色体积标签 + 左侧警示条，提示「打开需二次确认」 */
+        #file-list li.big-doc .fsize { color: var(--c-warn, #d97706); font-weight: 600; }
+        #file-list li.big-doc { box-shadow: inset 2px 0 0 var(--c-warn, #d97706); }
         #side-tip { padding: 10px 14px; font-size: var(--fs-sm); color: var(--c-text-3); border-top: 1px solid var(--c-border-2); line-height: 1.5; }
 
         /* ---------------- 主区 / 顶栏（浅色，与 Vditor 工具栏同系） ---------------- */
@@ -244,6 +257,15 @@
            而 showConfirm 用 textContent 赋值（天然转义，避免 XSS），
            故需 white-space:pre-line 才能让换行生效。 */
         #confirm-msg { white-space: pre-line; line-height: 1.65; }
+        /* 1.5.0：超大文档门禁。禁用态的「仍然打开」需明显不可用，
+           否则用户会以为点了没反应（而实际是刻意禁用）。 */
+        #bigdoc-mask #bigdoc-ok:disabled {
+            opacity: .45; cursor: not-allowed;
+            background: var(--c-border-2); color: var(--c-text-3); border-color: var(--c-border);
+        }
+        #bigdoc-mask #bigdoc-ok:not(:disabled) { background: var(--c-warn); color: #fff; border-color: var(--c-warn); }
+        #bigdoc-mask #bigdoc-ok:not(:disabled):hover { filter: brightness(1.08); }
+        #bigdoc-mask .sub-warn { line-height: 1.65; }
 
         /* ---------------- 通用控件：输入框 ---------------- */
         #login-card input,
@@ -282,6 +304,33 @@
         }
         /* 二次确认对话框：始终置顶于其它弹层（如文档信息卡）之上，避免被遮挡 */
         .modal-mask#confirm-mask { z-index: 10010; }
+        /* 1.5.0：备份导出进度遮罩。层级高于设置面板与确认框——
+           导出期间需盖住一切，避免用户以为没反应而重复点「导出」并发多个任务。 */
+        .modal-mask#backup-mask { z-index: 10030; }
+        #backup-bar {
+            height: 8px; border-radius: 4px; background: var(--c-border-2);
+            overflow: hidden; margin: 12px 0 8px;
+        }
+        #backup-bar > i {
+            display: block; height: 100%; width: 0%;
+            background: var(--c-brand); border-radius: 4px;
+            transition: width .2s ease;
+        }
+        /* 总量未知时（仍在扫描）用条纹表示「确实在动」而非假死 */
+        #backup-bar.indeterminate > i {
+            width: 35% !important;
+            animation: backup-slide 1.1s ease-in-out infinite;
+        }
+        @keyframes backup-slide {
+            0%   { transform: translateX(-100%); }
+            100% { transform: translateX(340%); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #backup-bar.indeterminate > i { animation: none; width: 100% !important; opacity: .4; }
+            #backup-bar > i { transition: none; }
+        }
+        #backup-stat { font-size: var(--fs-sm); color: var(--c-text-2); }
+        #backup-hint { font-size: var(--fs-xs); color: var(--c-text-3); margin-top: 6px; }
         .modal-card {
             background: var(--c-bg); border: 1px solid var(--c-border); border-radius: var(--r-lg);
             padding: 22px 24px; width: 520px; max-width: 92vw;
@@ -592,6 +641,7 @@
             --c-brand-soft: rgba(88,166,255,.16);
             --c-danger: #f85149;
             --c-danger-hover: #da3633;
+            --c-warn: #e3a008;           /* 1.5.0：暗色下需提亮才看得清 */
             --c-success: #3fb950;
             --c-info: #58a6ff;
 
@@ -1140,6 +1190,40 @@
     </div>
 </div>
 
+<!-- 1.5.0：备份导出进度遮罩。打包在服务端后台线程进行，此处轮询上报的进度。
+     大备份时此前浏览器毫无反馈（只会弹一个 3 秒即消失的 toast），
+     用户无从判断是在导出还是已卡死。 -->
+<div id="backup-mask" class="modal-mask">
+    <div class="modal-card" style="width:420px;">
+        <h2>正在导出备份</h2>
+        <div id="backup-bar" class="indeterminate"><i></i></div>
+        <p id="backup-stat">正在扫描文件…</p>
+        <p id="backup-hint">打包在应用后台进行，期间可继续使用其它功能；完成后将自动开始下载，请勿关闭页面。</p>
+        <div class="set-foot">
+            <button class="ghost action" id="backup-cancel">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 1.5.0：超大文档（>10MB）打开门禁。强确认——须原样输入文档名才放行，
+     避免误点直接进入一个可能长时间无响应的编辑器。
+     ESC 栈中排第一位（与 confirm 同级，后开先关）。 -->
+<div id="bigdoc-mask" class="modal-mask">
+    <div class="modal-card" style="width:440px;">
+        <h2>文档较大，打开需确认</h2>
+        <p class="sub sub-warn" id="bigdoc-msg"></p>
+        <p class="sub">若确实需要打开，请<b>原样输入下方的文档名</b>后点击「仍然打开」：</p>
+        <p class="sub" style="margin:6px 0 4px;font-weight:600;word-break:break-all;" id="bigdoc-name"></p>
+        <input type="text" id="bigdoc-input" autocomplete="off" spellcheck="false"
+               style="width:100%;box-sizing:border-box;" placeholder="在此输入文档名">
+        <p class="sub" id="bigdoc-hint" style="margin-top:6px;"></p>
+        <div class="set-foot">
+            <button class="ghost action" id="bigdoc-ok" disabled>仍然打开</button>
+            <button class="ghost action" id="bigdoc-cancel">取消</button>
+        </div>
+    </div>
+</div>
+
 <!-- 文档信息 / 删除 -->
     <div id="doc-info-mask" class="modal-mask">
         <div id="doc-info-card" class="modal-card" style="width:480px;">
@@ -1176,8 +1260,9 @@
 
                 <p class="g-h">二、纯文本模式与大文档（1.3.0 起）</p>
                 <p>富文本渲染的成本与文档的<b>块级结构数量</b>成正比，因此对话记录、日志这类「体积不大但结构极多」的文档（实测 1.4MB 含 674 个代码块、1,450 个标题）在富文本模式下打开会卡死。本应用因此引入<b>纯文本模式</b>：关闭渲染、直接编辑 Markdown 原文，<b>保存、历史版本、导出等能力全部保留</b>，仅失去排版预览。</p>
-                <p><b>自动切换</b>：打开超过约 <b>100 万字符</b>（1MB）的文档会自动进入纯文本模式，15MB 级超大文档亦可正常编辑。纯文本模式下顶栏会显示一条提示，并隐藏富文本工具栏。</p>
+                <p><b>自动切换</b>：打开体积超过约 <b>500KB</b> 的文档会自动进入纯文本模式，15MB 级超大文档亦可正常编辑。纯文本模式下顶栏会显示一条提示，并隐藏富文本工具栏。</p>
                 <p><b>顶栏切换按钮</b>：打开<b>大文档</b>时，右上角会出现「纯文本 / 富文本」按钮（打开常规小文档时该按钮隐藏）。点它可临时切换当前文档的渲染模式：<b>切回富文本时若文档过大会有二次确认</b>，因为渲染可能明显卡顿。该切换<b>只在本次会话有效、不写入配置</b>，刷新页面后即恢复。</p>
+                <p><b>超大文档打开确认（超过 10 MB）</b>：体积超过 <b>10 MB</b> 的文档，在左侧列表中会以<b>橙色体积标签</b>标出，点开时需<b>原样输入文档名</b>才能打开。这是为了防止误点后浏览器长时间无响应、看起来像应用崩了。若只是查看或编辑内容，<b>建议打开后先用顶栏的「纯文本」按钮</b>，此类文档本就不适合富文本渲染。</p>
                 <p><b>默认行为</b>：「设置 → 文件 → 渲染模式」可长期指定默认行为，三选一：<b>自动（推荐）</b>（按上述阈值自动分级）、<b>始终富文本</b>、<b>始终纯文本</b>。判定优先级为「顶栏临时切换 &gt; 默认行为 &gt; 按大小自动分级」。</p>
                 <p class="g-note">为让超大文档在纯文本模式下也能保持流畅：进入纯文本时会<b>释放富文本引擎占用的内存</b>，切回时再惰性重建；字数统计改用<b>采样估算</b>（超大文档只统计前 20 万字再按比例外推），因此顶栏字数在超大文档上是<b>估算值</b>，略有误差属正常。</p>
 
@@ -1193,6 +1278,7 @@
 
                 <p class="g-h">六、导出</p>
                 <p>顶栏「导出 .md / 导出 HTML」导出当前文档：若该文档文件夹内还有图片 / 音频等<b>其它文件</b>，会自动把整个文件夹打包为 zip 一起导出，否则只导出单文件。「设置 → 维护」里还有「导出备份（配置 + 文档）」与「导出 / 导入配置（JSON）」，用于迁移与容灾。</p>
+                <p><b>关于导出备份的耗时</b>：备份会把全部文档、历史版本与上传物打包成一个压缩包，文档多或体积大时需要较长时间。此过程在<b>应用后台进行</b>，期间会显示进度遮罩（含已打包文件数与体积、百分比），<b>可继续使用其它功能</b>，完成后将自动开始下载。请勿在下载开始前关闭页面；中途点「取消」可停止等待，本次产物不会保留在服务器上。备份文件只会下载到你的设备，应用不会额外保存一份副本。</p>
                 <p class="g-note"><b>纯文本模式下不支持「导出 HTML」</b>：HTML 导出依赖富文本渲染结果，此时会提示你先切回富文本模式，或改用「导出 .md」。</p>
 
                 <p class="g-h">七、设置</p>
@@ -1723,11 +1809,12 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     // 保存 / 历史版本 / 导出等能力全部保留，仅失去富文本实时预览。
     let rawMode = false;                                  // 当前是否处于纯文本模式
     let rawEl = null;                                     // #raw-editor 元素引用
-    // 自动进入纯文本模式的阈值（按 Markdown 原文字符数）。
-    // 1.4 时期为 30 万字符（约 300KB）：1.44MB 对话记录实测在 ir 模式下卡死，故提前规避。
-    // 1.5.0 上调到 100 万字符（约 1MB）：实测 1MB 以内的文档富文本渲染流畅，
-    // 过早降级会让大量中等文档白白失去排版预览；>1MB 仍默认纯文本。
-    const RAW_AUTO_CHARS = 1000000;
+    // 自动进入纯文本模式的阈值（按 Markdown 原文的 **UTF-8 字节数**）。
+    // 1.5.0 改为按字节判定：此前按「字符数」判定，但中文 UTF-8 一个字占 3 字节，
+    // 「1MB 的文档」远不等于「100 万字符」——按字符判定会让中文文档被严重高估体积
+    // （50 万汉字 = 150 万字符，会被误判成超大文档，而其真实体积只有 1.5MB 出头）。
+    // 1.5.0 阈值定为 500KB 字节：≤500KB 默认富文本，>500KB 默认纯文本，顶栏另给切换按钮。
+    const RAW_AUTO_BYTES = 500 * 1024;
     // 超过该字符数时，字数统计不再做全文语法剥离（改用原文估算）。
     // 实测 stripMarkdown 对 15MB 文档耗时约 78ms，对 1.4MB 约 13ms，均在可接受范围，
     // 故阈值放宽到 200 万字符（约 2MB）：2MB 以内仍做精确剥离以保证字数准确，
@@ -1740,7 +1827,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     let renderModeSetting = 'auto';   // 来自服务端的持久化默认行为
     let renderModeOnce = null;        // 临时态：'rich' / 'raw' / null（null=未设置）
     const RENDER_MODE_DESC = {
-        auto: '按文档大小自动决定：超过约 100 万字符（约 1MB）的文档自动使用纯文本模式，其余使用富文本。（推荐）',
+        auto: '按文档大小自动决定：超过约 500KB 的文档自动使用纯文本模式，其余使用富文本。（推荐）',
         rich: '始终使用富文本渲染。适合以小文档为主的场景；对超大文档可能造成浏览器长时间卡顿甚至无响应。',
         raw: '始终使用纯文本模式（不渲染，直接编辑 Markdown 原文）。打开任何文档都跳过富文本渲染，加载最快，但看不到排版效果。'
     };
@@ -1749,29 +1836,34 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         return renderModeOnce || renderModeSetting || 'auto';
     }
     // 依据「当前生效模式 + 文档大小」判定本次打开应使用哪种模式
-    function decideRenderMode(contentLen) {
+    // 注意入参是**字节数**（见 byteLength），不是字符数。
+    function decideRenderMode(bytes) {
         const m = effectiveRenderMode();
         if (m === 'raw') return 'raw';
         if (m === 'rich') return 'rich';
-        return (contentLen > RAW_AUTO_CHARS) ? 'raw' : 'rich';   // auto
+        return (bytes > RAW_AUTO_BYTES) ? 'raw' : 'rich';   // auto
     }
-    // 1.5.0：当前文档的「基准长度」——打开时读到的 Markdown 原文字符数。
+    // 1.5.0：当前文档的「基准体积」——打开时读到的 Markdown 原文 UTF-8 **字节数**。
     //
-    // 为什么需要它：此前「是否进纯文本」用打开时的 content.length（Markdown 原文），
+    // 为什么按字节而非字符数：中文 UTF-8 一个字占 3 字节，按字符判定会严重高估体积
+    // （50 万汉字 = 150 万字符，体积其实只有 1.5MB 出头，却被当成超大文档）。
+    // 用户亦明确指出「1MB 的 md 文件并不一定约 100 万字符」，故口径统一为字节。
+    //
+    // 为什么需要这个变量：此前「是否进纯文本」用打开时的原文长度，
     // 而顶栏按钮显隐用 getContent().length。两者虽同为原文，但在 Vditor 未就绪时
     // getContent() 返回空串（1.4.3 修复引入的兜底），按钮会莫名消失；
     // 且用户在富文本下编辑后长度会实时变化，同一份文档的「是否算大文档」结论会飘。
     // 现统一以此变量为准：打开时写入一次，之后不再随编辑漂移，
     // 保证「进不进纯文本」与「按钮显不显示」永远得出同一结论。
-    let docBaseLen = 0;
-    const isBigDoc = () => docBaseLen > RAW_AUTO_CHARS;
+    let docBaseBytes = 0;
+    const isBigDoc = () => docBaseBytes > RAW_AUTO_BYTES;
     // 进入纯文本模式时的提示文案：说明「为什么」进入（自动 / 临时态 / 默认设置），
     // 避免用户看到模式被切换却一头雾水。
-    function wantRawReason(contentLen) {
+    function wantRawReason(bytes) {
         const m = effectiveRenderMode();
-        const size = fmtSize(contentLen);
-        if (renderModeOnce === 'raw') return '已按临时设置使用纯文本模式' + (contentLen ? '（' + size + '）' : '');
-        if (renderModeSetting === 'raw') return '已按设置「始终纯文本」使用纯文本模式' + (contentLen ? '（' + size + '）' : '');
+        const size = fmtSize(bytes);
+        if (renderModeOnce === 'raw') return '已按临时设置使用纯文本模式' + (bytes ? '（' + size + '）' : '');
+        if (renderModeSetting === 'raw') return '已按设置「始终纯文本」使用纯文本模式' + (bytes ? '（' + size + '）' : '');
         return '文件较大（' + size + '），已切换纯文本模式以保证流畅';
     }
 
@@ -1805,16 +1897,16 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     function toggleRawMode() {
         if (rawMode) {
             renderModeOnce = 'rich';
-            // 1.5.0：统一用 docBaseLen（与按钮显隐、自动降级同一口径），不再就地取长度
+            // 1.5.0：统一用 docBaseBytes（与按钮显隐、自动降级同一口径），不再就地取长度
             if (isBigDoc()) {
-                showConfirm('切回富文本', '当前文档 ' + fmtSize(docBaseLen) + '，恢复富文本渲染可能明显卡顿。确定切换吗？',
+                showConfirm('切回富文本', '当前文档 ' + fmtSize(docBaseBytes) + '，恢复富文本渲染可能明显卡顿。确定切换吗？',
                     () => { exitRawMode(); updateRawModeBtn(); });
                 return;
             }
             exitRawMode();
         } else {
             renderModeOnce = 'raw';
-            enterRawMode(docBaseLen > 0 ? ('已切换纯文本模式（' + fmtSize(docBaseLen) + '），渲染已关闭') : '已切换纯文本模式，渲染已关闭');
+            enterRawMode(docBaseBytes > 0 ? ('已切换纯文本模式（' + fmtSize(docBaseBytes) + '），渲染已关闭') : '已切换纯文本模式，渲染已关闭');
         }
         updateRawModeBtn();
     }
@@ -1827,7 +1919,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     // `initEditorAndFiles()`，导致其后的**所有**事件绑定（文档信息关闭、设置选项卡、
     // 深色模式、添加分区…）全部失效；`checkAuth` 的 catch 又会弹登录页。
     //
-    // 1.5.0：判据从「实时取内容长度」改为「打开时记录的 docBaseLen」——
+    // 1.5.0：判据从「实时取内容长度」改为「打开时记录的 docBaseBytes」——
     // 既与 decideRenderMode() 同源（不再出现「已进纯文本却看不到按钮」这类打架），
     // 又完全不再触碰 Vditor API，从根上消除上述「未就绪即抛错」的风险。
     function updateRawModeBtn() {
@@ -1841,11 +1933,19 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         } catch (e) { /* 按钮显隐属辅助功能，绝不影响主流程 */ }
     }
 
-    // 人类可读的文件规模（字数统计与提示复用）
+    // 人类可读的文件体积（入参是**字节数**，不是字符数）
+    // 1.5.0：阈值判定统一改为字节口径，故此处也只按字节格式化，
+    // 不再出现「1MB 文件 = 100 万字符」这类会误导用户的表述。
     function fmtSize(n) {
         if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(2) + ' MB';
         if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
-        return n + ' 字符';
+        return n + ' B';
+    }
+    // 字符串的 UTF-8 字节数（用于与「体积」相关的所有判定）
+    // 用 TextEncoder 而非简单乘 3：ASCII 占 1 字节、中文 3 字节、emoji 4 字节，
+    // 估算系数会把英文文档的体积高估 2/3、把 emoji 高估 25%。
+    function byteLength(s) {
+        try { return new TextEncoder().encode(s).length; } catch (e) { return (s || '').length; }
     }
 
     // 统一内容读取：纯文本模式取 textarea，否则取 Vditor
@@ -1887,7 +1987,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         }
         if (reason) toast(reason);
         // 1.4 解耦：超大文档纯文本模式足以编辑，销毁 Vditor 释放内存与后台开销
-        // 1.5.0：改用 docBaseLen 口径，避免与判定/按钮两处再各说各话
+        // 1.5.0：改用 docBaseBytes 口径，避免与判定/按钮两处再各说各话
         if (isBigDoc() && vditor) {
             destroyVditor();
         }
@@ -2377,10 +2477,26 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             } else {
                 r.files.forEach(f => {
                     const li = document.createElement('li');
-                    li.textContent = f.name; li.title = f.path;
+                    // 1.5.0：文件名与体积标签分列（flex），体积固定在右侧不被文件名挤压
+                    const nm = document.createElement('span');
+                    nm.className = 'fname'; nm.textContent = f.name;
+                    li.appendChild(nm);
+                    if (typeof f.size === 'number' && f.size >= 0) {
+                        const sz = document.createElement('span');
+                        sz.className = 'fsize';
+                        sz.textContent = fmtSize(f.size);
+                        li.appendChild(sz);
+                    }
+                    li.title = f.path + (typeof f.size === 'number' ? '（' + fmtSize(f.size) + '）' : '');
                     li.dataset.root = f.root; li.dataset.path = f.path;
                     if (f.root === currentRoot && f.path === currentPath) li.classList.add('active');
-                    li.addEventListener('click', () => openFile(f.root, f.path));
+                    // 1.5.0：超过 BIG_DOC_BYTES 的文档在列表里就给出警示，
+                    // 让用户在点开之前就知道「这个打开要二次确认、可能卡」。
+                    if (typeof f.size === 'number' && f.size > BIG_DOC_BYTES) {
+                        li.classList.add('big-doc');
+                        sz.title = '超大文档：打开需二次确认，渲染可能明显卡顿';
+                    }
+                    li.addEventListener('click', () => openFile(f.root, f.path, f.size));
                     ul.appendChild(li);
                 });
             }
@@ -2413,13 +2529,75 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         return 'document';
     }
 
+    // ---------- 1.5.0 超大文档（>10MB）打开门禁 ----------
+    // 超过 BIG_DOC_BYTES 的文档，打开前须原样输入文档名才放行。
+    // 为什么用「强确认」而非普通二次确认：这类文档用富文本打开极易长时间无响应，
+    // 误点的代价是浏览器标签页假死、用户以为应用崩了；要求输入文件名可有效阻断误触，
+    // 而对确实要编辑大文件的人只多打几个字。
+    const BIG_DOC_BYTES = 10 * 1024 * 1024;
+    let _bigDocCb = null;         // 通过门禁后的回调
+    let _bigDocName = '';         // 期望输入的文档名
+    function showBigDocGate(name, bytes, onPass) {
+        _bigDocCb = onPass || null;
+        _bigDocName = name || '';
+        document.getElementById('bigdoc-name').textContent = _bigDocName;
+        document.getElementById('bigdoc-msg').innerHTML =
+            '<b>⚠️ 风险自负</b>：该文档体积为 <b>' + fmtSize(bytes) + '</b>，'
+            + '已超过 <b>10 MB</b>。用富文本渲染打开时，浏览器<b>可能长时间卡顿甚至无响应</b>，'
+            + '期间界面会看起来没有反应。建议先在顶栏切换为<b>纯文本模式</b>再编辑；'
+            + '若坚持用当前默认方式打开，开发者不对由此产生的任何数据损失与损坏承担责任。';
+        const inp = document.getElementById('bigdoc-input');
+        inp.value = '';
+        document.getElementById('bigdoc-hint').textContent = '';
+        document.getElementById('bigdoc-ok').disabled = true;
+        document.getElementById('bigdoc-mask').style.display = 'flex';
+        setTimeout(() => { try { inp.focus(); } catch (e) {} }, 30);
+    }
+    function closeBigDocGate() {
+        document.getElementById('bigdoc-mask').style.display = 'none';
+        _bigDocCb = null; _bigDocName = '';
+    }
+    // 输入与文档名完全一致才放行（严格相等，区分大小写：文件名本身区分）
+    function checkBigDocInput() {
+        const inp = document.getElementById('bigdoc-input');
+        const ok = document.getElementById('bigdoc-ok');
+        const hint = document.getElementById('bigdoc-hint');
+        const match = (inp.value || '') === _bigDocName && _bigDocName !== '';
+        ok.disabled = !match;
+        if (!match && inp.value) hint.textContent = '与文档名不一致，请原样输入';
+        else hint.textContent = '';
+    }
+
     // ---------- 打开 / 新建 / 保存 ----------
-    function openFile(root, path) {
+    // knownSize：列表点击时随 size 一并传入（1.5.0），用于超大文档门禁的前置拦截，
+    // 避免「先下载十几兆再问要不要打开」。缺省（undefined）表示未知，此时读到正文后再判。
+    function openFile(root, path, knownSize) {
+        // 1.5.0：超过 10MB 的文档先过门禁——须原样输入文档名才放行。
+        // 这是「前置拦截」而非事后补救：knownSize 来自列表接口的 os.stat，
+        // 因此在**传输正文之前**就拦下，不浪费带宽也不会让浏览器先卡住。
+        // passed=true 表示已通过门禁（用于放行兜底分支，避免对同一文件重复弹窗）。
+        const nm = String(path).split('/').pop() || String(path);
+        if (typeof knownSize === 'number' && knownSize > BIG_DOC_BYTES) {
+            showBigDocGate(nm, knownSize, () => doOpenFile(root, path, knownSize, true));
+            return;
+        }
+        doOpenFile(root, path, knownSize, false);
+    }
+    function doOpenFile(root, path, knownSize, passed) {
         const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
         fetch('/api/file?root=' + encodeURIComponent(root) + '&path=' + encodeURIComponent(path))
             .then(r => r.json()).then(d => {
                 if (d.error) { toast('打开失败：' + d.error); return; }
                 const content = d.content || '';
+                // 1.5.0：体积一律按 UTF-8 **字节数**判定（阈值与文案都已是字节口径）。
+                // 兜底门禁：knownSize 未知/偏小时（如从历史记录等非列表入口打开），
+                // 在此读到正文后再拦一次；已通过门禁的（passed）不重复弹窗。
+                const bytes = byteLength(content);
+                if (!passed && bytes > BIG_DOC_BYTES) {
+                    const nm = String(d.name || path).split('/').pop() || String(path);
+                    showBigDocGate(nm, bytes, () => doOpenFile(root, path, bytes, true));
+                    return;
+                }
                 currentRoot = d.root; currentPath = d.path; dirty = false;
                 syncUploadExtra();
                 setCurName(d.name);
@@ -2429,13 +2607,13 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 });
                 // 渲染模式判定（1.4.1）：由 decideRenderMode() 统一决定，
                 // 口径 = 临时态 > 持久化默认行为（auto 时再按文档大小自动分级）。
-                // 1.5.0：先记录 docBaseLen，让纯文本判定与顶栏按钮显隐共用同一把尺子。
-                docBaseLen = content.length;
-                const wantRaw = decideRenderMode(content.length) === 'raw';
+                // 1.5.0：先记录 docBaseBytes，让纯文本判定与顶栏按钮显隐共用同一把尺子。
+                docBaseBytes = bytes;
+                const wantRaw = decideRenderMode(bytes) === 'raw';
                 const modeChanged = wantRaw !== rawMode;
                 if (wantRaw) {
                     if (!rawMode) {
-                        enterRawMode(wantRawReason(content.length), content.length);
+                        enterRawMode(wantRawReason(bytes), bytes);
                     }
                 } else if (rawMode) {
                     leaveRawMode();
@@ -2449,7 +2627,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                     scheduleCounter();
                     if (wantRaw) {
                         const t1 = (window.performance && performance.now) ? performance.now() : Date.now();
-                        toast('已载入 ' + fmtSize(content.length) + '（纯文本模式），耗时 ' + Math.round(t1 - t0) + ' ms');
+                        toast('已载入 ' + fmtSize(bytes) + '（纯文本模式），耗时 ' + Math.round(t1 - t0) + ' ms');
                     }
                 };
                 if (window.requestAnimationFrame) requestAnimationFrame(() => requestAnimationFrame(fill));
@@ -2808,12 +2986,79 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     }
 
     // ---------- 备份导出 / 导入（一键恢复）----------
+    // 1.5.0：改为「启动 → 轮询进度 → 完成后下载」三段式。
+    // 此前是 <a download> 直连 /api/backup，浏览器只知道「开始下载了」，
+    // 而服务端要等全部打包完才响应——备份大时长达数分钟毫无反馈，
+    // 用户会以为应用卡死或出 bug（实机反馈）。现由遮罩 + 进度条实时告知。
+    let _backupPoll = null;        // 轮询定时器
+    let _backupCanceled = false;   // 用户主动取消标记
+    function closeBackupMask() {
+        const m = document.getElementById('backup-mask');
+        if (m) m.style.display = 'none';
+        if (_backupPoll) { clearTimeout(_backupPoll); _backupPoll = null; }
+    }
+    function renderBackupProgress(d) {
+        const bar = document.getElementById('backup-bar');
+        const fill = bar.querySelector('i');
+        const stat = document.getElementById('backup-stat');
+        // 总量未就绪时走 indeterminate 条纹动画，明确表达「在动但不知道总量」
+        if (d.total > 0) {
+            bar.classList.remove('indeterminate');
+            const pct = Math.max(0, Math.min(99, d.percent || 0));
+            fill.style.width = pct + '%';
+            stat.textContent = '正在打包 ' + d.files + ' / ' + d.total + ' 个文件（' + pct + '%）　'
+                + fmtSize(d.bytes) + ' / ' + fmtSize(d.totalBytes);
+        } else {
+            bar.classList.add('indeterminate');
+            stat.textContent = '正在扫描文件…　已发现 ' + d.files + ' 个';
+        }
+    }
     function doBackup() {
-        const a = document.createElement('a');
-        a.href = '/api/backup';
-        a.download = 'vditor-backup.tar.gz';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        toast('正在导出备份…');
+        _backupCanceled = false;
+        const mask = document.getElementById('backup-mask');
+        mask.style.display = 'flex';
+        document.getElementById('backup-bar').classList.add('indeterminate');
+        document.getElementById('backup-stat').textContent = '正在启动打包…';
+        fetch('/api/backup')
+            .then(r => r.json()).then(d => {
+                if (d.error) {
+                    closeBackupMask();
+                    if (d.error === '已有备份任务正在进行中') toast('已有备份任务在进行，请稍候');
+                    else toast('导出失败：' + (d.error || '未知错误'));
+                    return;
+                }
+                pollBackup();
+            }).catch(() => {
+                closeBackupMask();
+                toast('导出失败：无法连接服务');
+            });
+    }
+    function pollBackup() {
+        fetch('/api/backup/status')
+            .then(r => r.json()).then(d => {
+                if (_backupCanceled) return;
+                if (d.state === 'error') {
+                    closeBackupMask();
+                    toast('导出失败：' + (d.error || '未知错误'));
+                    return;
+                }
+                if (d.state === 'done') {
+                    // 打包完成，开始下载。下载走 <a download>，浏览器接管保存。
+                    closeBackupMask();
+                    const a = document.createElement('a');
+                    a.href = '/api/backup/file';
+                    a.download = 'vditor-backup.tar.gz';
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                    toast('备份已生成，已开始下载');
+                    return;
+                }
+                renderBackupProgress(d);
+                _backupPoll = setTimeout(pollBackup, 200);
+            }).catch(() => {
+                if (_backupCanceled) return;
+                closeBackupMask();
+                toast('导出失败：进度查询中断');
+            });
     }
     function restoreBackup(e) {
         const file = e.target.files && e.target.files[0];
@@ -3631,6 +3876,34 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         const cc = _confirmCancel; hideConfirm(); if (cc) cc();
     });
 
+    // 1.5.0：超大文档门禁事件。按钮在输入与文档名完全一致前保持 disabled，
+    // 这里仍做一次防御性校验——避免 disabled 状态被绕过（devtools / 键盘）导致误放行。
+    document.getElementById('bigdoc-input').addEventListener('input', checkBigDocInput);
+    document.getElementById('bigdoc-ok').addEventListener('click', () => {
+        if ((document.getElementById('bigdoc-input').value || '') !== _bigDocName) return;
+        const cb = _bigDocCb; closeBigDocGate(); if (cb) cb();
+    });
+    document.getElementById('bigdoc-cancel').addEventListener('click', closeBigDocGate);
+    // 1.5.0：备份进度遮罩的「取消」= 停止**轮询与下载**。同时通知服务端丢弃产物：
+    // 服务端已生成（或正在生成）的临时文件不应留在磁盘上无人认领。
+    // 注意不能靠「杀线程」实现——那会留下半成品文件，反而更糟。
+    document.getElementById('backup-cancel').addEventListener('click', () => {
+        _backupCanceled = true;
+        closeBackupMask();
+        try {
+            // 取消通知用 GET：三路由都挂在 do_GET 下（do_POST 走的是另一套路由表）
+            fetch('/api/backup/status?cancel=1')
+                .then(r => r.json()).then(d => {
+                    // 打包已完成但尚未下载：此时服务端会立刻删除产物
+                }).catch(() => {});
+        } catch (e) {}
+        toast('已停止等待，备份不再下载');
+    });
+    // 点击遮罩空白处也算取消（与其它弹窗的关闭习惯一致）
+    document.getElementById('bigdoc-mask').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeBigDocGate();
+    });
+
     // 浏览器端快捷键适配
     document.addEventListener('keydown', function(e) {
         // Ctrl / Cmd + S：保存（捕获阶段拦截，避免 Vditor 默认的删除线/其他行为）
@@ -3653,6 +3926,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // 若日后新增弹窗入栈，务必先用 node+vm 确认该 close 符号在顶层可见（见 test_v121.py）。
         if (e.key === 'Escape') {
             const layers = [
+                { mask: 'bigdoc-mask',    close: closeBigDocGate },
                 { mask: 'confirm-mask',   close: function () { const cc = _confirmCancel; hideConfirm(); if (cc) cc(); } },
                 { mask: 'doc-info-mask',  close: closeDocInfo },
                 { mask: 'history-mask',   close: closeHistory },

@@ -279,8 +279,25 @@ def run_once(round_no):
         check("[R%d] 移除分区生效" % round_no, st == 200, (st, d.get("ok")))
 
         # ---- 备份下载 ----
-        st, raw, ct, h, _ = req(URL + "/api/backup", cookie=cookie)
-        check("[R%d] 备份下载成功(非空 zip/json)" % round_no, st == 200 and len(raw) > 0, (st, len(raw)))
+        # 1.5.0：改为「启动 → 轮询进度 → 完成后下载」三段式，
+        # /api/backup 不再直接返回文件流（此前同步打包完才响应，大包时浏览器毫无反馈）。
+        st, d, _, _, _ = req(URL + "/api/backup", cookie=cookie)
+        d = json.loads(d) if d else {}
+        check("[R%d] 备份任务启动(立即返回,不阻塞)" % round_no,
+              st == 200 and d.get("ok") is True, (st, d.get("ok")))
+        _bd = {}
+        for _i in range(200):
+            st, d, _, _, _ = req(URL + "/api/backup/status", cookie=cookie)
+            _bd = json.loads(d) if d else {}
+            if _bd.get("state") in ("done", "error"):
+                break
+            time.sleep(0.05)
+        check("[R%d] 备份打包完成" % round_no, _bd.get("state") == "done", _bd.get("state"))
+        check("[R%d] 备份进度字段完整" % round_no,
+              all(k in _bd for k in ("files", "bytes", "total", "totalBytes", "percent")), _bd)
+        st, raw, ct, h, _ = req(URL + "/api/backup/file", cookie=cookie)
+        check("[R%d] 备份下载成功(非空 gzip)" % round_no,
+              st == 200 and len(raw) > 0, (st, len(raw)))
         check("[R%d] 备份为附件下载" % round_no, "attachment" in h.get("Content-Disposition", ""), h.get("Content-Disposition"))
 
         # ---- 文档信息 / 资产 ----

@@ -123,11 +123,11 @@ check('启动后创建 Vditor 实例', allVditorStubs.length === 1 && !allVditor
 check('_buildVditorImpl 已注入', typeof sandbox.buildVditor === 'function' && typeof sandbox.destroyVditor === 'function');
 
 // ---------- [3] 进入超大文档纯文本模式 -> 应销毁 Vditor（解耦核心） ----------
-// 1.5.0：销毁判据改用 docBaseLen（与自动降级、按钮显隐同源），
-// 故测试须先写入 docBaseLen 才能复现「打开超大文档」的真实状态。
-const BIG = '数据 '.repeat(3_000_000); // ~ 6MB，远超 RAW_AUTO_CHARS(100万)
+// 1.5.0：销毁判据改用 docBaseBytes（与自动降级、按钮显隐同源），
+// 故测试须先写入 docBaseBytes 才能复现「打开超大文档」的真实状态。
+const BIG = '数据 '.repeat(3_000_000); // ~ 6MB，远超 RAW_AUTO_BYTES(500KB)
 getEl('raw-editor').value = BIG;
-vm.runInContext('docBaseLen = ' + BIG.length + ';', sandbox);
+vm.runInContext('docBaseBytes = ' + BIG.length * 3 + ';', sandbox);
 sandbox.enterRawMode('自动进入纯文本', BIG.length);
 check('超大文档进入纯文本后销毁 Vditor', allVditorStubs[0]._destroyed === true);
 check('#vditor 容器被清空', getEl('vditor').innerHTML === '');
@@ -159,8 +159,8 @@ check('富文本模式下按钮显示「纯文本」（点击即切纯文本）'
 
 // ---------- [7] 手动切纯文本：富文本内容须被带入 textarea（不丢内容） ----------
 sandbox.setContent('手动切换保留内容测试');   // 富文本模式下写入
-// 基准长度同步改小：docBaseLen 是「打开时的文档大小」，此处模拟打开一份小文档后手动切换
-vm.runInContext('docBaseLen = 100;', sandbox);
+// 基准长度同步改小：docBaseBytes 是「打开时的文档大小」，此处模拟打开一份小文档后手动切换
+vm.runInContext('docBaseBytes = 100;', sandbox);
 sandbox.enterRawMode('手动切纯文本', 100);    // 小规模，不销毁
 check('手动切纯文本把富文本内容带入编辑框', getEl('raw-editor').value === '手动切换保留内容测试');
 
@@ -189,7 +189,7 @@ console.log('\n静态结构校验：');
 check('openFile 自动进/出纯文本后调用 updateRawModeBtn()', /updateRawModeBtn\(\);\s*\/\/\s*自动进\/出纯文本/.test(code));
 check('textarea wrap="soft"（软换行）', /id="raw-editor"[^>]*wrap="soft"/.test(html));
 check('#raw-editor CSS white-space: pre-wrap', /#raw-editor\s*\{[\s\S]*?white-space:\s*pre-wrap/.test(html));
-check('1.5.0 enterRawMode 超大时调用 destroyVditor()（判据用 docBaseLen）',
+check('1.5.0 enterRawMode 超大时调用 destroyVditor()（判据用 docBaseBytes）',
   /if \(isBigDoc\(\) && vditor\) \{\s*destroyVditor\(\);/.test(code));
 check('exitRawMode 重建走 pendingRichText + buildVditor()', /else \{ pendingRichText = text; buildVditor\(\); \}/.test(code));
 check('updateCounter 不再以 vditor 存在为前提', /if \(!rawMode && !vditor\) return;/.test(code));
@@ -202,10 +202,12 @@ function segSet(v) { vm.runInContext('renderModeSetting = ' + JSON.stringify(v) 
 function onceSet(v) { vm.runInContext('renderModeOnce = ' + (v === null ? 'null' : JSON.stringify(v)) + ';', sandbox); }
 segSet('auto');
 check('auto：小文档走富文本', sandbox.decideRenderMode(1000) === 'rich');
-// 1.5.0：阈值由 30 万字符上调至 100 万字符——300KB~1MB 的文档不再被过早降级
-check('auto：40 万字符（新阈值内）仍走富文本', sandbox.decideRenderMode(400000) === 'rich');
-check('auto：100 万字符（恰好等于阈值）仍走富文本', sandbox.decideRenderMode(1000000) === 'rich');
-check('auto：超阈值（100 万字符以上）走纯文本', sandbox.decideRenderMode(1000001) === 'raw');
+// 1.5.0：阈值口径改为**字节**（500KB），并由 30万→100万→500KB 逐步下调。
+// 注意 decideRenderMode 入参是字节数，不是字符数：中文一字 3 字节，
+// 500KB 字节 ≈ 17 万汉字，按字符判定会严重高估体积。
+check('auto：100KB 字节仍走富文本', sandbox.decideRenderMode(100 * 1024) === 'rich');
+check('auto：500KB 字节（恰好等于阈值）仍走富文本', sandbox.decideRenderMode(500 * 1024) === 'rich');
+check('auto：超阈值（500KB 字节以上）走纯文本', sandbox.decideRenderMode(500 * 1024 + 1) === 'raw');
 segSet('rich');
 check('rich：一律富文本（含超大文档）', sandbox.decideRenderMode(4000000) === 'rich');
 segSet('raw');
@@ -233,19 +235,19 @@ vm.runInContext('currentPath = null;', sandbox);
 sandbox.updateRawModeBtn();
 check('未打开文档时按钮隐藏', getEl('btn-raw-mode').hidden === true);
 vm.runInContext('currentPath = "a.md";', sandbox);
-vm.runInContext('docBaseLen = 10;', sandbox);   // 小文档
+vm.runInContext('docBaseBytes = 10;', sandbox);   // 小文档
 sandbox.updateRawModeBtn();
 check('小文档时按钮隐藏（1.4.2）', getEl('btn-raw-mode').hidden === true);
-// 1.5.0：判据改为打开时记录的 docBaseLen，编辑中不再漂移
-vm.runInContext('docBaseLen = 1200000;', sandbox);  // 超阈值大文档
+// 1.5.0：判据改为打开时记录的 docBaseBytes，编辑中不再漂移
+vm.runInContext('docBaseBytes = 1200000;', sandbox);  // 超阈值大文档
 sandbox.updateRawModeBtn();
 check('大文档时按钮显示（1.4.2）', getEl('btn-raw-mode').hidden === false);
 check('大文档按钮文案表示目标模式（当前富文本 → 显示「纯文本」）',
       getEl('btn-raw-mode').textContent === '纯文本');
-// 编辑后 docBaseLen 不变 → 按钮状态不因内容长度变化而反复显隐
-vm.runInContext('docBaseLen = 1200000;', sandbox);
+// 编辑后 docBaseBytes 不变 → 按钮状态不因内容长度变化而反复显隐
+vm.runInContext('docBaseBytes = 1200000;', sandbox);
 sandbox.updateRawModeBtn();
-check('编辑后按钮状态稳定（docBaseLen 不随内容漂移）', getEl('btn-raw-mode').hidden === false);
+check('编辑后按钮状态稳定（docBaseBytes 不随内容漂移）', getEl('btn-raw-mode').hidden === false);
 check('大文档按钮文案表示目标模式（当前富文本 → 显示「纯文本」）',
       getEl('btn-raw-mode').textContent === '纯文本');
 check('设置页临时态控件已删除', !/btn-once/.test(html));

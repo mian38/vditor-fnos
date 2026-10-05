@@ -74,7 +74,8 @@ if (typeof stripMarkdown !== 'function' || typeof countReaderWords !== 'function
 }
 
 // ---- 校验关键阈值常量存在 ----
-const need = ['RAW_AUTO_CHARS', 'COUNT_FAST_CHARS', 'enterRawMode', 'exitRawMode', 'toggleRawMode'];
+// 1.5.0：自动降级阈值口径由字符数改为 UTF-8 字节数，符号随之改名。
+const need = ['RAW_AUTO_BYTES', 'COUNT_FAST_CHARS', 'enterRawMode', 'exitRawMode', 'toggleRawMode'];
 let ok = true;
 for (const k of need) {
     const has = html.includes(k);

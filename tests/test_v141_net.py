@@ -331,7 +331,7 @@ check("1.4.2 二次确认说明与 https 直连无关",
 check("1.4.2 已删除设置页临时态按钮", "btn-once" not in idx)
 check("1.4.2 顶栏按钮初始为 hidden（仅大文档出现）",
       re.search(r'id="btn-raw-mode"[^>]*\bhidden\b', idx) is not None)
-check("1.5.0 updateRawModeBtn 按 docBaseLen 控制显隐（与自动降级同源）",
+check("1.5.0 updateRawModeBtn 按 docBaseBytes 控制显隐（与自动降级同源）",
       "b.hidden = !(currentPath && isBigDoc());" in idx)
 check("1.4.2 顶栏按钮切换即写入临时态 renderModeOnce",
       re.search(r"function toggleRawMode\(\) \{\s*if \(rawMode\) \{\s*renderModeOnce = 'rich';", idx) is not None)
@@ -394,7 +394,7 @@ check("getContent 带 try-catch 兜底",
 check("setContent 未就绪时静默跳过", "if (!vditor || !vditorReady) return;" in idx14)
 check("updateRawModeBtn 整体 try-catch 兜底",
       re.search(r"function updateRawModeBtn\(\) \{[\s\S]*?try \{[\s\S]*?\} catch \(e\) \{", idx14) is not None)
-check("1.5.0 updateRawModeBtn 不再触碰 Vditor API（改用 docBaseLen，根除未就绪抛错）",
+check("1.5.0 updateRawModeBtn 不再触碰 Vditor API（改用 docBaseBytes，根除未就绪抛错）",
       "else if (vditorReady && vditor) len = (getContent() || '').length;" not in idx14
       and "b.hidden = !(currentPath && isBigDoc());" in idx14)
 check("exitRawMode 不再直调 vditor.setValue（改走 setContent 守卫）",

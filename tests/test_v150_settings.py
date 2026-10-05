@@ -134,17 +134,30 @@ check("/api/status 上报 autosaveEnabled", '"autosaveEnabled": bool(SETTINGS.ge
 check("应用状态新增「自动保存」行", "kv(dl, '自动保存'," in idx)
 check("自动保存关闭时间隔显示为「—」", "—（自动保存未开启）" in idx)
 
-print("\n[5] #4 渲染阈值 1MB + 判定口径统一")
-check("阈值上调为 100 万字符", "const RAW_AUTO_CHARS = 1000000;" in idx)
-check("三态说明文案同步为 100 万字符", "超过约 100 万字符（约 1MB）" in idx)
-check("使用指南同步为 100 万字符", "打开超过约 <b>100 万字符</b>（1MB）" in idx)
-check("引入 docBaseLen 统一口径", "let docBaseLen = 0;" in idx)
-check("提供 isBigDoc() 统一判据", "const isBigDoc = () => docBaseLen > RAW_AUTO_CHARS;" in idx)
-check("openFile 写入 docBaseLen", "docBaseLen = content.length;" in idx)
-check("decideRenderMode 使用同一阈值", "return (contentLen > RAW_AUTO_CHARS) ? 'raw' : 'rich';" in idx)
+print("\n[5] #4 渲染阈值 500KB（字节口径）+ 判定口径统一")
+# 1.5.0 二次调整：阈值口径由「字符数」改为「UTF-8 字节数」，阈值下调至 500KB。
+# 起因是用户指出「1MB 的 md 文件并不一定约 100 万字符」——中文一字 3 字节，
+# 按字符判定会严重高估体积，故符号与判定入参一并改为字节。
+check("阈值改为字节口径 RAW_AUTO_BYTES = 500KB", "const RAW_AUTO_BYTES = 500 * 1024;" in idx)
+check("提供 byteLength() 取真实 UTF-8 字节数", "function byteLength(s)" in idx)
+check("使用 TextEncoder 而非乘 3 估算", "new TextEncoder().encode(s).length" in idx)
+check("三态说明文案改为 500KB 且不再提字符数",
+      "超过约 500KB 的文档自动使用纯文本模式" in idx)
+# 「100 万字符」只允许出现在**代码注释**里（那里正是在解释为何弃用字符口径），
+# 绝不能出现在任何**面向用户**的文案中。逐条检查可见文案即可。
+_user_facing = "\n".join(
+    ln for ln in idx.splitlines() if not ln.strip().startswith("//"))
+check("用户可见文案中不再出现「100 万字符」", "100 万字符" not in _user_facing)
+check("使用指南同步为 500KB", "打开体积超过约 <b>500KB</b> 的文档" in idx)
+check("引入 docBaseBytes 统一口径", "let docBaseBytes = 0;" in idx)
+check("提供 isBigDoc() 统一判据", "const isBigDoc = () => docBaseBytes > RAW_AUTO_BYTES;" in idx)
+check("openFile 写入 docBaseBytes（字节）", "docBaseBytes = bytes;" in idx)
+check("decideRenderMode 使用同一阈值", "return (bytes > RAW_AUTO_BYTES) ? 'raw' : 'rich';" in idx)
 check("按钮显隐改用 isBigDoc()", "b.hidden = !(currentPath && isBigDoc());" in idx)
 check("按钮显隐不再取实时内容长度",
       "else if (vditorReady && vditor) len = (getContent() || '').length;" not in idx)
+check("旧字符数符号已彻底移除（防两套阈值并存打架）",
+      "RAW_AUTO_CHARS" not in idx and "docBaseLen" not in idx)
 check("切回富文本的二次确认改用 isBigDoc()", "if (isBigDoc()) {" in idx)
 check("enterRawMode 销毁 Vditor 改用 isBigDoc()", "if (isBigDoc() && vditor) {" in idx)
 
@@ -373,6 +386,56 @@ finally:
     except Exception:
         proc.kill()
     shutil.rmtree(tmp, ignore_errors=True)
+
+# =====================================================================
+# 实机反馈后的追加修复（并入 1.5.0）
+# =====================================================================
+
+print("\n[11] viaProxy 误报：直连被判成经代理")
+# 根因：_build_status() 的 direct 未走 normalize_client_ip()，而 c_ip 走了。
+# 双栈下 IPv4 客户端 address 是 '::ffff:x'，与归一化后的 'x' 永不相等 → via_proxy 恒真。
+check("direct 已归一化（与 client_ip 同一取值口径）",
+      "direct = normalize_client_ip(self.client_address[0])" in sr)
+check("直连取址不再裸用 client_address[0]",
+      "direct = self.client_address[0]" not in sr)
+check("保留 via_proxy 比较（归一化后才可靠）", "via_proxy = c_ip != direct" in sr)
+
+print("\n[12] 备份导出：后台任务 + 进度反馈")
+check("模块级备份任务状态", "_BACKUP_JOB" in sr)
+check("提供进度查询接口", "def _api_backup_status(self" in sr)
+check("提供下载接口（与启动分离）", "def _api_backup_file(self" in sr)
+check("后台线程执行打包（不阻塞请求）", "threading.Thread(target=work" in sr)
+check("先扫描总量供前端算百分比", "job[\"totalBytes\"]" in sr)
+check("打包线程异常不静默死（否则前端永久转圈）",
+      "job[\"state\"] = \"error\"" in sr)
+check("下载用 finally 清理临时文件（修残留泄漏）",
+      re.search(r"def _api_backup_file.*?finally:.*?os\.remove\(tmp\)", sr, re.S) is not None)
+check("下载后清空 job，防二次取到已删文件", "_BACKUP_JOB = None" in sr)
+check("取消时丢弃产物（覆盖 done 态）",
+      re.search(r'if qs\.get\("cancel"\) and job:', sr) is not None)
+check("三路由均已注册",
+      all(x in sr for x in ('path == "/api/backup/status"', 'path == "/api/backup/file"')))
+check("前端有进度遮罩", 'id="backup-mask"' in idx)
+check("前端轮询进度", "function pollBackup()" in idx)
+check("进度条含 indeterminate 态（总量未知时也在动）", "indeterminate" in idx)
+check("完成后才触发下载", "a.href = '/api/backup/file'" in idx)
+
+print("\n[13] 超大文档（>10MB）打开门禁")
+check("定义 10MB 阈值", "const BIG_DOC_BYTES = 10 * 1024 * 1024;" in idx)
+check("强确认：须原样输入文档名", "showBigDocGate" in idx and "checkBigDocInput" in idx)
+check("输入一致前按钮禁用", "ok.disabled = !match;" in idx)
+check("放行时再做一次防御性校验",
+      re.search(r"if \(\(document\.getElementById\('bigdoc-input'\)\.value \|\| ''\) !== _bigDocName\) return;", idx) is not None)
+check("列表内标记超大文档", "li.classList.add('big-doc')" in idx)
+check("列表显示体积标签", "sz.className = 'fsize'" in idx)
+check("拦截发生在传输正文之前（用列表已知 size）",
+      "knownSize > BIG_DOC_BYTES" in idx)
+check("未知体积时兜底再拦一次（passed 防重复弹窗）",
+      "if (!passed && bytes > BIG_DOC_BYTES)" in idx)
+check("已注册进 ESC 栈", "'bigdoc-mask'" in idx)
+check("两套主题均定义 --c-warn（深色不靠 fallback）", idx.count("--c-warn:") >= 2)
+check("门禁弹窗含风险自负与免责表述",
+      "风险自负" in idx and "不承担责任" in idx)
 
 print("\n结果: %d 通过, %d 失败" % (_pass, _fail))
 sys.exit(0 if _fail == 0 else 1)
