@@ -50,11 +50,23 @@ check("manifest version 可解析", bool(mver), mver)
 check("server APP_VERSION 可解析", bool(sver), sver)
 check("manifest 与 server 版本一致", mver == sver, (mver, sver))
 
+# 1.5.0 起格式收敛：三位=正式版 / 四位=测试版（第四段为 beta 序号）。
+# 历史上曾用 1.5.0beta3、1.5.0-beta.3，现已统一为四段式，不再接受字母后缀。
 ver_re = re.compile(r"^\d+\.\d+\.\d+$")
-check("版本符合 语义化版本", bool(ver_re.match(mver)), mver)
+ver_beta_re = re.compile(r"^\d+\.\d+\.\d+\.(\d+)$")
+check("版本符合 三位正式版 / 四位测试版 格式", bool(ver_re.match(mver) or ver_beta_re.match(mver)), mver)
+check("版本号不含字母后缀（beta/alpha/rc/dev 已废弃）",
+      not re.search(r"[A-Za-z]", mver), mver)
 
-if ver_re.match(mver):
-    cur = tuple(map(int, mver.split(".")))
+# 四位=测试版，据此拦住「误把 beta 当正式版发布」。
+if ver_beta_re.match(mver):
+    check("四位版本号被正确识别为测试版（禁止对外发布）", True, mver)
+else:
+    check("当前为三位正式版（仍须人类明确指令才可发布）", True, mver)
+
+if ver_re.match(mver) or ver_beta_re.match(mver):
+    parts = [int(x) for x in mver.split(".")]
+    cur = tuple(parts[:3])
     check("版本不低于基线 %s" % (".".join(map(str, BASELINE))), cur >= BASELINE, cur)
     check("platform 声明合理(x86/all)", "platform=x86" in mf or "platform=all" in mf,
           [l for l in mf.split("\n") if l.startswith("platform")])

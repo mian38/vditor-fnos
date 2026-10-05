@@ -7,7 +7,7 @@
 - 密码登录 + 会话 Cookie，防暴力破解、防会话劫持
 - 文档直接落盘到 NAS 目录，可经 SMB / FTP 直接访问
 
-**当前版本：1.4.3** ｜ 许可：[MIT](LICENSE) ｜ 交付形态：fnOS `.fpk` 安装包
+**当前版本：1.5.0**（开发中，未发布）｜ 许可：[MIT](LICENSE) ｜ 交付形态：fnOS `.fpk` 安装包
 
 > **测试状态：本项目仅在飞牛 fnOS 上构建并实机验证。**
 > 后端因零第三方依赖，从代码上可在其他 NAS / Linux 平台运行，但**从未实机验证**，
@@ -194,6 +194,14 @@ python3 tools/bump_version.py <新版本号> --dry-run   # 先预览
 python3 tools/bump_version.py <新版本号>             # 确认后执行
 ```
 
+格式为 `x.y.z` 或 `x.y.z.N`：
+
+- **三位**（如 `1.5.0`）= 正式版，只在明确发布时使用；
+- **四位**（如 `1.5.0.3`）= 测试版，第四段为迭代序号，**禁止对外发布**。
+
+飞牛 fnOS 不允许覆盖安装同版本或更低版本的应用，因此迭代期每构建一次就递增第四段，
+这样实机可直接覆盖安装、无需卸载重装。`1.5.0beta3` 这类字母后缀形式已废弃。
+
 ---
 
 ## 项目结构
@@ -248,7 +256,7 @@ python3 tests/test_stress_largefile.py  # 四类复杂大文件压力（逐字�
 开发辅助脚本：
 
 ```bash
-python3 tools/bump_version.py 1.4.4 --dry-run   # 版本号同步（仅 manifest + server.py 两处）
+python3 tools/bump_version.py 1.5.0 --dry-run   # 版本号同步（仅 manifest + server.py 两处）
 node    tools/perf_frontend_check.js             # 字数统计路径性能抽检
 ```
 

@@ -17,11 +17,21 @@
 """
 import io
 import os
+import re
 import sys
 
 # 脚本位于 tools/ 下，故仓库根为本文件的上一级目录
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HERE = ROOT  # 保持变量名不变，仅语义为仓库根
+
+# 三位=正式版；四位=测试版（第四段为 beta 序号）。见AGENTS.md §1 / §0.1。
+VER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$")
+
+
+def is_beta(ver):
+    """该版本号是否为测试版（四段式）。用于拦住「误把 beta 当正式版发布」。"""
+    m = VER_RE.match(ver)
+    return bool(m and m.group(4) is not None)
 
 
 def read(p):
@@ -59,6 +69,13 @@ def main():
     new = args[0].strip()
     if not new:
         raise SystemExit("新版本号不能为空")
+    # 1.5.0 起格式收敛为「三位正式版/ 四位测试版」，不再接受 beta/alpha/rc 等字母后缀。
+    if not VER_RE.match(new):
+        raise SystemExit(
+            "版本号格式非法：%r\n"
+            "  正式版：x.y.z（如 1.5.0）\n"
+            "  测试版：x.y.z.N（如 1.5.0.3，第四段为 beta 序号）\n"
+            "  不再接受 1.5.0beta3 / 1.5.0-beta.3 / 1.5.0-rc1 等字母后缀形式。" % new)
 
     # 从 manifest 读取当前版本
     mf = os.path.join(HERE, "vditor-fpk", "manifest")
@@ -84,7 +101,18 @@ def main():
     if not dry:
         print("请手动补 manifest 的 changelog（单行、新条目前置）：")
         print("  changelog=%s：<本次更新说明>%s：..." % (new, old))
+        if is_beta(new):
+            print()
+            print("⚠️  %s 是**测试版（四位版本号）**。" % new)
+            print("   禁止对外发布：不要打 tag、不要建 GitHub Release、不要上传 fpk。")
+            print("   正式发布需去掉第四段（如 1.5.0），且必须由人类明确下达「发布 vX.Y.Z」。")
+        else:
+            print()
+            print("ℹ️  %s 是三位正式版，但仍**必须由人类明确下达「发布 vX.Y.Z」**"
+                  "才能打 tag / 建 Release / 上传。" % new)
         print("完成后建议：./fnpack.exe build -d vditor-fpk")
+        if is_beta(new):
+            print("  归档文件名请用：com.mian38.vditor_%s.fpk" % new)
     return 0
 
 

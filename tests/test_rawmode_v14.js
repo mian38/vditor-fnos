@@ -477,5 +477,155 @@ console.log('\n[15] 分组 try 隔离：单组失败不影响其余绑定');
   check('源码含 bindGroup 隔离器', /function bindGroup\(name, fn\)/.test(code));
 })();
 
+// ---------------------------------------------------------------------------
+// [1.5.0beta3] renderFiles 真实调用（防「跨作用域 ReferenceError」回归）
+//
+// 背景：1.5.0beta2 实机出现侧边栏整体空白、所有操作失效。根因是
+//   renderFiles()里 `const sz` 声明在 `if (size >= 0) {…}` 块内，
+//   而「>10MB 加big-doc 标记」那行 `sz.title = …` 写在块外 → ReferenceError。
+//   异常在 forEach 内冒泡到 fetch().then() 回调 → 回调中断 →
+//   box.innerHTML='' 已执行但 box.appendChild(block) 从未执行 → 侧边栏空白。
+//
+// 为什么此前全绿也漏掉：正则断言不执行 DOM、本文件的 vm 组没调 renderFiles、
+// HTTP 测试完全不碰这段 JS。**凡改 DOM 渲染函数，必须用 vm 真调一次并喂边界数据。**
+// ---------------------------------------------------------------------------
+(function () {
+  // 可追踪的 DOM 桩：appendChild 记录调用，用于判断「渲染是否被异常中断」
+  const appended = [];
+  function mk(id) {
+    const cls = new Set();
+    return {
+      _id: id, textContent: '', title: '', value: '', innerHTML: '',
+      style: {}, dataset: {}, children: [],
+      classList: {
+        add(c) { cls.add(c); }, remove(c) { cls.delete(c); },
+        toggle(c, f) { f ? cls.add(c) : cls.delete(c); },
+        contains(c) { return cls.has(c); }
+      },
+      appendChild(c) { this.children.push(c); appended.push({ parent: this._id, child: c && c._id }); return c; },
+      addEventListener() {}, removeEventListener() {}, remove() {},
+      contains() { return false; },
+      getAttribute() { return null; }, setAttribute() {},
+      querySelector() { return mk('q'); }, querySelectorAll() { return []; },
+      focus() {}, click() {}, closest() { return null; },
+      getBoundingClientRect() { return { top: 0, left: 0, width: 0, height: 0 }; }
+    };
+  }
+  const els = {};
+  const getEl = (id) => els[id] || (els[id] = mk(id));
+
+  const docStub2 = {
+    getElementById: getEl,
+    querySelector: () => mk('qs'), querySelectorAll: () => [],
+    addEventListener() {}, removeEventListener() {},
+    createElement: () => mk('created'),
+    body: mk('body'), documentElement: mk('html'), cookie: ''
+  };
+  const store2 = {};
+  const ctx2 = {
+    console, document: docStub2, Vditor: function () { throw new Error('no editor'); },
+    navigator: { userAgent: 'node', platform: 'Win32' },
+    location: { href: 'http://x/', search: '', hash: '', protocol: 'http:' },
+    localStorage: {
+      getItem: (k) => (k in store2 ? store2[k] : null),
+      setItem: (k, v) => { store2[k] = String(v); }, removeItem: (k) => { delete store2[k]; }
+    },
+    setTimeout() {}, clearTimeout() {}, setInterval() {}, clearInterval() {},
+    fetch() { return Promise.reject(new Error('no-net')); },
+    TextEncoder, TextDecoder, alert() {}, confirm() { return true; }, prompt() { return null; },
+    btoa: (s) => Buffer.from(s).toString('base64'),
+    atob: (s) => Buffer.from(s, 'base64').toString(),
+    addEventListener() {}, removeEventListener() {}, history: {},
+    performance: { now: () => Date.now() }, requestAnimationFrame() {},
+    JSON, Math, Date, RegExp, Promise, console,
+    Uint8Array, ArrayBuffer, String, Number, Object, Array, Boolean, Map, Set,
+    encodeURIComponent, decodeURIComponent, isNaN, parseInt, parseFloat
+  };
+  ctx2.window = ctx2; ctx2.globalThis = ctx2; ctx2.self = ctx2; ctx2.top = ctx2;
+  vm.createContext(ctx2);
+  let boot = null;
+  try { vm.runInContext(code, ctx2, { filename: 'renderfiles.js' }); }
+  catch (e) { boot = e; }
+  check('renderFiles 组：脚本可加载（无顶层抛错）', boot === null, boot && boot.message);
+
+  function tryRender(label, roots) {
+    appended.length = 0;
+    els['side-scroll'] = mk('side-scroll');   // 每次用干净的容器，便于计数
+    let err = null;
+    try { ctx2.renderFiles(roots); } catch (e) { err = e; }
+    const boxes = els['side-scroll'].children.length;
+    return { label, err, boxes };
+  }
+
+  // ① 回归场景：含 >10MB 文件（beta2 必崩）
+  let r = tryRender('含 >10MB 文件', [{
+    id: 'r1', name: '我的文档', path: '/x', exists: true, files: [
+      { name: 'small.md', path: '/x/small.md', root: 'r1', size: 1200 },
+      { name: 'huge.md', path: '/x/huge.md', root: 'r1', size: 20 * 1024 * 1024 }
+    ]
+  }]);
+  check('renderFiles 不抛错（含 >10MB 文件）', r.err === null, r.err && r.err.message);
+  check('侧边栏确实挂上了分区块（appendChild 已调用）', r.boxes === 1, r.boxes);
+
+  // ② 边界：恰好 10MB（不标记 big-doc，但不能崩）
+  r = tryRender('恰好 10MB', [{
+    id: 'r1', name: 'D', path: '/x', exists: true, files: [
+      { name: 'exact.md', path: '/x/exact.md', root: 'r1', size: 10 * 1024 * 1024 }
+    ]
+  }]);
+  check('renderFiles 不抛错（恰好 10MB 边界）', r.err === null, r.err && r.err.message);
+  check('边界值仍渲染出分区块', r.boxes === 1, r.boxes);
+
+  // ③ 无 size 字段（旧数据兼容）
+  r = tryRender('无 size 字段', [{
+    id: 'r1', name: 'D', path: '/x', exists: true, files: [
+      { name: 'nosize.md', path: '/x/nosize.md', root: 'r1' }
+    ]
+  }]);
+  check('renderFiles 不抛错（无 size 字段，旧数据兼容）', r.err === null, r.err && r.err.message);
+
+  // ④ size 为 0 / 负数（不渲染体积标签，也不能崩）
+  r = tryRender('size=0 与 -1', [{
+    id: 'r1', name: 'D', path: '/x', exists: true, files: [
+      { name: 'zero.md', path: '/x/zero.md', root: 'r1', size: 0 },
+      { name: 'neg.md', path: '/x/neg.md', root: 'r1', size: -1 }
+    ]
+  }]);
+  check('renderFiles 不抛错（size=0 / -1）', r.err === null, r.err && r.err.message);
+
+  // ⑤ 空分区 / 目录不存在 / 多分区
+  r = tryRender('空分区+目录不存在+多分区', [
+    { id: 'r1', name: 'A', path: '/a', exists: true, files: [] },
+    { id: 'r2', name: 'B', path: '/b', exists: false, files: [] }
+  ]);
+  check('renderFiles 不抛错（空分区 / 目录不存在 / 多分区）', r.err === null, r.err && r.err.message);
+  check('多分区均已渲染', r.boxes === 2, r.boxes);
+
+  // ⑥ 空数组
+  r = tryRender('空数组', []);
+  check('renderFiles 不抛错（空分区列表）', r.err === null, r.err && r.err.message);
+
+  // ⑦ 结构性守卫：sz 的引用必须在同一 if 块内（正则抓不到跨作用域，靠本组兜底）
+  //    用括号配平从 `const sz` 所在 if 的 `{` 找到配对的 `}`，判断 `sz.title` 是否落在块内。
+  //    注意：源码里含大段中文注释，`const sz` 距函数开头约 1.5KB，窗口需放宽。
+  const RF = code.indexOf('function renderFiles');
+  const src = code.slice(RF, code.indexOf('\n    function ', RF + 10));
+  const declIdx = src.indexOf('const sz');
+  const useIdx = src.indexOf('sz.title');
+  let guardOk = false, guardInfo = { declIdx, useIdx };
+  if (declIdx >= 0 && useIdx >= 0) {
+    const ifIdx = src.lastIndexOf('if (', declIdx);
+    const braceStart = src.indexOf('{', ifIdx);
+    let depth = 0, braceEnd = -1;
+    for (let i = braceStart; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}') { depth--; if (depth === 0) { braceEnd = i; break; } }
+    }
+    guardOk = braceEnd > useIdx;   // `sz.title` 必须落在配对花括号之内
+    guardInfo = { declIdx, useIdx, braceStart, braceEnd, len: src.length };
+  }
+  check('sz 声明与 sz.title 处于同一 if 块内（防跨作用域回归）', guardOk, guardInfo);
+})();
+
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);
