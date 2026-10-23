@@ -84,6 +84,103 @@
 
 ---
 
+## 1.6.0.2（2026-10-23）· 测试版（未发布）
+
+**1.6.0.1 实机反馈 6 项：查找入口 / 记事本布局 / 高亮跳转 / 文件名滚动 / 顶栏溢出 / 单活会话**
+
+### 修复
+
+1. **「展开/收起替换区」按钮点击无反应**（`index.html`）
+
+   - 根因：`.fb-row{display:flex}` 的特异性高于 UA 默认样式表里的 `[hidden]{display:none}`，
+     `replaceZone.hidden = true` 后行内 `display` 仍为 `flex`，元素照样显示。与 1.5.0beta3 前
+     「白底按钮悬停变蓝」同属一类 CSS 优先级坑，本版在菜单上第二次踩到（见新增 5）。
+   - 修法：显式补 `.fb-row[hidden]{display:none}`（`[hidden]` 属性选择器特异性 0-1-0 与类名
+     相同但位于同一规则之后，实际生效关键在于「显式声明 display:none 覆盖前面的 flex」）。
+
+2. **富文本模式查找命中不高亮、上下箭头不跳转**（`index.html`）
+
+   - 根因：Vditor ir（所见即所得）模式下 `#vditor` 内存在 **4 个 `.vditor-reset`**
+     （wysiwyg 空壳 → sv 源码 textarea → **`.vditor-ir > pre` 真正编辑区** → preview），
+     原 `querySelector('.vditor-reset')` 取到的是 wysiwyg 空壳，向不渲染的节点包 `<mark>`
+     自然不可见，`scrollIntoView` 也滚不到地方。
+   - 修法：高亮根改 `document.querySelector('#vditor .vditor-ir > .vditor-reset')`，
+     富文本（ir）才走 DOM 包裹，纯文本模式仍用 `setSelectionRange` 选区定位。
+
+3. **文件名滚动不自然且会压盖前缀**（`index.html`）
+
+   - 根因：rAF 回调直接用 `pos += speed` 不按帧间隔归一化，刷新率越高滚得越快；首帧 `pos=0`
+     直接进入运动分支，无起滚停顿；`transform` 作用于含「当前文件：」前缀的整行，
+     滚动时前缀被一起拖走。
+   - 修法：`dt=(now-last)/1000` 并 clamp 到 0.1（切后台回来不跳变）；首帧设
+     `pauseUntil=now+900` 起滚停顿；`transform` 只作用于 `#cur-name` 自身（前缀静止），
+     速度下调至自然阅读节奏；测试采样必须跨过 900ms 初始停顿（首 5 帧全在停顿内，
+     `transform` 恒 `translateX(0px)`，属设计行为非 bug）。
+
+### 新增
+
+4. **顶栏「🔍 查找」按钮**（`index.html`）
+
+   - `#btn-find`，与 `Ctrl+F` 复用同一 `findOpen()` 绑定（有选区预填），快捷键帮助表
+     同步补 `Ctrl+F / Ctrl+H` 两行；此前查找只能靠快捷键呼出，无可见入口。
+
+5. **导出合并 + 「⋯ 更多」菜单 + 三档响应式**（`index.html`）
+
+   - `#btn-export-md` + `#btn-export-html` 合并为 `<button id="btn-export">导出 ▾</button>`，
+     `#btn-save` 左侧新增 `<button id="btn-more">⋯ 更多</button>`（保存恒为最右主操作）；
+     `#app` 后新增 `#export-menu`（静态两项）与 `#more-menu`（动态构建）。
+   - **菜单双契约**：菜单项 `data-act`（本地动作 `export-md` / `export-html`）+
+     `data-fwd`（转发顶栏既有按钮 `.click()`，复用既有绑定不重写逻辑）。
+     `buildMoreMenu` 过滤判据是 **`el.hidden` 属性而非 `offsetParent`**——被媒体查询
+     收纳的按钮恰恰必须入菜单，用 `offsetParent` 会把他们排除在外。
+   - **三档响应式**：≥860px 全平铺；<859px 收 退出/设置/信息/纯文本 入菜单；
+     <519px 再收 查找/导出/主题/用户名/字数（纯文字极限档，无图标）。
+   - **层级**：`.tb-menu` 取 `z-index:10015`（10010 基础框与 10020 确认类之间，
+     逐个显式声明）；Esc 链顺序：菜单 > 查找栏 > 弹窗栈
+     （`if (closeTransientMenus()) return;` 插在 `findState.open` 判断之前）。
+   - **`[hidden]` 覆盖陷阱第二次踩到**：`.tb-menu{display:flex}` 同样压过 UA
+     `[hidden]{display:none}`，补 `.tb-menu[hidden]{display:none}`（与修复 1 同根因）。
+   - ⚠️ **vm 测试抓出的真实 bug**：`exportFromMenu` 里写 `kind === 'html'`，而 `data-act`
+     实际值为 `'export-md' / 'export-html'` → 点「导出渲染 HTML」实导 `.md`。
+     修为 `kind === 'export-html' ? 'html' : 'md'`（静态断言查不出，必须 vm 真调菜单项）。
+   - 测试：`tests/test_v160_frontend.js` 65 → **102 项**（静态 14 + vm 运行时 17 专测菜单，
+     含 `tbMenuOpen` 定位数值、Esc 优先级、`closeTransientMenus` 语义、响应式过滤）。
+
+6. **单活会话（后登踢先登）**（`server.py` / `index.html`）
+
+   - 方案取舍：前端「检测到另一会话正在登录就禁止登录」不可行（HTTP 无连接态、多标签页
+     无法互斥、且 30 分钟自动过期窗口内状态不可靠）；改服务端**单活会话**——登录即生效、
+     语义确定、可审计。并发上限从「会话数不限」收敛为 1。
+   - `start_session()` 重写：`kicked = len(SESSIONS)` → `SESSIONS.clear()` →
+     `record_login_event("session_kicked", ip, "evicted=%d" % kicked)`，再发新 token。
+     先登者下一个请求即 401，前端 fetch 包装器弹「会话失效」。
+   - 新增 `tests/test_single_session.py` **18 断言**（已登记 CASES）：二登踢 A（A=401/B=200）、
+     三登连锁踢 B、login-log 含 `session_kicked` 且 detail 含 `evicted=`、logout 后仍 401、
+     重登无死锁、**错误密码不踢现有会话**（防误伤）。
+   - `session-mask` 文案与帮助文档「八、账号与访问」同步补单活会话说明。
+
+### 测试
+
+- `tests/test_v160_frontend.js`：修 8 个陈旧断言（`#cur-name` flex 版 / `fnameTick(now)`
+  时间归一化 / Esc 链 / mark CSS `.vditor-ir .vditor-reset` / findHighlightRoot ir 限定）；
+  findBar 提取改 `indexOf` 精确切片（原正则三连 `</div>` 越界捕获到登录区，把 `.mi`
+  按钮算进「非法按钮」）；vm 桩增强（回填 `id` / `docLs` 登记 document 监听 /
+  `offsetWidth,Height:100` / `closest` 类名命中 / `_fire` 传默认事件 /
+  `querySelectorAll('.tb-menu')` 返两菜单 / `innerWidth,innerHeight` / 菜单初始
+  `hidden=true, className='tb-menu'` / 手动清 `children`）。
+- `tests/test_rawmode_v14.js`：[14] 段按钮清单 `'btn-export-md','btn-export-html'` →
+  `'btn-export','btn-more'`（139 通过）。
+- 测试自身踩坑（已修，非产品 bug）：桩 `id:''` 致 `tbMenuClose(menus[i].id)` 关到幻影元素；
+  桩默认 `hidden:false` 使「从未打开」被误判「已打开」（触发钮走关闭分支）；
+  桩 `textContent=''` 不清 children 致 `buildMoreMenu` 累积。
+
+### 版本
+
+- 全部为 1.6.0.1 实机反馈修复与顶栏交互增强，前三段不变，第四段递增：
+  **1.6.0.1 → 1.6.0.2**；四位测试版，禁止对外发布（tag / Release / 上传均须人类明确指令）。
+
+---
+
 ## 1.5.0（2026-10-05）
 
 **大文档与自动保存相关的设置面板重组 + 三处行为修正（功能范围扩大，升 y 位 1.4.3 → 1.5.0）**
