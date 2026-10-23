@@ -124,12 +124,19 @@
             display: flex; align-items: center; gap: 8px;
             padding: 8px 12px; background: var(--c-bg-subtle); color: var(--c-text);
             border-bottom: 1px solid var(--c-border); flex: 0 0 auto;
-            overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap;
+            /* 1.6.0：顶栏彻底禁止横向滚动——长文件名改为仅文件名文本自身滚动，
+               按钮组永不被挤出屏幕（原横向滚动设置与隐藏滚动条规则已移除） */
+            overflow: hidden; white-space: nowrap;
         }
-        #topbar::-webkit-scrollbar { height: 0; }
-        #topbar .fname { font-size: var(--fs-sm); color: var(--c-text-2); white-space: nowrap; flex: 0 0 auto; min-width: 0; }
+        /* 1.6.0：长文件名自适应——.fname 允许收缩并裁剪，前缀静止不动 */
+        #topbar .fname { font-size: var(--fs-sm); color: var(--c-text-2); white-space: nowrap; flex: 1 1 auto; min-width: 0; overflow: hidden; }
         #topbar .fname b { color: var(--c-text); font-weight: 600; }
+        /* 1.6.0：仅 #cur-name 文本自身横向滚动（JS 驱动 transform，见 updateFilenameScroll） */
+        #cur-name { display: inline-block; max-width: 100%; overflow: hidden; white-space: nowrap; vertical-align: bottom; }
         #topbar .top-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
+        /* 1.6.0：顶栏按钮组永不被长文件名挤压。仅布局属性（flex），
+           不写颜色/边框，与 .btn--* 变体视觉规则无优先级冲突 */
+        #topbar .top-actions > * { flex: 0 0 auto; }
         #topbar .user { font-size: var(--fs-sm); color: var(--c-text-3); flex: 0 0 auto; }
         /* 顶栏字数统计：双口径（正文 / 含语法）+ 预计阅读时间，移动端也与顶栏内容同行 */
         #topbar .word-counter {
@@ -2629,7 +2636,72 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
     function setCurName(name) {
         document.getElementById('cur-name').textContent = name || '未选择';
+        updateFilenameScroll();
     }
+
+    /* ---------- 1.6.0：顶栏长文件名自适应 ----------
+       空间充足时完整显示、无动画；不足时仅 #cur-name 文本自身横向往返滚动，
+       前缀「当前文件：」与右侧按钮组保持静止；悬停暂停、移开恢复；
+       窗口 resize / 浏览器缩放 / 侧栏折叠导致容器宽度变化时重测重排。 */
+    const fnameScroll = { raf: 0, pos: 0, dir: 1, paused: false, overflow: 0 };
+
+    function fnameOverflow() {
+        const el = document.getElementById('cur-name');
+        return el ? (el.scrollWidth - el.clientWidth) : 0;
+    }
+
+    function fnameTick() {
+        const el = document.getElementById('cur-name');
+        if (!el) { fnameScroll.raf = 0; return; }
+        const overflow = fnameScroll.overflow;
+        if (overflow <= 1 || fnameScroll.paused) { fnameScroll.raf = 0; return; }
+        fnameScroll.pos += fnameScroll.dir;
+        if (fnameScroll.pos >= overflow) { fnameScroll.pos = overflow; fnameScroll.dir = -1; }
+        else if (fnameScroll.pos <= 0) { fnameScroll.pos = 0; fnameScroll.dir = 1; }
+        el.style.transform = 'translateX(' + (-fnameScroll.pos) + 'px)';
+        fnameScroll.raf = requestAnimationFrame(fnameTick);
+    }
+
+    function updateFilenameScroll() {
+        const el = document.getElementById('cur-name');
+        if (!el) return;
+        if (fnameScroll.raf) { cancelAnimationFrame(fnameScroll.raf); fnameScroll.raf = 0; }
+        el.style.transform = '';
+        fnameScroll.pos = 0; fnameScroll.dir = 1;
+        // textContent 刚变更，等一帧布局稳定后再测量，避免拿到旧的 scrollWidth
+        requestAnimationFrame(function () {
+            fnameScroll.overflow = fnameOverflow();
+            if (fnameScroll.overflow > 1 && !fnameScroll.paused) {
+                fnameScroll.raf = requestAnimationFrame(fnameTick);
+            }
+        });
+    }
+
+    // 悬停暂停 / 移开恢复（脚本位于 body 末尾，DOM 已就绪，仅绑定一次）
+    (function initFnameHover() {
+        const el = document.getElementById('cur-name');
+        if (!el) return;
+        el.addEventListener('mouseenter', function () { fnameScroll.paused = true; });
+        el.addEventListener('mouseleave', function () {
+            fnameScroll.paused = false;
+            if (fnameScroll.overflow > 1 && !fnameScroll.raf) {
+                fnameScroll.raf = requestAnimationFrame(fnameTick);
+            }
+        });
+    })();
+
+    // 容器宽度变化（窗口 resize / 浏览器缩放）时重测重排；高度等噪声忽略
+    (function initFnameResize() {
+        const wrap = document.querySelector('#topbar .fname');
+        if (!wrap || typeof ResizeObserver === 'undefined') return;
+        let lastW = wrap.clientWidth;
+        const ro = new ResizeObserver(function () {
+            if (wrap.clientWidth === lastW) return;
+            lastW = wrap.clientWidth;
+            updateFilenameScroll();
+        });
+        ro.observe(wrap);
+    })();
     function currentFileName() {
         if (currentPath) {
             let n = currentPath.replace(/\.md$/i, '');
