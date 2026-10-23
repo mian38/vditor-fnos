@@ -15,6 +15,75 @@
 
 ---
 
+## 1.6.0.1（2026-10-23）· 测试版（未发布）
+
+**1.6.0 首个测试包：并发保存修复（后端）+ 顶栏长文件名自适应 + 查找替换（前端）**
+
+### 修复
+
+1. **并发保存导致覆盖 / 丢失 / 损坏**（`server.py`）
+
+   - 根因：`ThreadingHTTPServer` 每请求一线程，`_api_save` 的「读旧内容 → 归档历史版本 → 写文件」
+     整段无任何互斥（全局仅 `LOG_LOCK` 保护登录日志）；写盘为 `open(fp,"w")` 截断后写，非原子。
+     多标签页 / 多实例对同一文档并发保存时：后写覆盖先写，且两处归档的都是同一旧版——
+     败者内容既非当前、也未被历史版本捕获，不可恢复丢失；截断窗口内还可能留下半截 / 交错损坏。
+   - 修法：新增 `SAVE_LOCK`（与 `LOG_LOCK` 同处定义），把「读旧 → 归档 → 写」整体纳入临界区
+     串行化——后写者必然读到先写者的完整结果，败者内容必进历史版本；写盘改「同目录临时文件
+     （`fp + ".tmp." + pid + 毫秒时间戳`）+ `os.replace` 原子替换」，任何时刻读到的都是完整
+     旧文件或完整新文件。`invalidate_files_cache()` 置于写盘之后，缓存与磁盘一致。
+   - 防回归：新增 `tests/test_concurrent_save.py`（已登记 `run_all.py` CASES）：10 轮 × 2 线程
+     barrier 对齐并发 + 大内容轮（200KB×2 放大截断窗口），逐轮断言磁盘内容完整等于其一、
+     败者内容已归档可恢复、无 `.tmp` 残留。已按 AGENTS.md §2「先复现再验证」：临时回退旧逻辑
+     确认测试 11 项失败（败者不可恢复），恢复修复后 49/49 通过。
+   - 范围说明：`_api_restore_version`（历史版本恢复的写盘）同为「读旧 → 直接写」的非原子路径，
+     但属版本恢复而非保存，不在本方案范围，列为后续迭代候选。
+
+### 新增
+
+2. **顶栏长文件名自适应**（`index.html`）
+
+   - `#topbar` 由 `overflow-x:auto` 改 `overflow:hidden`（彻底禁止顶栏横向滚动，移除已失效的
+     `::-webkit-scrollbar{height:0}` 规则）；`#topbar .fname` 改 `flex:1 1 auto; min-width:0;
+     overflow:hidden` 允许收缩并裁剪；`#cur-name` 为 `display:inline-block; max-width:100%`，
+     仅文件名文本自身滚动，前缀「当前文件：」与右侧按钮组保持静止；
+     `#topbar .top-actions > *` 加 `flex:0 0 auto`（仅布局属性，不与 `.btn--*` 变体视觉规则
+     冲突），按钮永不被长文件名挤压。
+   - 新增 `updateFilenameScroll()`：rAF 驱动 `transform:translateX` 在 `[0, -overflow]` 往返
+     （不碰布局）；`mouseenter/leave` 暂停 / 恢复；`ResizeObserver` 监听 `.fname` 宽度变化
+     （覆盖窗口 resize 与浏览器缩放）重测重排；`setCurName()` 更新文件名时调用，切文件即重置。
+     不溢出时无动画、transform 复位。
+
+3. **文档查找与替换**（`index.html`）
+
+   - 唤起：`Ctrl/Cmd+F` 在**捕获阶段** `preventDefault` 屏蔽浏览器原生查找（优先于 Vditor
+     contenteditable 键处理），有选区则预填；`Ctrl+H` 展开替换区；`Esc` 优先于弹窗栈关闭；
+     面板内 `Enter/F3` 下一处、`Shift+Enter/Shift+F3` 上一处。
+   - 匹配引擎以**源串**（`getContent()`）为权威：输入防抖 120ms，实时显示「当前/总数」；
+     选项支持区分大小写 / 整词（`\b(?:…)\b` 包裹）/ 正则（非法正则计数显示「无效」且不抛错，
+     匹配循环带 20 万次护栏防病态正则）。
+   - 替换走 `getContent → 串替换 → setContent`：单处替换后 `index` 不变，自然指向下一处；
+     全部替换中正则走原生 `replace`（支持 `$1` 反向引用），非正则从尾向前手动替换防偏移失效。
+   - 高亮：富文本（ir）模式在 `.vditor-reset` 逐文本节点包裹 `<mark class="vd-find">`
+     （当前命中 `.vd-find-current` 并 `scrollIntoView({block:'center'})`）；纯文本模式无 DOM
+     可包，改用 `setSelectionRange` 选区定位。关闭 / 切文件 / 切渲染模式时精确还原
+     （`insertBefore` 展开子节点 + `removeChild` + `normalize`）。
+   - 防 `<mark>` 污染编辑器模型：编辑区 `input` 事件即清高亮并按新内容重算；`doSave()`
+     保存前强制 `findClearMarks()`。
+   - 已知限制：渲染文本与源串口径可能不同（Markdown 语法符号不出现在渲染文本中），
+     跨元素命中按节点独立处理，两处计数可能不一致。
+   - 测试：`tests/test_v160_frontend.js`（已登记 CASES）65 项——静态断言（CSS / DOM / 快捷键
+     集成 / 保存钩子）+ vm 真驱全链路（防抖输入、上/下一处循环、单/全替换、正则 `$1`、
+     整词与大小写、非法正则兜底、mark 包裹与精确展开还原）。
+
+### 版本
+
+- ②③ 为用户可见新能力 → 按 AGENTS.md §1 升 **y**：`1.5.0 → 1.6.0`（z 归零）；① 属 bug 修复
+  （单独发应为 1.5.1），按既定方案合并入 1.6.0 一并交付，不另发 1.5.1。
+- 迭代期四段式 **1.6.0.1**（1.6.0 首个测试构建），两源（`manifest` 的 `version=` 与
+  `server.py` 的 `APP_VERSION`）已由 `tools/bump_version.py` 同步；四位版本号禁止对外发布。
+
+---
+
 ## 1.5.0（2026-10-05）
 
 **大文档与自动保存相关的设置面板重组 + 三处行为修正（功能范围扩大，升 y 位 1.4.3 → 1.5.0）**
