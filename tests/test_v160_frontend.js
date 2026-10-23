@@ -25,8 +25,12 @@ check('#topbar 彻底禁止滚动（overflow:hidden，不再是 overflow-x:auto�
 check('已移除 #topbar::-webkit-scrollbar 死规则', !/#topbar::-webkit-scrollbar/.test(CSS));
 check('#topbar .fname 允许收缩（flex:1 1 auto）并裁剪（overflow:hidden）',
   /#topbar\s+\.fname\s*\{[^}]*flex:\s*1 1 auto[^}]*overflow:\s*hidden/.test(CSS));
-check('#cur-name 为 inline-block 且 max-width:100%（仅文件名自身滚动）',
-  /#cur-name\s*\{[^}]*display:\s*inline-block[^}]*max-width:\s*100%[^}]*white-space:\s*nowrap/.test(CSS));
+check('#cur-name 用 flex:1 1 auto + min-width:0 + overflow:hidden（结构性防压盖前缀，1.6.0.2 重构）',
+  /#cur-name\s*\{[^}]*flex:\s*1 1 auto[^}]*min-width:\s*0[^}]*overflow:\s*hidden[^}]*white-space:\s*nowrap/.test(CSS));
+check('#cur-name 不再使用 max-width:100%（1.6.0.1「滚动压盖前缀」根因，已弃用）',
+  !/#cur-name\s*\{[^}]*max-width/.test(CSS));
+check('「当前文件：」前缀为独立 flex 子项（flex:0 0 auto 静止）',
+  /#topbar\s+\.fname-prefix\s*\{[^}]*flex:\s*0 0 auto/.test(CSS));
 check('按钮组不参与收缩（#topbar .top-actions > * flex:0 0 auto）',
   /#topbar\s+\.top-actions\s*>\s*\*\s*\{\s*flex:\s*0 0 auto/.test(CSS));
 check('字数统计仍不收缩（flex:0 0 auto 保留）',
@@ -35,8 +39,12 @@ check('setCurName 处调用 updateFilenameScroll',
   /function setCurName\(name\)\s*\{\s*document\.getElementById\('cur-name'\)\.textContent = name \|\| '未选择';\s*updateFilenameScroll\(\);/.test(code));
 check('updateFilenameScroll 用 rAF 延迟一帧测量（避免拿到旧 scrollWidth）',
   /function updateFilenameScroll\(\)[\s\S]{0,400}requestAnimationFrame/.test(code));
-check('fnameTick 用 transform:translateX 往返滚动（不碰布局）',
-  /function fnameTick\(\)[\s\S]{0,600}translateX/.test(code));
+check('fnameTick(now) 用 transform:translateX 往返滚动（不碰布局，时间戳归一化）',
+  /function fnameTick\(now\)[\s\S]{0,1200}translateX/.test(code));
+check('fnameTick 对缺省时间戳有防御（typeof now!==\'number\' 退化 performance.now）',
+  /typeof now !== 'number'/.test(code));
+check('fnameTick 速度/停顿为时间基常量（FNAME_SPEED/FNAME_PAUSE，非每帧 1px）',
+  /FNAME_SPEED\s*=\s*\d+/.test(code) && /FNAME_PAUSE\s*=\s*\d+/.test(code));
 check('悬停暂停 / 移开恢复已绑定（mouseenter/mouseleave）',
   /addEventListener\('mouseenter'[\s\S]{0,200}addEventListener\('mouseleave'/.test(code));
 check('容器宽度变化经 ResizeObserver 重测（含 typeof 守卫）',
@@ -44,7 +52,11 @@ check('容器宽度变化经 ResizeObserver 重测（含 typeof 守卫）',
 
 // ================= 静态断言：查找与替换（1.6.0 需求三） =================
 console.log('== 查找与替换（静态） ==');
-const findBar = (html.match(/<div id="find-bar"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/) || [''])[0];
+// 精确切取 find-bar 整块（从开标签到 <div id="vditor"> 之前）——
+// 旧的「三个连续 </div>」正则会在 1.6.0.2 结构下越界捕获到登录/菜单按钮。
+const fbStart = html.indexOf('<div id="find-bar"');
+const fbEnd = html.indexOf('<div id="vditor">');
+const findBar = (fbStart >= 0 && fbEnd > fbStart) ? html.slice(fbStart, fbEnd) : '';
 check('查找栏 DOM 存在且默认隐藏（hidden 属性）', /<div id="find-bar" hidden>/.test(html));
 check('查找栏 [hidden] 时强制 display:none（压过 display:flex）',
   /#find-bar\[hidden\]\s*\{\s*display:\s*none/.test(CSS));
@@ -60,8 +72,10 @@ check('选项开关有 aria-pressed 态与视觉样式',
 check('Ctrl/Cmd+F 捕获阶段拦截并 preventDefault（优先于 Vditor 与原生查找）',
   /e\.key === 'f' \|\| e\.key === 'F'\)\)\s*\{\s*e\.preventDefault\(\);/.test(code));
 check('Ctrl/Cmd+H 展开替换区', /e\.key === 'h' \|\| e\.key === 'H'\)\)\s*\{\s*e\.preventDefault\(\);/.test(code));
-check('Esc 优先关闭查找栏（先于弹窗栈）',
-  /if \(e\.key === 'Escape'\)\s*\{\s*\/\/ 1\.6\.0：查找栏是最 transient 的 UI，Esc 优先关它，再走弹窗栈\s*if \(findState\.open\)\s*\{\s*findClose\(\);/.test(code));
+check('Esc 优先关闭下拉菜单（closeTransientMenus，比查找栏更 transient）',
+  /if \(e\.key === 'Escape'\)\s*\{\s*\/\/ 1\.6\.0\.2：下拉菜单比查找栏更 transient[\s\S]{0,260}if \(closeTransientMenus\(\)\) return;/.test(code));
+check('Esc 其次关闭查找栏（仍先于弹窗栈）',
+  /if \(closeTransientMenus\(\)\) return;\s*\/\/ 1\.6\.0：查找栏是最 transient 的 UI，Esc 优先关它，再走弹窗栈\s*if \(findState\.open\)\s*\{\s*findClose\(\);/.test(code));
 check('面板内 Enter/F3 跳转、Shift 反向',
   /if \(e\.key === 'Enter'\)\s*\{\s*e\.preventDefault\(\);\s*if \(e\.shiftKey\) findPrev\(\); else findNext\(\);/.test(code));
 check('保存前强制清除高亮（doSave → findClearMarks，防 <mark> 混进正文）',
@@ -71,10 +85,12 @@ check('切文件 / 切渲染模式时关闭查找栏（防陈旧命中）',
   && (code.match(/if \(findState\.open\) findClose\(\);/g) || []).length >= 3);
 check('清除高亮走「展开子节点 + removeChild + normalize」精确还原',
   /while \(mk\.firstChild\) parent\.insertBefore\(mk\.firstChild, mk\);[\s\S]{0,80}parent\.removeChild\(mk\);[\s\S]{0,60}parent\.normalize\(\)/.test(code));
-check('高亮 <mark> 样式特异性高于 Vditor 自带 mark 规则',
-  /\.vditor-reset mark\.vd-find\s*\{/.test(CSS)
-  && /\.vditor-reset mark\.vd-find-current\s*\{/.test(CSS)
-  && /html\[data-theme="dark"\] \.vditor-reset mark\.vd-find\s*\{/.test(CSS));
+check('高亮 <mark> 限定 .vditor-ir 渲染区（1.6.0.2：4 个 .vditor-reset 中唯 ir 可编辑）',
+  /\.vditor-ir \.vditor-reset mark\.vd-find\s*\{/.test(CSS)
+  && /\.vditor-ir \.vditor-reset mark\.vd-find-current\s*\{/.test(CSS)
+  && /html\[data-theme="dark"\] \.vditor-ir \.vditor-reset mark\.vd-find\s*\{/.test(CSS));
+check('findHighlightRoot 只查 .vditor-ir > .vditor-reset（4 个 .vditor-reset 中唯 ir 可编辑）',
+  /function findHighlightRoot\(\)\s*\{\s*if \(rawMode\) return null;[\s\S]{0,400}return document\.querySelector\('#vditor \.vditor-ir > \.vditor-reset'\);/.test(code));
 check('正则非法有 try/catch 兜底（不抛错）',
   /try \{ return new RegExp\(src, flags\); \} catch \(e\) \{ return \{ error: e \}; \}/.test(code));
 check('替换全部：正则走原生 replace（支持 $1），非正则从尾向前',
@@ -89,12 +105,16 @@ const ids = {};
 const timers = [];
 const rafQueue = [];
 const roInstances = [];
+const docLs = {};                       // document 级监听登记（供菜单测试派发click）
 function mk(id) {
   const cls = new Set();
   const attrs = {};
   const el = {
-    _id: id, id: '', textContent: '', title: '', value: '', innerHTML: '', disabled: false,
+    // id 必须回填真实值：closeTransientMenus 走 tbMenuClose(menus[i].id)，
+    // 旧桩 id:'' 会让 getElementById('') 落到幻影元素上，真菜单永远关不掉
+    _id: id, id: id, textContent: '', title: '', value: '', innerHTML: '', disabled: false,
     style: {}, dataset: {}, children: [], hidden: false, className: '',
+    offsetWidth: 100, offsetHeight: 100, scrollWidth: 0, clientWidth: 0,
     classList: { add(c) { cls.add(c); }, remove(c) { cls.delete(c); },
                  toggle(c, f) { f ? cls.add(c) : cls.delete(c); }, contains(c) { return cls.has(c); } },
     appendChild(c) { this.children.push(c); if (c && typeof c === 'object') c.parentNode = this; return c; },
@@ -126,9 +146,15 @@ function mk(id) {
     setAttribute(k, v) { attrs[k] = String(v); },
     querySelector() { return mk('q'); }, querySelectorAll() { return []; },
     focus() {}, select() {}, click() { if (this._ls && this._ls.click) this._ls.click(); },
-    _fire(t) { if (this._ls && this._ls[t]) this._ls[t](); },
-    closest() { return null; },
-    getBoundingClientRect() { return { top: 0, left: 0, width: 0, height: 0 }; }
+    _fire(t, ev) { if (this._ls && this._ls[t]) this._ls[t](ev || { stopPropagation() {}, preventDefault() {} }); },
+    // 简化 closest：类名命中即返回自身（覆盖 .tb-menu / .mi / .tb-trigger 判定）
+    closest(sel) {
+      const last = sel.split(' ').pop();
+      if (last && last.charAt(0) === '.' && this.className &&
+          this.className.split(/\s+/).indexOf(last.slice(1)) >= 0) return this;
+      return null;
+    },
+    getBoundingClientRect() { return { top: 0, left: 0, right: 100, bottom: 30, width: 100, height: 30 }; }
   };
   Object.defineProperty(el, 'firstChild', { get() { return this.children[0] || null; } });
   return el;
@@ -156,13 +182,15 @@ const ctx = {
         nextNode() { cur = walkerNodes.shift() || null; return cur; }
       };
     },
-    querySelector: (sel) => (sel === '#vditor .vditor-reset' ? (qsHost || mk('qs')) : mk('qs')),
-    querySelectorAll: () => [],
-    addEventListener() {}, removeEventListener() {},
+    querySelector: (sel) => (sel === '#vditor .vditor-ir > .vditor-reset' ? (qsHost || mk('qs')) : mk('qs')),
+    querySelectorAll: (sel) => (sel === '.tb-menu' ? [getEl('export-menu'), getEl('more-menu')] : []),
+    addEventListener(t, fn) { (docLs[t] = docLs[t] || []).push(fn); },
+    removeEventListener() {},
     body: mk('body'), documentElement: mk('html'), cookie: ''
   },
   navigator: { userAgent: 'node', platform: 'Win32' },
   location: { href: 'http://x/', search: '', hash: '', protocol: 'http:' },
+  innerWidth: 1024, innerHeight: 768,
   localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
   setTimeout: (fn) => { timers.push(fn); return timers.length; },
   clearTimeout: () => {},
@@ -198,7 +226,11 @@ check('③ findOpen / findClose / findCompute / findNext / findPrev / findReplac
 
 // ---- ② 场景（有界步帧：tick 自排队，禁止无界排空） ----
 const nameEl = ids['cur-name'];
-function step(n) { for (let i = 0; i < n && rafQueue.length; i++) rafQueue.shift()(); }
+// 1.6.0.2：fnameTick(now) 依赖 rAF 时间戳做时间归一化（dt = (now-last)/1000），
+// 旧桩不传时间戳 → now 退化为 performance.now()（Date.now()），
+// 同一毫秒内多帧 dt=0 → pos 恒 0 →「滚动不动」假象。故步帧必须传递增假时间。
+let fakeNow = 0;
+function step(n) { for (let i = 0; i < n && rafQueue.length; i++) { fakeNow += 16; rafQueue.shift()(fakeNow); } }
 function flushTimers() { const t = timers.slice(); timers.length = 0; t.forEach(fn => fn()); }
 
 nameEl.scrollWidth = 100; nameEl.clientWidth = 300;
@@ -215,14 +247,19 @@ err = null;
 try { ctx.setCurName('一个非常长的文件名字段用来测试横向滚动行为.md'); } catch (e) { err = e; }
 check('setCurName 长名不抛错', err === null, err && err.message);
 rafQueue.length = 0; ctx.updateFilenameScroll();
-step(1);
-const transforms = [];
-for (let i = 0; i < 5; i++) { step(1); transforms.push(nameEl.style.transform); }
-check('溢出时启动滚动（transform 非空）', transforms[0] !== '', transforms[0]);
+step(1);                       // 测量帧：读 overflow 并挂 tick
+step(1);                       // 首帧：初始化 last（dt=0），pos=0 触发左端 900ms 到端停顿
+// 1.6.0.2 设计：起滚与到端均有 FNAME_PAUSE(900ms) 停顿（给用户读完开头的时间），
+// 故必须跨过初始停顿后再采样，否则采到的全是停顿帧（translateX(0px)）。
+for (let i = 0; i < 70; i++) step(1);
+const t1 = nameEl.style.transform;
+for (let i = 0; i < 20; i++) step(1);
+const t2 = nameEl.style.transform;
+check('溢出时启动滚动（transform 非空）', t1 !== '', t1);
 check('transform 逐步左移（translateX 负值递增）',
-  /translateX\(-(\d+)px\)/.test(transforms[4])
-  && parseInt(RegExp.$1, 10) > parseInt((/-(\d+)px\)/.exec(transforms[0]) || [0, 0])[1], 10),
-  transforms);
+  /translateX\(-(\d+(?:\.\d+)?)px\)/.test(t2)
+  && parseFloat(RegExp.$1) > parseFloat((/-(\d+(?:\.\d+)?)px\)/.exec(t1) || [0, 0])[1]),
+  { t1: t1, t2: t2 });
 nameEl._fire('mouseenter');
 step(3);
 const beforePause = nameEl.style.transform;
@@ -365,5 +402,140 @@ check('清除后还原为纯文本节点（无 mark 残留）',
   && para.children.filter(c => c.nodeType === 3).map(c => c.nodeValue).join('') === 'abc abc',
   para.children.map(c => c.nodeType === 3 ? '#' + c.nodeValue : (c.className || c._id)));
 
+// ================= 1.6.0.2：顶栏下拉菜单（导出合并 / ⋯ 更多 / 三档响应式） =================
+console.log('== 1.6.0.2 顶栏下拉菜单（静态） ==');
+check('导出按钮已合并（btn-export-md / btn-export-html 均已移除）',
+  !/id="btn-export-md"/.test(html) && !/id="btn-export-html"/.test(html));
+check('「导出 ▾」按钮存在且挂 tb-trigger 契约类（供外部点击收口判定）',
+  /<button id="btn-export" class="btn btn--ghost tb-trigger"/.test(html));
+check('「⋯ 更多」按钮存在（默认隐藏纯 CSS 控制，不用 hidden 属性）',
+  /<button id="btn-more" class="btn btn--ghost tb-trigger"/.test(html)
+  && !/<button id="btn-more"[^>]*hidden/.test(html));
+check('「⋯ 更多」置于保存左侧（保存恒为最右主操作）',
+  html.indexOf('id="btn-more"') < html.indexOf('id="btn-save"'));
+check('#export-menu 静态两项 + #more-menu 动态容器均存在',
+  /<div id="export-menu" class="tb-menu" role="menu" hidden>/.test(html)
+  && /<div id="more-menu" class="tb-menu" role="menu" hidden><\/div>/.test(html));
+check('.tb-menu[hidden] 显式 display:none（防 flex 覆盖 hidden 属性，同 find-bar 教训）',
+  /\.tb-menu\[hidden\]\s*\{\s*display:\s*none/.test(CSS));
+check('.tb-menu z-index 显式声明 10015（10010 基础框与 10020 确认类之间，逐个显式）',
+  /\.tb-menu\s*\{[^}]*z-index:\s*10015/.test(CSS));
+check('菜单项四态齐全（hover 浅底 / focus-visible 品牌环 / active 下压 / disabled）',
+  /\.tb-menu \.mi:hover:not\(:disabled\)/.test(CSS)
+  && /\.tb-menu \.mi:focus-visible/.test(CSS)
+  && /\.tb-menu \.mi:active:not\(:disabled\)/.test(CSS)
+  && /\.tb-menu \.mi:disabled/.test(CSS));
+check('#btn-more 默认 display:none（>=860px 不出现）',
+  /#topbar #btn-more\s*\{\s*display:\s*none/.test(CSS));
+check('<860px：退出/设置/信息/纯文本退入菜单，⋯更多显示',
+  /@media \(max-width: 859px\)[\s\S]{0,400}#topbar #btn-more\s*\{\s*display:\s*inline-flex/.test(CSS)
+  && /@media \(max-width: 859px\)[\s\S]{0,700}#topbar #btn-raw-mode\s*\{\s*display:\s*none/.test(CSS));
+check('<520px：查找/导出/主题/用户名/字数统计也退入（纯文字极限档）',
+  /@media \(max-width: 519px\)[\s\S]{0,500}#topbar #btn-find,\s*#topbar #btn-export,\s*#topbar #btn-theme/.test(CSS));
+check('导出旧绑定已从 initEditorAndFiles 顶栏组移除（改由顶层 initTbMenus 绑定）',
+  !/getElementById\('btn-export-md'\)/.test(code)
+  && !/getElementById\('btn-export-html'\)/.test(code));
+check('initTbMenus 为顶层 IIFE（菜单在登录前即完成绑定，行为一致）',
+  /\(function initTbMenus\(\) \{/.test(code));
+check('菜单过滤判据是 el.hidden 属性而非 offsetParent（媒体查询收纳的按钮仍入菜单）',
+  /if \(!el \|\| el\.hidden\) continue;/.test(code)
+  && !/buildMoreMenu[\s\S]{0,600}offsetParent/.test(code));
+
+console.log('== 1.6.0.2 顶栏下拉菜单（vm 运行时） ==');
+check('菜单函数均为顶层可见（tbMenuOpen/tbMenuClose/tbMenuIsOpen/closeTransientMenus/buildMoreMenu/exportFromMenu）',
+  ['tbMenuOpen', 'tbMenuClose', 'tbMenuIsOpen', 'closeTransientMenus', 'buildMoreMenu', 'exportFromMenu']
+    .every(f => typeof ctx[f] === 'function'));
+
+const exportBtn = getEl('btn-export');
+const exportMenu = getEl('export-menu');
+const moreBtn = getEl('btn-more');
+const moreMenu = getEl('more-menu');
+// 真实 HTML 中两个菜单面板均带 hidden 属性（默认关闭）；桩默认 hidden:false，
+// 不显式初始化会把「从未打开」误判成「已打开」（触发钮点击走了关闭分支）。
+// className 需回填真实类名：外部点击收口逻辑靠 closest('.tb-menu') 判定。
+exportMenu.hidden = true;
+exportMenu.className = 'tb-menu';
+moreMenu.hidden = true;
+moreMenu.className = 'tb-menu';
+
+err = null;
+try { exportBtn._fire('click'); } catch (e) { err = e; }
+check('点「导出 ▾」不抛错', err === null, err && err.message);
+check('导出菜单打开且触发钮 aria-expanded=true',
+  exportMenu.hidden === false && exportBtn.getAttribute('aria-expanded') === 'true',
+  { hidden: exportMenu.hidden, aria: exportBtn.getAttribute('aria-expanded') });
+check('tbMenuIsOpen 反映打开态', ctx.tbMenuIsOpen('export-menu') === true);
+
+err = null;
+try { moreBtn._fire('click'); } catch (e) { err = e; }
+check('同时只开一个：开「⋯ 更多」时导出菜单自动关闭',
+  exportMenu.hidden === true && moreMenu.hidden === false,
+  { export: exportMenu.hidden, more: moreMenu.hidden });
+check('buildMoreMenu 生成全部可见按钮项（含被媒体查询收纳的查找/设置等）', (function () {
+  const items = moreMenu.children.filter(c => c.className === 'mi');
+  return items.length === 8 && items.some(c => c.dataset.fwd === 'btn-find')
+      && items.some(c => c.dataset.fwd === 'btn-logout');
+})(), moreMenu.children.map(c => c.dataset && c.dataset.fwd));
+check('hidden 属性控制的条件按钮被过滤（raw-mode 隐藏时不出现在菜单）', (function () {
+  getEl('btn-raw-mode').hidden = true;
+  moreMenu.children.length = 0;          // 桩的 textContent='' 不清空 children，先手动重置
+  ctx.buildMoreMenu();
+  return !moreMenu.children.some(c => c.dataset && c.dataset.fwd === 'btn-raw-mode');
+})());
+check('raw-mode 恢复可见后重新入菜单', (function () {
+  getEl('btn-raw-mode').hidden = false;
+  moreMenu.children.length = 0;
+  ctx.buildMoreMenu();
+  return moreMenu.children.some(c => c.dataset && c.dataset.fwd === 'btn-raw-mode');
+})());
+check('菜单项 data-act=export-md → exportDoc("md")', (function () {
+  const calls = [];
+  ctx.exportDoc = (k) => calls.push(k);
+  const mi = mk('mi-md'); mi.className = 'mi'; mi.dataset = { act: 'export-md' };
+  docLs.click[0]({ target: mi });
+  return calls.length === 1 && calls[0] === 'md';
+})());
+check('菜单项 data-act=export-html → exportDoc("html")', (function () {
+  const calls = [];
+  ctx.exportDoc = (k) => calls.push(k);
+  const mi = mk('mi-html'); mi.className = 'mi'; mi.dataset = { act: 'export-html' };
+  docLs.click[0]({ target: mi });
+  return calls.length === 1 && calls[0] === 'html';
+})());
+check('菜单项点击后菜单自动关闭', moreMenu.hidden === true, moreMenu.hidden);
+check('菜单项 data-fwd 转发顶栏按钮 click（契约复用既有绑定）', (function () {
+  let fired = 0;
+  const tgt = getEl('btn-settings');
+  tgt._ls = tgt._ls || {};
+  tgt._ls.click = () => { fired++; };
+  const mi = mk('mi-fwd'); mi.className = 'mi'; mi.dataset = { fwd: 'btn-settings' };
+  docLs.click[0]({ target: mi });
+  return fired === 1;
+})());
+check('点菜单外区域 → 外部点击处理器关闭菜单（capture 派发）', (function () {
+  exportBtn._fire('click');                       // 先打开
+  const outside = mk('outside');                  // closest 返回 null
+  docLs.click[1]({ target: outside });
+  return exportMenu.hidden === true;
+})());
+check('点触发钮/菜单内不触发外部关闭（closest 命中即跳过）', (function () {
+  exportBtn._fire('click');                       // 打开
+  docLs.click[1]({ target: exportMenu });         // exportMenu.className='tb-menu'
+  return exportMenu.hidden === false;
+})());
+check('closeTransientMenus 返回值语义（关过 true / 无开 false）', (function () {
+  if (!ctx.tbMenuIsOpen('export-menu')) exportBtn._fire('click');   // 先确保处于打开态
+  const a = ctx.closeTransientMenus();
+  const b = ctx.closeTransientMenus();
+  return a === true && b === false;
+})());
+check('关闭后触发钮 aria-expanded 复位 false',
+  exportBtn.getAttribute('aria-expanded') === 'false', exportBtn.getAttribute('aria-expanded'));
+check('tbMenuOpen 定位写入内联 left/top（px 数值，非 NaN）', (function () {
+  exportBtn._fire('click');
+  return /^-?\d+(\.\d+)?px$/.test(exportMenu.style.left || '')
+      && /^-?\d+(\.\d+)?px$/.test(exportMenu.style.top || '');
+})(), { left: exportMenu.style.left, top: exportMenu.style.top });
+
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
-process.exit(fail === 0 ? 0 : 1);
+process.exit(fail === 0 ? 0 : 1);;

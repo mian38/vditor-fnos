@@ -410,7 +410,7 @@ console.log('\n[14] 1.4.3 端到端：initEditorAndFiles 完整绑定');
   ['doc-info-close', 'doc-info-close2', 'doc-info-delete', 'folder-add', 'pw-change',
    'btn-backup', 'btn-theme', 'btn-doc-info', 'btn-raw-mode', 'btn-save', 'btn-word-help',
    'settings-close', 'settings-close2', 'settings-save', 'btn-toggle-side', 'btn-logout',
-   'btn-settings', 'set-tabs', 'btn-export-md', 'btn-export-html'
+   'btn-settings', 'set-tabs', 'btn-export', 'btn-more'
   ].forEach(function (id) {
     check('1.4.2 中断点之后仍绑定：' + id, boundIds.indexOf(id) >= 0);
   });

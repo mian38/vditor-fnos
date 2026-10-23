@@ -72,7 +72,7 @@ from vd_util import (
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.6.0.1"
+APP_VERSION = "1.6.0.2"
 
 # 超过此体积的文档不再生成「历史版本」快照。
 # 背景：快照机制是每次保存都存一份**全文**。配合默认 60 秒自动保存，
@@ -341,7 +341,7 @@ def client_ip(handler):
 
 # ---------------- 登录日志（持久化于 CONFIG_DIR/login_log.json）----------------
 def record_login_event(kind, ip, detail=""):
-    """kind: 'login_ok' / 'login_fail' / 'setup' / 'logout' / 'pw_change'"""
+    """kind: 'login_ok' / 'login_fail' / 'setup' / 'logout' / 'pw_change' / 'session_kicked'"""
     with LOG_LOCK:
         try:
             entries = []
@@ -423,9 +423,22 @@ def get_session(handler):
     return token
 
 def start_session(handler):
+    """创建新会话。
+
+    1.6.0.2 单活会话（后登踢先登）：同一访问密码不允许多个页面 / 设备同时
+    在线——新登录成功即清空所有既有会话，先登录者的下一个请求会因 token
+    失效而收到 401，前端据此弹「会话失效」并返回登录页。
+    设计取舍（对比「先到先得」）：先登者不主动退出时后登者将永远进不去
+    （死锁），服务重启后锁即失效、还会误锁正常用户；后登踢先登无额外状态、
+    重启自然恢复，语义也更符合「一个密码 = 一个席位」的单用户定位。"""
+    ip = client_ip(handler)
+    kicked = len(SESSIONS)
+    if kicked:
+        SESSIONS.clear()
+        record_login_event("session_kicked", ip, "evicted=%d" % kicked)
     token = secrets.token_urlsafe(32)
     SESSIONS[token] = {
-        "ip": client_ip(handler),
+        "ip": ip,
         "created": time.time(),
         "last": time.time(),
     }
