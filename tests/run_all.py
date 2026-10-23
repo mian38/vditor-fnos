@@ -33,6 +33,7 @@ CASES = [
     ("test_rawmode_v14.js",   True,  "纯文本模式解耦 / 渲染模式 / 二次确认（vm 驱动真实脚本）"),
     ("test_ui_buttons_v1504.js", True, "按钮交互体系 / 列表体积悬停提示 / 10MB 门禁对话框"),
     ("test_core.py",          True,  "端到端：拉起真实服务跑完整业务流"),
+    ("test_concurrent_save.py", True, "并发保存防回归：SAVE_LOCK + 原子写（1.6.0）"),
     ("test_e2e_http.py",      True,  "端到端：按浏览器调用顺序驱动 HTTP 接口"),
     ("test_perf.py",          False, "性能基线"),
     ("test_stress_largefile.py", False, "大文件（4MB/15MB）压力与逐字节校验"),

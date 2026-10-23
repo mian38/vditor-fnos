@@ -127,6 +127,7 @@ SETTINGS_FILE = os.path.join(CONFIG_DIR, "settings.json")
 LOGIN_LOG_FILE = os.path.join(CONFIG_DIR, "login_log.json")
 EXCLUDED_FILE = os.path.join(CONFIG_DIR, "excluded.json")  # 被隐藏（删除）的分区路径列表
 LOG_LOCK = threading.Lock()  # 保护 login_log.json 的并发读写
+SAVE_LOCK = threading.Lock()  # 保护文档保存的「读旧内容→归档历史版本→写文件」临界区（1.6.0 并发保存修复）
 
 def _bool_default_true(name):
     """安全相关开关默认开启：除非环境变量显式置为 0/false/no，否则为 True。"""
@@ -1539,21 +1540,31 @@ class Handler(BaseHTTPRequestHandler):
             parent = os.path.dirname(fp)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-            # 覆盖写之前，把旧内容快照为历史版本（内容有变化才记录）。
-            # 性能：仅在「确实会记录版本」时才读取旧内容——版本功能关闭，
-            # 或自动保存遇到超限大文档时直接跳过，避免每次保存白读一遍全文
-            # （10MB 级文件可省数十毫秒~数百毫秒）。手动保存则不看体积，一律读。
-            if os.path.isfile(fp) and SETTINGS.get("versioning"):
-                try:
-                    if manual or os.path.getsize(fp) <= VERSION_SKIP_BYTES:
-                        with open(fp, "rb") as f:
-                            prev = f.read()
-                        if prev and prev != content.encode("utf-8"):
-                            save_file_version(root["path"], rel_stored, prev, manual=manual)
-                except OSError:
-                    pass
-            with open(fp, "w", encoding="utf-8") as f:
-                f.write(content)
+            with SAVE_LOCK:
+                # 临界区（1.6.0 修复并发保存）：ThreadingHTTPServer 每请求一线程，
+                # 多标签页/多实例对同一文档并发保存会真正并行进入本函数。串行化
+                # 「读旧内容→归档历史版本→写文件」后，后写者必然读到先写者的完整
+                # 结果，败者内容被归档为历史版本，而非被静默覆盖丢失。
+                # 覆盖写之前，把旧内容快照为历史版本（内容有变化才记录）。
+                # 性能：仅在「确实会记录版本」时才读取旧内容——版本功能关闭，
+                # 或自动保存遇到超限大文档时直接跳过，避免每次保存白读一遍全文
+                # （10MB 级文件可省数十毫秒~数百毫秒）。手动保存则不看体积，一律读。
+                if os.path.isfile(fp) and SETTINGS.get("versioning"):
+                    try:
+                        if manual or os.path.getsize(fp) <= VERSION_SKIP_BYTES:
+                            with open(fp, "rb") as f:
+                                prev = f.read()
+                            if prev and prev != content.encode("utf-8"):
+                                save_file_version(root["path"], rel_stored, prev, manual=manual)
+                    except OSError:
+                        pass
+                # 原子写（1.6.0）：先写同目录临时文件再 os.replace，任何时刻
+                # 读到的都是完整旧文件或完整新文件，杜绝「截断+写入」窗口内的
+                # 半截/交错损坏。临时文件名带 pid+毫秒时间戳防同名冲突。
+                tmp = "%s.tmp.%d.%d" % (fp, os.getpid(), int(time.time() * 1000))
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(content)
+                os.replace(tmp, fp)
             invalidate_files_cache()
             st = os.stat(fp)
             self._send_json({"ok": True, "root": root_id, "path": rel_stored,
