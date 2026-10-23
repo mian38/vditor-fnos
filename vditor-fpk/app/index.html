@@ -129,10 +129,20 @@
             overflow: hidden; white-space: nowrap;
         }
         /* 1.6.0：长文件名自适应——.fname 允许收缩并裁剪，前缀静止不动 */
-        #topbar .fname { font-size: var(--fs-sm); color: var(--c-text-2); white-space: nowrap; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+        #topbar .fname {
+            font-size: var(--fs-sm); color: var(--c-text-2); white-space: nowrap;
+            flex: 1 1 auto; min-width: 0; overflow: hidden;
+            /* 1.6.0.2：前缀与滚动区拆为两个 flex 子项，从结构上杜绝文件名
+               滚动时压盖前缀（旧实现 #cur-name 用 max-width:100% + translateX
+               越界，实测 240/240 帧压过「当前文件：」） */
+            display: flex; align-items: baseline; gap: 6px;
+        }
+        #topbar .fname-prefix { flex: 0 0 auto; white-space: nowrap; }
         #topbar .fname b { color: var(--c-text); font-weight: 600; }
-        /* 1.6.0：仅 #cur-name 文本自身横向滚动（JS 驱动 transform，见 updateFilenameScroll） */
-        #cur-name { display: inline-block; max-width: 100%; overflow: hidden; white-space: nowrap; vertical-align: bottom; }
+        /* 1.6.0.2：仅 #cur-name 文本自身横向滚动（JS 驱动 transform，见 updateFilenameScroll）。
+           弃用 max-width:100%（其 100% 是 .fname 全宽而非前缀后剩余空间，会把
+           本区一起压塌）；宽度由 flex 自动分配，overflow 即真实可滚动量 */
+        #cur-name { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
         #topbar .top-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
         /* 1.6.0：顶栏按钮组永不被长文件名挤压。仅布局属性（flex），
            不写颜色/边框，与 .btn--* 变体视觉规则无优先级冲突 */
@@ -150,32 +160,98 @@
         #topbar .word-counter .wc-sep { color: var(--c-border); }
         /* 隐藏 Vditor 内置右下角字数，改用顶栏统一统计（双口径 + 阅读时间） */
         .vditor-counter { display: none !important; }
-        /* ---------------- 1.6.0：查找与替换栏 ---------------- */
+        /* ---------------- 1.6.0.2：查找与替换栏（排列参考 Win11 记事本，样式沿用本应用令牌） ---------------- */
         #find-bar {
             flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px;
             padding: 8px 12px; background: var(--c-bg-subtle);
             border-bottom: 1px solid var(--c-border);
         }
         #find-bar[hidden] { display: none; }
-        #find-bar .fb-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        #find-bar .set-input { width: 220px; max-width: 40vw; }
+        /* 1.6.0.2 修复 toggle 失效：.fb-row 的 display:flex 特异性高于浏览器默认
+           [hidden]{display:none}，导致 #find-replace-row 的 hidden 属性完全失效
+           （1.6.0.1「展开/收起替换区」按键无视觉变化的根因）。此处显式补规则。 */
+        #find-bar #find-replace-row[hidden] { display: none; }
+        #find-bar .fb-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; min-width: 0; }
+        /* 1.6.0.2：输入框撑满剩余宽度（记事本式），弃用固定 220px */
+        #find-bar .set-input { flex: 1 1 auto; min-width: 0; width: auto; max-width: none; }
         #find-bar .fb-count {
             font-size: var(--fs-sm); color: var(--c-text-3); white-space: nowrap;
             min-width: 46px; text-align: center; font-variant-numeric: tabular-nums;
+            flex: 0 0 auto;
         }
-        #find-bar .fb-opts { display: inline-flex; gap: 4px; margin-left: auto; }
+        /* 折叠钮：固定方宽（与占位同宽，保证两行输入框对齐）；字符 ▸/▾ 由 JS 切换 */
+        #find-bar .fb-toggle { flex: 0 0 auto; min-width: 34px; padding: 4px 8px; }
+        #find-bar .fb-toggle-ph { flex: 0 0 auto; display: inline-block; width: 34px; }
+        #find-bar .fb-opts { display: inline-flex; gap: 4px; flex: 0 0 auto; }
         #find-bar .fb-opt { padding: 4px 8px; font-size: var(--fs-sm); min-width: 34px; }
+        /* 关闭钮推到行最右（其余元素自然左排，记事本式） */
+        #find-bar #find-close { margin-left: auto; }
         /* 选项开关态：主色浅底 + 主色描边（与分段控件选中态同语言） */
         #find-bar .fb-opt[aria-pressed="true"] {
             background: var(--c-brand-soft); color: var(--c-brand-hover);
             border-color: var(--c-brand);
         }
-        /* 查找高亮：渲染区 <mark>。特异性 (.vditor-reset mark.vd-find) 高于
-           Vditor 自带 `.vditor-reset mark`（==text== 语法），确保压得住 */
-        .vditor-reset mark.vd-find { background: #ffe58f; color: inherit; border-radius: 2px; }
-        .vditor-reset mark.vd-find-current { background: #ffa940; color: inherit; outline: 1px solid var(--c-brand); }
-        html[data-theme="dark"] .vditor-reset mark.vd-find { background: rgba(210, 153, 34, .45); }
-        html[data-theme="dark"] .vditor-reset mark.vd-find-current { background: rgba(210, 153, 34, .75); }
+        /* 查找高亮：渲染区 <mark>。1.6.0.2 修复：必须限定 .vditor-ir ——
+           Vditor DOM 内共有 4 个 .vditor-reset（wysiwyg 空壳 / sv textarea /
+           ir 真正编辑区 / preview），不限定则 querySelector 取到 wysiwyg
+           空壳，mark 全插进不可见区域（1.6.0.1 查找无高亮总根因）。
+           特异性 (.vditor-ir .vditor-reset mark.vd-find) 高于 Vditor 自带
+           `.vditor-reset mark`（==text== 语法），确保压得住 */
+        .vditor-ir .vditor-reset mark.vd-find { background: #ffe58f; color: inherit; border-radius: 2px; }
+        .vditor-ir .vditor-reset mark.vd-find-current { background: #ffa940; color: inherit; outline: 1px solid var(--c-brand); }
+        html[data-theme="dark"] .vditor-ir .vditor-reset mark.vd-find { background: rgba(210, 153, 34, .45); }
+        html[data-theme="dark"] .vditor-ir .vditor-reset mark.vd-find-current { background: rgba(210, 153, 34, .75); }
+        /* ---------------- 1.6.0.2：顶栏下拉菜单（「导出 ▾」/「⋯ 更多」） ----------------
+           定位由 JS 写到内联 style（position:fixed + left/top），此处只定外观与层级。
+           z-index 逐个显式声明（1.5.0.7 铁律）：10015 = 高于基础框 10010、
+           低于确认类 10020——菜单上再弹确认框时确认框压得住菜单。 */
+        .tb-menu {
+            position: fixed; z-index: 10015;
+            min-width: 176px; max-width: calc(100vw - 16px); padding: 4px;
+            background: var(--c-bg); border: 1px solid var(--c-border);
+            border-radius: var(--r); box-shadow: var(--shadow);
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        /* 同类 [hidden] 覆盖修复：.tb-menu 的 display:flex 特异性高于 UA 的
+           [hidden]{display:none}，不显式补这条规则 hidden 属性会失效（同 find-bar 教训） */
+        .tb-menu[hidden] { display: none; }
+        .tb-menu .mi {
+            display: block; width: 100%; padding: 7px 10px;
+            border: 0; border-radius: var(--r-sm);
+            background: transparent; color: var(--c-text);
+            font-family: inherit; font-size: var(--fs-md); line-height: 1.4;
+            text-align: left; cursor: pointer; white-space: nowrap;
+        }
+        /* 四态与 .btn--ghost 同语言：hover 仅换浅底（不变蓝）、focus-visible 品牌环、
+           active 下压 1px、disabled 降透明度 + not-allowed */
+        .tb-menu .mi:hover:not(:disabled) { background: var(--c-bg-fill); color: var(--c-text); }
+        .tb-menu .mi:focus-visible { outline: 2px solid var(--c-brand); outline-offset: -1px; }
+        .tb-menu .mi:active:not(:disabled) { transform: translateY(1px); }
+        .tb-menu .mi:disabled { opacity: .5; cursor: not-allowed; }
+        .tb-menu .mi-sep { height: 1px; margin: 4px 6px; background: var(--c-border-2); }
+        /* ---------------- 1.6.0.2：顶栏三档响应式（问题⑤） ----------------
+           >=860px：全部按钮平铺（默认态，无需规则）。
+           <860px ：低频按钮退入「⋯ 更多」——退出/设置/信息/纯文本。
+           <520px ：用户要求「不用图标，纯文字」的极限档——查找/导出/主题/用户名
+                    也退入菜单，顶栏只保留：折叠钮｜文件名｜保存｜⋯ 更多。
+           说明：两档均用 ID 选择器（0,2,0 高于 #topbar button 的 0,1,1），
+           无需 !important；#btn-more 默认 display:none 由本块下方规则给出，
+           显隐纯 CSS 控制，不用 hidden 属性（避免与 JS 的 el.hidden 过滤语义混淆）。 */
+        #topbar #btn-more { display: none; }
+        @media (max-width: 859px) {
+            #topbar #btn-more { display: inline-flex; }
+            #topbar #btn-logout,
+            #topbar #btn-settings,
+            #topbar #btn-doc-info,
+            #topbar #btn-raw-mode { display: none; }
+        }
+        @media (max-width: 519px) {
+            #topbar #btn-find,
+            #topbar #btn-export,
+            #topbar #btn-theme,
+            #topbar .user,
+            #topbar .word-counter { display: none; }
+        }
         /* 移动端下拉面板脱离裁剪容器后，强制 position:fixed 不被内联 absolute 覆盖，浮层覆盖编辑区 */
         #vditor { flex: 1 1 auto; min-height: 0; }
         /* ---- 纯文本模式（大文件降级）：不渲染，仅编辑原始 Markdown ---- */
@@ -978,7 +1054,11 @@
     <div id="main">
         <div id="topbar">
             <button id="btn-toggle-side" class="btn btn--ghost" title="« 折叠文档栏">«</button>
-            <span class="fname">当前文件：<b id="cur-name">未选择</b></span>
+            <!-- 1.6.0.2：前缀拆为独立 flex 子项（flex:0 0 auto 静止），
+                 #cur-name 独占剩余空间（flex:1 1 auto; min-width:0）——
+                 结构性保证滚动中的文件名永不会压盖「当前文件：」前缀
+                 （1.6.0.1 的 max-width:100% + translateX 越界根因） -->
+            <span class="fname"><span class="fname-prefix">当前文件：</span><b id="cur-name">未选择</b></span>
             <span id="word-counter" class="word-counter" title="">
                 <span class="wc-item">正文 <b id="wc-text">0</b></span>
                 <span class="wc-sep">·</span>
@@ -990,36 +1070,54 @@
                 <span class="user" id="user-label"></span>
                 <button id="btn-logout" class="btn btn--ghost">退出</button>
                 <button id="btn-settings" class="btn btn--ghost">设置</button>
-                <button id="btn-export-md" class="btn btn--ghost">导出 .md</button>
-                <button id="btn-export-html" class="btn btn--ghost">导出 HTML</button>
+                <!-- 1.6.0.2：「导出 .md」「导出 HTML」合并为一个「导出 ▾」按钮，
+                     点击弹出下拉菜单二选一（菜单面板见 #export-menu）。
+                     动机：顶栏按钮过多，窄屏 / 大缩放下放不下（问题⑤）。 -->
+                <button id="btn-export" class="btn btn--ghost tb-trigger" aria-expanded="false" title="导出当前文档">导出 ▾</button>
                 <button id="btn-doc-info" class="btn btn--ghost">信息</button>
+                <!-- 1.6.0.2：查找入口常驻顶栏（此前仅 Ctrl+F/Ctrl+H，无可见入口）。
+                     行为与 Ctrl+F 一致：有选区则预填；面板已开仅聚焦不清状态 -->
+                <button id="btn-find" class="btn btn--ghost" title="查找与替换（Ctrl+F / Ctrl+H）">🔍 查找</button>
                 <!-- 1.4.2：仅在打开大文档时出现（由 updateRawModeBtn 依据文档大小控制显隐） -->
                 <button id="btn-raw-mode" class="btn btn--ghost" title="切换为纯文本模式（关闭渲染，适合大文件）" hidden>纯文本</button>
                 <button id="btn-theme" class="btn btn--ghost" title="切换浅色 / 暗黑模式">🌙</button>
+                <!-- 1.6.0.2：「⋯ 更多」收纳钮。默认隐藏（>=860px 全部按钮放得下）；
+                     <860px 时经媒体查询显示，收纳退出/设置/信息/纯文本等低频按钮；
+                     <520px 时进一步收纳查找/导出/主题（用户要求：不用图标，纯文字按钮，
+                     下拉栏显示所有按键）。显隐纯 CSS 控制（不用 hidden 属性），
+                     避免与 JS 侧 el.hidden 语义混淆。置于「保存」左侧：
+                     保存始终是顶栏最右的主操作，位置不随断点漂移。 -->
+                <button id="btn-more" class="btn btn--ghost tb-trigger" aria-expanded="false" title="更多操作">⋯ 更多</button>
                 <button id="btn-save" class="btn btn--primary">保存</button>
             </div>
         </div>
         <!-- 1.6.0：查找与替换栏（Ctrl/Cmd+F 唤起，Ctrl+H 展开替换区，Esc 关闭）。
              匹配/替换以源串为权威基准；富文本模式下另在 .vditor-reset 渲染区
              包裹 <mark class="vd-find"> 做视觉高亮与滚动定位（详见 JS find* 模块）。 -->
+        <!-- 1.6.0.2：查找与替换栏（Ctrl/Cmd+F 唤起，Ctrl+H 展开替换区，Esc 关闭）。
+             排列参考 Win11 记事本（仅排列，样式沿用本应用 .btn/.set-input 令牌体系）：
+             第一行 = ∨折叠钮｜查找框(撑满)｜计数｜↓ ↑｜选项组｜✕；
+             第二行 = [占位]｜替换框(撑满)｜替换｜全部替换。 -->
         <div id="find-bar" hidden>
-            <div class="fb-row">
+            <div class="fb-row" id="find-main-row">
+                <button id="find-toggle-replace" class="btn btn--ghost fb-toggle" aria-expanded="false" title="展开 / 收起替换区（Ctrl+H）">▸</button>
                 <input id="find-input" class="set-input" type="text" placeholder="查找内容" autocomplete="off" spellcheck="false">
                 <span id="find-count" class="fb-count">0/0</span>
-                <button id="find-prev" class="btn btn--ghost" title="上一处（Shift+Enter / Shift+F3）">↑</button>
                 <button id="find-next" class="btn btn--ghost" title="下一处（Enter / F3）">↓</button>
-                <button id="find-toggle-replace" class="btn btn--ghost" title="展开 / 收起替换区（Ctrl+H）">替换</button>
-                <button id="find-close" class="btn btn--ghost" title="关闭查找（Esc）">✕</button>
-            </div>
-            <div class="fb-row" id="find-replace-row" hidden>
-                <input id="replace-input" class="set-input" type="text" placeholder="替换为" autocomplete="off" spellcheck="false">
-                <button id="replace-one" class="btn btn--ghost" title="替换当前命中并跳到下一处">替换</button>
-                <button id="replace-all" class="btn btn--ghost" title="替换全部命中">全部替换</button>
+                <button id="find-prev" class="btn btn--ghost" title="上一处（Shift+Enter / Shift+F3）">↑</button>
                 <span class="fb-opts">
                     <button id="find-opt-case" class="btn btn--ghost fb-opt" aria-pressed="false" title="区分大小写">Aa</button>
                     <button id="find-opt-word" class="btn btn--ghost fb-opt" aria-pressed="false" title="整词匹配">字</button>
                     <button id="find-opt-regex" class="btn btn--ghost fb-opt" aria-pressed="false" title="正则表达式（替换支持 $1）">.*</button>
                 </span>
+                <button id="find-close" class="btn btn--ghost" title="关闭查找（Esc）">✕</button>
+            </div>
+            <div class="fb-row" id="find-replace-row" hidden>
+                <!-- 与第一行 ∨ 钮等宽的占位，保证两行输入框左缘/宽度对齐（记事本式） -->
+                <span class="fb-toggle-ph" aria-hidden="true"></span>
+                <input id="replace-input" class="set-input" type="text" placeholder="替换为" autocomplete="off" spellcheck="false">
+                <button id="replace-one" class="btn btn--ghost" title="替换当前命中并跳到下一处">替换</button>
+                <button id="replace-all" class="btn btn--ghost" title="替换全部命中">全部替换</button>
             </div>
         </div>
         <div id="vditor"></div>
@@ -1030,6 +1128,15 @@
     </div>
     <div id="sidebar-backdrop"></div>
 </div>
+
+<!-- 1.6.0.2：顶栏下拉菜单面板（position:fixed，由 JS 定位到触发钮下方）。
+     #export-menu 为静态两项；#more-menu 内容由 buildMoreMenu() 动态生成
+     （按各顶栏按钮的 hidden 属性过滤，媒体查询隐藏的按钮仍入菜单）。 -->
+<div id="export-menu" class="tb-menu" role="menu" hidden>
+    <button class="mi" type="button" role="menuitem" data-act="export-md">导出 Markdown（.md）</button>
+    <button class="mi" type="button" role="menuitem" data-act="export-html">导出渲染 HTML</button>
+</div>
+<div id="more-menu" class="tb-menu" role="menu" hidden></div>
 
 <!-- 登录 / 首次设置 -->
 <div id="login-mask">
@@ -1311,7 +1418,10 @@
     <div class="modal-card">
         <div class="sess-icon">🔒</div>
         <p class="sess-title">已退出登录</p>
-        <p class="sess-desc">因长时间未操作，登录会话已过期。<br>为保障文档安全，应用已自动退出登录，请重新登录后继续使用。</p>
+        <!-- 1.6.0.2：单活会话（后登踢先登）起，401 的成因除了空闲超时，
+             还可能是另一处用同一密码登录把本会话踢出——文案须覆盖两种情形，
+             否则被踢用户会以为是自己网络/浏览器的问题。 -->
+        <p class="sess-desc">登录会话已失效：可能是长时间未操作自动过期，也可能是另一处使用同一密码登录，本会话被自动退出。<br>为保障文档安全，应用已停止操作，请重新登录后继续使用。</p>
         <div class="sess-actions">
             <button class="btn btn--primary action" id="btn-session-reload">刷新页面并重新登录</button>
         </div>
@@ -1418,6 +1528,7 @@
                 <p class="g-h">一、编辑器（中间区域）</p>
                 <p>支持三种模式：点工具栏「编辑模式」可在 <b>即时渲染 / 所见即所得 / 源码</b> 之间切换；工具栏还提供加粗、斜体、标题、列表、引用、代码块、表格、链接、表情等常用操作。</p>
                 <p>点「上传」可插入图片或文件（需登录）；上传物保存在<b>当前文档所在文件夹</b>内，并以相对链接引用，便于随文档整体打包。在 <b>HTTPS 或 localhost</b> 环境下额外支持「录音」（浏览器仅在这两种情形开放麦克风）。左侧「大纲」自动列出文档标题，点按即可跳转。</p>
+                <p><b>查找与替换</b>（1.6.0 起）：点顶栏「🔍 查找」按钮或按 <kbd>Ctrl</kbd>+<kbd>F</kbd> 打开查找栏（<kbd>Ctrl</kbd>+<kbd>H</kbd> 直接展开替换区）。命中内容会在正文中<b>高亮标出</b>，用「↓ / ↑」在命中间跳转；替换支持区分大小写、整词匹配与正则表达式。屏幕较窄时查找入口在「⋯ 更多」菜单里。</p>
 
                 <p class="g-h">二、纯文本模式与大文档（1.3.0 起）</p>
                 <p>富文本渲染的成本与文档的<b>块级结构数量</b>成正比，因此对话记录、日志这类「体积不大但结构极多」的文档（实测 1.4MB 含 674 个代码块、1,450 个标题）在富文本模式下打开会卡死。本应用因此引入<b>纯文本模式</b>：关闭渲染、直接编辑 Markdown 原文，<b>保存、历史版本、导出等能力全部保留</b>，仅失去排版预览。</p>
@@ -1438,7 +1549,7 @@
                 <p>点顶栏「信息」按钮，在弹出的「文档信息」对话框中点<b>「历史版本」</b>即可查看每次保存的快照，支持 <b>对比差异、恢复、删除</b>；是否生成历史版本、每个文件保留的最大版本数可在设置中调整（1–200）。单个文档超过 5 MB 时，为避免高频自动保存<b>影响性能</b>，<b>自动保存不生成历史版本</b>，但手动保存仍正常生成历史版本。</p>
 
                 <p class="g-h">六、导出</p>
-                <p>顶栏「导出 .md / 导出 HTML」导出当前文档：若该文档文件夹内还有图片 / 音频等<b>其它文件</b>，会自动把整个文件夹打包为 zip 一起导出，否则只导出单文件。「设置 → 维护」里还有「导出备份（配置 + 文档）」与「导出 / 导入配置（JSON）」，用于迁移与容灾。</p>
+                <p>顶栏「导出 ▾」下拉选择<b>导出 Markdown（.md）</b>或<b>导出渲染 HTML</b>来导出当前文档：若该文档文件夹内还有图片 / 音频等<b>其它文件</b>，会自动把整个文件夹打包为 zip 一起导出，否则只导出单文件。屏幕较窄或页面缩放较大时，部分顶栏按钮会收进「⋯ 更多」下拉菜单，功能完全相同。「设置 → 维护」里还有「导出备份（配置 + 文档）」与「导出 / 导入配置（JSON）」，用于迁移与容灾。</p>
                 <p><b>关于导出备份的耗时</b>：已经开始打包，打包内容包含添加的分区内全部内容（包括 .md 文件、文件夹内原有及上传的附件、历史版本等），以及配置文件（登录密码、Web 设置等）。可能需要较长时间。完成后将自动开始下载，请勿关闭页面。期间界面会显示进度遮罩（含已打包文件数与体积、百分比）；中途点「取消」可停止等待，本次产物不会保留在服务器上。备份文件只会下载到你的设备，应用不会额外保存一份副本。</p>
                 <p class="g-note"><b>纯文本模式下不支持「导出 HTML」</b>：HTML 导出依赖富文本渲染结果，此时会提示你先切回富文本模式，或改用「导出 .md」。</p>
 
@@ -1448,6 +1559,7 @@
 
                 <p class="g-h">八、账号与访问</p>
                 <p>首次进入需设置管理员密码，之后凭密码访问。忘记密码：请在 fnOS 终端中执行命令 <code>vditor reset-password</code>，按指引重置密码。连续多次输错会触发临时锁定。</p>
+                <p><b>单会话登录</b>：同一密码<b>同一时间只允许一个在线会话</b>。在新的页面或新设备上登录时，<b>先前的会话会被自动退出</b>（登录日志中会记录 session_kicked 事件）。若正在编辑时被提示「会话失效」，即属于这种情况，重新登录即可继续（文档内容已实时保存，不会丢失）。</p>
                 <p><b>访问方式</b>：本应用默认使用 <b>3838 端口</b>，在局域网内通过 <b>http://局域网IP:3838</b> 访问（将 IP 换成本机局域网 IP）。<b>同时监听 IPv4 与 IPv6</b>：局域网 IPv6 用 <b>http://[局域网IPv6]:3838</b> 访问（IPv6 地址需用方括号包裹）；使用 DDNS 域名且解析到 IPv6（AAAA 记录）时同样可正常访问。本应用为纯 HTTP 服务、不提供 HTTPS，<b>无法用 https:// 直接访问</b>（这与是否开启 Cookie Secure 无关）。</p>
                 <p><b>公网访问与风险</b>：安装后<b>默认禁止</b>以 公网IP/域名:3838 的形式从公网直接访问（公网 IPv4 与公网 IPv6 均在内）。如确需公网访问，请在「设置 → 安全 → 网络访问安全」中<b>关闭「强制 Cookie Secure 标记」</b>；关闭后公网 HTTP 可正常访问，但<b>登录密码与全部文档内容以明文传输</b>，易被第三方截获，<b>安全性显著降低，强烈不建议这么做</b>，请自行评估并承担相应风险。<b>更推荐使用反向代理 / 内网穿透，在公网侧启用 HTTPS 后再转发到本应用</b>（此时请保持「强制 Cookie Secure 标记」与「信任反向代理」两项开启）。</p>
                 <p>可在「设置 → 维护 → 状态与日志 → 应用状态」中确认当前<b>监听地址</b>与<b>客户端 IP（IPv4 / IPv6）</b>，以排查访问问题。</p>
@@ -1473,6 +1585,8 @@
                     </thead>
                     <tbody>
                         <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>保存当前文档（在本应用任意位置均生效，与「保存」按钮一致）</td></tr>
+                        <tr><td>本应用</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>打开查找与替换栏（等同顶栏「🔍 查找」按钮；有选区时自动预填）</td></tr>
+                        <tr><td>本应用</td><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>打开查找与替换栏并展开替换区</td></tr>
                         <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>撤销</td></tr>
                         <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>重做</td></tr>
                         <tr><td>编辑器</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>加粗</td></tr>
@@ -2692,25 +2806,45 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         updateFilenameScroll();
     }
 
-    /* ---------- 1.6.0：顶栏长文件名自适应 ----------
+    /* ---------- 1.6.0.2：顶栏长文件名自适应（重构版） ----------
        空间充足时完整显示、无动画；不足时仅 #cur-name 文本自身横向往返滚动，
        前缀「当前文件：」与右侧按钮组保持静止；悬停暂停、移开恢复；
-       窗口 resize / 浏览器缩放 / 侧栏折叠导致容器宽度变化时重测重排。 */
-    const fnameScroll = { raf: 0, pos: 0, dir: 1, paused: false, overflow: 0 };
+       窗口 resize / 浏览器缩放 / 侧栏折叠导致容器宽度变化时重测重排。
+       1.6.0.2 改动：① 前缀拆为独立 flex 子项，滚动区结构上不可能压盖前缀；
+       ② 速度改时间归一化（px/秒，帧率无关），两端到位后停顿再反向，
+          替代旧版每帧固定 1px（120Hz 屏快一倍、匀速生硬、到端立即反向）。 */
+    const FNAME_SPEED = 46;      // 滚动速度 px/秒
+    const FNAME_PAUSE = 900;     // 到端停顿毫秒
+    const fnameScroll = { raf: 0, pos: 0, dir: 1, paused: false, overflow: 0, last: 0, pauseUntil: 0 };
 
     function fnameOverflow() {
         const el = document.getElementById('cur-name');
         return el ? (el.scrollWidth - el.clientWidth) : 0;
     }
 
-    function fnameTick() {
+    function fnameTick(now) {
         const el = document.getElementById('cur-name');
         if (!el) { fnameScroll.raf = 0; return; }
         const overflow = fnameScroll.overflow;
         if (overflow <= 1 || fnameScroll.paused) { fnameScroll.raf = 0; return; }
-        fnameScroll.pos += fnameScroll.dir;
-        if (fnameScroll.pos >= overflow) { fnameScroll.pos = overflow; fnameScroll.dir = -1; }
-        else if (fnameScroll.pos <= 0) { fnameScroll.pos = 0; fnameScroll.dir = 1; }
+        // rAF 时间戳防御：正常浏览器必传 number；测试桩可能不传，退化到 performance.now()
+        if (typeof now !== 'number' || !isFinite(now)) now = performance.now();
+        if (!fnameScroll.last) fnameScroll.last = now;
+        let dt = (now - fnameScroll.last) / 1000;
+        fnameScroll.last = now;
+        if (dt > 0.1) dt = 0.1;                      // 切后台回来不跳变
+        if (now < fnameScroll.pauseUntil) {          // 到端停顿中
+            fnameScroll.raf = requestAnimationFrame(fnameTick);
+            return;
+        }
+        fnameScroll.pos += fnameScroll.dir * FNAME_SPEED * dt;
+        if (fnameScroll.pos >= overflow) {
+            fnameScroll.pos = overflow; fnameScroll.dir = -1;
+            fnameScroll.pauseUntil = now + FNAME_PAUSE;
+        } else if (fnameScroll.pos <= 0) {
+            fnameScroll.pos = 0; fnameScroll.dir = 1;
+            fnameScroll.pauseUntil = now + FNAME_PAUSE;
+        }
         el.style.transform = 'translateX(' + (-fnameScroll.pos) + 'px)';
         fnameScroll.raf = requestAnimationFrame(fnameTick);
     }
@@ -2720,7 +2854,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         if (!el) return;
         if (fnameScroll.raf) { cancelAnimationFrame(fnameScroll.raf); fnameScroll.raf = 0; }
         el.style.transform = '';
-        fnameScroll.pos = 0; fnameScroll.dir = 1;
+        fnameScroll.pos = 0; fnameScroll.dir = 1; fnameScroll.last = 0; fnameScroll.pauseUntil = 0;
         // textContent 刚变更，等一帧布局稳定后再测量，避免拿到旧的 scrollWidth
         requestAnimationFrame(function () {
             fnameScroll.overflow = fnameOverflow();
@@ -2744,8 +2878,10 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     })();
 
     // 容器宽度变化（窗口 resize / 浏览器缩放）时重测重排；高度等噪声忽略
+    // 1.6.0.2：改观察 #cur-name 自身（flex 分配后的真实滚动容器宽度），
+    // 前缀拆出后 .fname 的宽度变化会经 flex 传导到 #cur-name，观察它最直接
     (function initFnameResize() {
-        const wrap = document.querySelector('#topbar .fname');
+        const wrap = document.getElementById('cur-name');
         if (!wrap || typeof ResizeObserver === 'undefined') return;
         let lastW = wrap.clientWidth;
         const ro = new ResizeObserver(function () {
@@ -2800,7 +2936,12 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
     function findHighlightRoot() {
         if (rawMode) return null;                       // 纯文本模式无渲染 DOM
-        return document.querySelector('#vditor .vditor-reset');
+        // 1.6.0.2：必须限定 .vditor-ir。Vditor 的 DOM 里有 4 个 .vditor-reset
+        // （wysiwyg 空壳 / sv textarea / ir 真正编辑区 / preview），
+        // 裸 querySelector('#vditor .vditor-reset') 会取到 DOM 顺序第一个的
+        // wysiwyg 空壳（ir 模式下为空、不展示内容），mark 插进去用户不可见，
+        // scrollIntoView 也无的放矢——即 1.6.0.1「计数命中但无高亮不跳转」。
+        return document.querySelector('#vditor .vditor-ir > .vditor-reset');
     }
 
     // 清除高亮：把每个 <mark> 精确展开回原文本节点并 normalize，杜绝污染编辑器 DOM
@@ -2892,12 +3033,14 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             } catch (e) { /* 选区失败不影响其它逻辑 */ }
             return;
         }
-        const marks = document.querySelectorAll('.vditor-reset mark.vd-find');
+        // 1.6.0.2：同步限定 .vditor-ir 作用域（与 findHighlightRoot 同源，
+        // 防止误触 wysiwyg/sv/preview 区的同名节点）
+        const marks = document.querySelectorAll('.vditor-ir .vditor-reset mark.vd-find');
         for (let i = 0; i < marks.length; i++) {
             marks[i].classList.toggle('vd-find-current', i === findState.index);
         }
         if (doScroll) {
-            const cur = document.querySelector('.vditor-reset mark.vd-find-current');
+            const cur = document.querySelector('.vditor-ir .vditor-reset mark.vd-find-current');
             if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
     }
@@ -2963,11 +3106,23 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         findHiTimer = setTimeout(findHighlight, 60);
     }
 
+    // 1.6.0.2：替换区显隐 + 折叠钮状态（字符 ▸/▾ + aria-expanded）单一出口，
+    // findOpen / findClose / toggle 三处共用，防止状态漂移
+    function findSyncToggle() {
+        const t = document.getElementById('find-toggle-replace');
+        if (t) {
+            t.setAttribute('aria-expanded', findState.replaceOpen ? 'true' : 'false');
+            t.textContent = findState.replaceOpen ? '▾' : '▸';
+        }
+        const row = document.getElementById('find-replace-row');
+        if (row) row.hidden = !findState.replaceOpen;
+    }
+
     function findOpen(prefill, withReplace) {
         findState.open = true;
         findState.replaceOpen = !!withReplace;
         document.getElementById('find-bar').hidden = false;
-        document.getElementById('find-replace-row').hidden = !findState.replaceOpen;
+        findSyncToggle();
         const inp = document.getElementById('find-input');
         if (prefill) {
             inp.value = prefill;
@@ -2996,6 +3151,17 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     (function initFindBar() {
         const inp = document.getElementById('find-input');
         if (!inp) return;
+        // 1.6.0.2：顶栏查找按钮——行为与 Ctrl+F 完全一致（有选区预填；面板已开仅聚焦）
+        const btnFind = document.getElementById('btn-find');
+        if (btnFind) btnFind.addEventListener('click', () => {
+            if (findState.open) {
+                inp.focus();
+                inp.select();
+                return;
+            }
+            const sel = (window.getSelection && window.getSelection().toString()) || '';
+            findOpen(sel.trim(), false);
+        });
         inp.addEventListener('input', () => {
             findState.term = inp.value;
             findState.index = -1;
@@ -3011,7 +3177,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         document.getElementById('find-close').addEventListener('click', findClose);
         document.getElementById('find-toggle-replace').addEventListener('click', () => {
             findState.replaceOpen = !findState.replaceOpen;
-            document.getElementById('find-replace-row').hidden = !findState.replaceOpen;
+            findSyncToggle();
             if (findState.replaceOpen) document.getElementById('replace-input').focus();
         });
         document.getElementById('replace-one').addEventListener('click', findReplaceOne);
@@ -3038,6 +3204,148 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             findDebounce = setTimeout(findCompute, 120);
         });
     })();
+
+    /* ---------- 1.6.0.2：顶栏下拉菜单（「导出 ▾」/「⋯ 更多」） ----------
+     * 背景（问题⑤）：顶栏按钮平铺在窄屏 / 大页面缩放下放不下，浏览器又不给
+     * 顶栏横向滚动（会带着整页跑）。对策分两路：
+     *   1) 「导出 .md」「导出 HTML」合并为一个「导出 ▾」，下拉二选一；
+     *   2) 新增「⋯ 更多」收纳钮，经媒体查询分档把低频按钮收进菜单，
+     *      <520px 极限档顶栏只剩 折叠｜文件名｜保存｜⋯更多（纯文字，无图标）。
+     * 实现要点：
+     *   - 所有函数均为**顶层声明**（vm 测试可直接调用；Esc 链路引用安全，
+     *     见文件末尾 keydown 处理器注释里的 1.2.0 作用域事故）；
+     *   - 菜单项用 data-act（本地动作）/ data-fwd（转发顶栏按钮 .click()）
+     *     两种契约，more-menu 每次打开前按各按钮 hidden 属性重建——
+     *     注意判据是 **el.hidden 属性**而非 offsetParent：被媒体查询隐藏的
+     *     按钮（当前宽度放不下的）恰恰应当出现在菜单里；
+     *   - 关闭三入口：点触发钮 / 点菜单项 / 点菜单外任意处 / Esc（见 keydown）。 */
+    function tbMenuOpen(menuId, anchorId) {
+        closeTransientMenus();                       // 同时只开一个
+        const menu = document.getElementById(menuId);
+        if (!menu) return;
+        const anchor = document.getElementById(anchorId);
+        menu.hidden = false;                         // 先显示再测量（display:none 时 offsetWidth 为 0）
+        if (anchor) { anchor.setAttribute('aria-expanded', 'true'); menu.dataset.anchor = anchorId; }
+        const r = anchor ? anchor.getBoundingClientRect()
+                         : { right: window.innerWidth - 8, bottom: 0 };
+        const mw = menu.offsetWidth, mh = menu.offsetHeight;
+        // 右缘对齐触发钮；左右越界回夹到视口内（留 8px 呼吸）
+        let left = r.right - mw;
+        left = Math.max(8, Math.min(left, (window.innerWidth || 1024) - mw - 8));
+        // 顶部贴触发钮下沿；下方空间不足时上收，仍不足则贴顶
+        let top = r.bottom + 6;
+        const maxTop = (window.innerHeight || 768) - mh - 8;
+        if (maxTop > 8) top = Math.min(top, maxTop);
+        top = Math.max(8, top);
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+    }
+    function tbMenuClose(menuId) {
+        const menu = document.getElementById(menuId);
+        if (!menu || menu.hidden) return;
+        menu.hidden = true;
+        const anchorId = menu.dataset.anchor;
+        if (anchorId) {
+            const a = document.getElementById(anchorId);
+            if (a) a.setAttribute('aria-expanded', 'false');
+        }
+    }
+    function tbMenuIsOpen(menuId) {
+        const m = document.getElementById(menuId);
+        return !!(m && !m.hidden);
+    }
+    // 关掉所有打开中的下拉菜单；返回是否真的关过（供 Esc 链路判断是否消费事件）
+    function closeTransientMenus() {
+        let closed = false;
+        const menus = document.querySelectorAll('.tb-menu');
+        for (let i = 0; i < menus.length; i++) {
+            if (!menus[i].hidden) { tbMenuClose(menus[i].id); closed = true; }
+        }
+        return closed;
+    }
+    // 菜单项契约：导出两项为本地动作；其余转发对应顶栏按钮的 click()
+    // （按钮自身的事件绑定在登录后的 bindGroup('顶栏') 里，转发即可全量复用）。
+    const TB_MORE_ITEMS = [
+        { fwd: 'btn-find',     label: '查找与替换' },
+        { act: 'export-md',    label: '导出 Markdown（.md）' },
+        { act: 'export-html',  label: '导出渲染 HTML' },
+        { sep: true },
+        { fwd: 'btn-doc-info', label: '文档信息' },
+        { fwd: 'btn-raw-mode', label: '' },            // 文案随当前模式动态生成
+        { fwd: 'btn-theme',    label: '' },            // 文案随当前主题动态生成
+        { sep: true },
+        { fwd: 'btn-settings', label: '设置' },
+        { fwd: 'btn-logout',   label: '退出登录' },
+    ];
+    function buildMoreMenu() {
+        const menu = document.getElementById('more-menu');
+        if (!menu) return;
+        menu.textContent = '';
+        for (const it of TB_MORE_ITEMS) {
+            if (it.sep) {
+                const hr = document.createElement('div');
+                hr.className = 'mi-sep';
+                menu.appendChild(hr);
+                continue;
+            }
+            const el = document.getElementById(it.fwd);
+            // 仅过滤 hidden **属性**控制的条件按钮（如非大文档时的「纯文本」）；
+            // 被媒体查询收进本菜单的按钮 hidden===false，必须保留条目。
+            if (!el || el.hidden) continue;
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'mi';
+            b.setAttribute('role', 'menuitem');
+            b.dataset.fwd = it.fwd;
+            if (it.fwd === 'btn-theme') {
+                b.textContent = '切换主题（当前：' + (currentTheme() === 'dark' ? '暗黑' : '浅色') + '）';
+            } else if (it.fwd === 'btn-raw-mode') {
+                b.textContent = rawMode ? '切回富文本模式' : '切换为纯文本模式';
+            } else {
+                b.textContent = it.label;
+            }
+            menu.appendChild(b);
+        }
+    }
+    // 菜单项契约值即 data-act 全量（export-md / export-html），非 exportDoc 的短参
+    // （md / html）——1.6.0.2 首版曾误写 kind==='html'，导致点「导出渲染 HTML」
+    // 实际导出 .md（vm 测试抓出：exportFromMenu('export-html') 得到 'md'）。
+    function exportFromMenu(kind) {
+        exportDoc(kind === 'export-html' ? 'html' : 'md');
+    }
+    (function initTbMenus() {
+        const exportBtn = document.getElementById('btn-export');
+        const moreBtn = document.getElementById('btn-more');
+        if (exportBtn) exportBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (tbMenuIsOpen('export-menu')) { tbMenuClose('export-menu'); return; }
+            tbMenuOpen('export-menu', 'btn-export');
+        });
+        if (moreBtn) moreBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (tbMenuIsOpen('more-menu')) { tbMenuClose('more-menu'); return; }
+            buildMoreMenu();                          // 每次打开前重建：按钮显隐/模式/主题可能已变
+            tbMenuOpen('more-menu', 'btn-more');
+        });
+        // 菜单项点击（capture：先于外部点击关闭逻辑执行）
+        document.addEventListener('click', function (e) {
+            const mi = (e.target && e.target.closest) ? e.target.closest('.tb-menu .mi') : null;
+            if (!mi || mi.disabled) return;
+            if (mi.dataset.act) exportFromMenu(mi.dataset.act);
+            else if (mi.dataset.fwd) {
+                const b = document.getElementById(mi.dataset.fwd);
+                if (b) b.click();
+            }
+            closeTransientMenus();
+        }, true);
+        // 点菜单与触发钮之外 → 关闭（capture 阶段统一收口，无需在每个处理器里补）
+        document.addEventListener('click', function (e) {
+            if (e.target && e.target.closest &&
+                (e.target.closest('.tb-menu') || e.target.closest('.tb-trigger'))) return;
+            closeTransientMenus();
+        }, true);
+    })();
+
     function currentFileName() {
         if (currentPath) {
             let n = currentPath.replace(/\.md$/i, '');
@@ -4130,8 +4438,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 closeDocInfo();
                 openHistory();
             });
-            document.getElementById('btn-export-md').addEventListener('click', () => exportDoc('md'));
-            document.getElementById('btn-export-html').addEventListener('click', () => exportDoc('html'));
+            // 1.6.0.2：「导出 .md」「导出 HTML」已合并为「导出 ▾」下拉菜单，
+            // 绑定见顶层 initTbMenus（菜单在登录前也完成绑定，行为一致）。
             document.getElementById('btn-doc-info').addEventListener('click', openDocInfo);
             document.getElementById('btn-raw-mode').addEventListener('click', toggleRawMode);
             document.getElementById('btn-theme').addEventListener('click', function () {
@@ -4514,6 +4822,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // 故 kb-help 这层改用匿名函数（与 word-help 同款写法）；其余各层函数均为顶层，安全。
         // 若日后新增弹窗入栈，务必先用 node+vm 确认该 close 符号在顶层可见（见 test_v121.py）。
         if (e.key === 'Escape') {
+            // 1.6.0.2：下拉菜单比查找栏更 transient，Esc 优先关它（关掉则消费事件，
+            // 不再继续往查找栏/弹窗栈传）；closeTransientMenus 为顶层函数，引用安全。
+            if (closeTransientMenus()) return;
             // 1.6.0：查找栏是最 transient 的 UI，Esc 优先关它，再走弹窗栈
             if (findState.open) { findClose(); return; }
             const layers = [
