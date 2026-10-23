@@ -150,6 +150,32 @@
         #topbar .word-counter .wc-sep { color: var(--c-border); }
         /* 隐藏 Vditor 内置右下角字数，改用顶栏统一统计（双口径 + 阅读时间） */
         .vditor-counter { display: none !important; }
+        /* ---------------- 1.6.0：查找与替换栏 ---------------- */
+        #find-bar {
+            flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px;
+            padding: 8px 12px; background: var(--c-bg-subtle);
+            border-bottom: 1px solid var(--c-border);
+        }
+        #find-bar[hidden] { display: none; }
+        #find-bar .fb-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        #find-bar .set-input { width: 220px; max-width: 40vw; }
+        #find-bar .fb-count {
+            font-size: var(--fs-sm); color: var(--c-text-3); white-space: nowrap;
+            min-width: 46px; text-align: center; font-variant-numeric: tabular-nums;
+        }
+        #find-bar .fb-opts { display: inline-flex; gap: 4px; margin-left: auto; }
+        #find-bar .fb-opt { padding: 4px 8px; font-size: var(--fs-sm); min-width: 34px; }
+        /* 选项开关态：主色浅底 + 主色描边（与分段控件选中态同语言） */
+        #find-bar .fb-opt[aria-pressed="true"] {
+            background: var(--c-brand-soft); color: var(--c-brand-hover);
+            border-color: var(--c-brand);
+        }
+        /* 查找高亮：渲染区 <mark>。特异性 (.vditor-reset mark.vd-find) 高于
+           Vditor 自带 `.vditor-reset mark`（==text== 语法），确保压得住 */
+        .vditor-reset mark.vd-find { background: #ffe58f; color: inherit; border-radius: 2px; }
+        .vditor-reset mark.vd-find-current { background: #ffa940; color: inherit; outline: 1px solid var(--c-brand); }
+        html[data-theme="dark"] .vditor-reset mark.vd-find { background: rgba(210, 153, 34, .45); }
+        html[data-theme="dark"] .vditor-reset mark.vd-find-current { background: rgba(210, 153, 34, .75); }
         /* 移动端下拉面板脱离裁剪容器后，强制 position:fixed 不被内联 absolute 覆盖，浮层覆盖编辑区 */
         #vditor { flex: 1 1 auto; min-height: 0; }
         /* ---- 纯文本模式（大文件降级）：不渲染，仅编辑原始 Markdown ---- */
@@ -971,6 +997,29 @@
                 <button id="btn-raw-mode" class="btn btn--ghost" title="切换为纯文本模式（关闭渲染，适合大文件）" hidden>纯文本</button>
                 <button id="btn-theme" class="btn btn--ghost" title="切换浅色 / 暗黑模式">🌙</button>
                 <button id="btn-save" class="btn btn--primary">保存</button>
+            </div>
+        </div>
+        <!-- 1.6.0：查找与替换栏（Ctrl/Cmd+F 唤起，Ctrl+H 展开替换区，Esc 关闭）。
+             匹配/替换以源串为权威基准；富文本模式下另在 .vditor-reset 渲染区
+             包裹 <mark class="vd-find"> 做视觉高亮与滚动定位（详见 JS find* 模块）。 -->
+        <div id="find-bar" hidden>
+            <div class="fb-row">
+                <input id="find-input" class="set-input" type="text" placeholder="查找内容" autocomplete="off" spellcheck="false">
+                <span id="find-count" class="fb-count">0/0</span>
+                <button id="find-prev" class="btn btn--ghost" title="上一处（Shift+Enter / Shift+F3）">↑</button>
+                <button id="find-next" class="btn btn--ghost" title="下一处（Enter / F3）">↓</button>
+                <button id="find-toggle-replace" class="btn btn--ghost" title="展开 / 收起替换区（Ctrl+H）">替换</button>
+                <button id="find-close" class="btn btn--ghost" title="关闭查找（Esc）">✕</button>
+            </div>
+            <div class="fb-row" id="find-replace-row" hidden>
+                <input id="replace-input" class="set-input" type="text" placeholder="替换为" autocomplete="off" spellcheck="false">
+                <button id="replace-one" class="btn btn--ghost" title="替换当前命中并跳到下一处">替换</button>
+                <button id="replace-all" class="btn btn--ghost" title="替换全部命中">全部替换</button>
+                <span class="fb-opts">
+                    <button id="find-opt-case" class="btn btn--ghost fb-opt" aria-pressed="false" title="区分大小写">Aa</button>
+                    <button id="find-opt-word" class="btn btn--ghost fb-opt" aria-pressed="false" title="整词匹配">字</button>
+                    <button id="find-opt-regex" class="btn btn--ghost fb-opt" aria-pressed="false" title="正则表达式（替换支持 $1）">.*</button>
+                </span>
             </div>
         </div>
         <div id="vditor"></div>
@@ -2078,6 +2127,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
     function enterRawMode(reason, len) {
         if (rawMode) return;
+        // 1.6.0：渲染模式切换后查找高亮失去挂载点，先关闭查找栏防陈旧命中
+        if (findState.open) findClose();
         // ⚠️ 必须在 rawMode = true **之前**取内容：getContent() 依据 rawMode 分流，
         //    置位后会改为读 textarea（此时为空），导致手动切换时内容丢失。
         //    统一走访问层，禁止在此直调 vditor.getValue()（见 test_frontend 守卫）。
@@ -2110,6 +2161,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     // 避免把上一超大文档误灌进 Vditor 造成卡死。
     function leaveRawMode() {
         if (!rawMode) return;
+        // 1.6.0：切回富文本后查找高亮需在新渲染区重建，先关闭防陈旧命中
+        if (findState.open) findClose();
         rawMode = false;
         document.body.classList.remove('raw-mode');
         if (rawEl) { rawEl.classList.remove('is-active'); rawEl.hidden = true; rawEl.value = ''; }
@@ -2702,6 +2755,289 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         });
         ro.observe(wrap);
     })();
+
+    /* ================= 1.6.0：文档查找与替换 =================
+       设计基准：
+       - 匹配与替换一律以**源串**（getContent()）为权威——计数、上/下一处、
+         单处/全部替换都在源串上进行，所见即所改；
+       - 富文本（ir）模式下另在渲染区 .vditor-reset 按文本节点包裹
+         <mark class="vd-find"> 做视觉高亮与滚动定位；纯文本模式无 DOM 可包，
+         改用 textarea 选区定位；
+       - 已知限制（写进交付说明）：渲染文本与源串口径可能不同（Markdown 语法
+         符号不出现在渲染文本中），跨元素命中按节点独立处理，两处计数可能不一致；
+       - 防污染：编辑区一有用户输入立即清除高亮；保存前（doSave）也强制清除，
+         确保 <mark> 绝不会混进正文。 */
+    const findState = {
+        open: false, replaceOpen: false,
+        term: '', opts: { caseSensitive: false, wholeWord: false, regex: false },
+        matches: [], index: -1, invalid: false
+    };
+    let findDebounce = 0;
+    let findHiTimer = 0;
+
+    function findEscape(s) {
+        return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // 由 term + opts 构造全局正则；返回 null（空词）/ {error}（正则非法）/ RegExp
+    function findBuildRegex() {
+        const t = findState.term;
+        if (!t) return null;
+        let src = findState.opts.regex ? t : findEscape(t);
+        if (findState.opts.wholeWord) src = '\\b(?:' + src + ')\\b';
+        let flags = 'g';
+        if (!findState.opts.caseSensitive) flags += 'i';
+        try { return new RegExp(src, flags); } catch (e) { return { error: e }; }
+    }
+
+    function findUpdateCount() {
+        const el = document.getElementById('find-count');
+        if (!el) return;
+        if (findState.invalid) { el.textContent = '无效'; return; }
+        const n = findState.matches.length;
+        el.textContent = n ? (findState.index + 1) + '/' + n : '0/0';
+    }
+
+    function findHighlightRoot() {
+        if (rawMode) return null;                       // 纯文本模式无渲染 DOM
+        return document.querySelector('#vditor .vditor-reset');
+    }
+
+    // 清除高亮：把每个 <mark> 精确展开回原文本节点并 normalize，杜绝污染编辑器 DOM
+    function findClearMarks() {
+        const host = findHighlightRoot();
+        if (!host) return;
+        const marks = host.querySelectorAll('mark.vd-find');
+        for (const mk of marks) {
+            const parent = mk.parentNode;
+            if (!parent) continue;
+            while (mk.firstChild) parent.insertBefore(mk.firstChild, mk);
+            parent.removeChild(mk);
+            if (parent.normalize) parent.normalize();
+        }
+    }
+
+    // 渲染区高亮：逐文本节点独立匹配（跨元素命中不跨节点拼接，已知限制）
+    function findHighlight() {
+        findClearMarks();
+        if (!findState.term || findState.invalid) return;
+        const host = findHighlightRoot();
+        if (!host) return;
+        const re = findBuildRegex();
+        if (!re || re.error) return;
+        const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        for (const node of nodes) {
+            const text = node.nodeValue;
+            if (!text) continue;
+            re.lastIndex = 0;
+            let m;
+            const parts = [];
+            while ((m = re.exec(text)) !== null) {
+                if (m[0].length === 0) { re.lastIndex++; continue; }
+                parts.push({ start: m.index, end: m.index + m[0].length });
+            }
+            if (!parts.length) continue;
+            const frag = document.createDocumentFragment();
+            let cursor = 0;
+            for (const p of parts) {
+                if (p.start > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, p.start)));
+                const mk = document.createElement('mark');
+                mk.className = 'vd-find';
+                mk.appendChild(document.createTextNode(text.slice(p.start, p.end)));
+                frag.appendChild(mk);
+                cursor = p.end;
+            }
+            if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
+            node.parentNode.replaceChild(frag, node);
+        }
+    }
+
+    // 源串匹配计算（权威计数）；算完同步高亮与计数
+    function findCompute() {
+        findState.matches = [];
+        findState.invalid = false;
+        const term = findState.term;
+        if (term) {
+            const re = findBuildRegex();
+            if (re === null) { /* 空词： matches 为空 */ }
+            else if (re.error) { findState.invalid = true; }
+            else {
+                const text = getContent() || '';
+                let m, guard = 0;
+                while ((m = re.exec(text)) !== null) {
+                    if (m[0].length === 0) { re.lastIndex++; if (++guard > 100000) break; continue; }
+                    findState.matches.push({ start: m.index, end: m.index + m[0].length });
+                    if (++guard > 200000) break;             // 防御：病态正则/超长文档
+                }
+            }
+        }
+        if (findState.index < -1) findState.index = -1;
+        if (findState.index >= findState.matches.length) {
+            findState.index = findState.matches.length - 1;
+        }
+        if (findState.matches.length && findState.index < 0) findState.index = 0;
+        findUpdateCount();
+        findHighlight();
+    }
+
+    function findScrollToCurrent(doScroll) {
+        // 纯文本模式：把源串偏移翻译成 textarea 选区（精确）
+        if (rawMode && rawEl && findState.matches[findState.index]) {
+            const mm = findState.matches[findState.index];
+            try {
+                rawEl.focus();
+                rawEl.setSelectionRange(mm.start, mm.end);
+            } catch (e) { /* 选区失败不影响其它逻辑 */ }
+            return;
+        }
+        const marks = document.querySelectorAll('.vditor-reset mark.vd-find');
+        for (let i = 0; i < marks.length; i++) {
+            marks[i].classList.toggle('vd-find-current', i === findState.index);
+        }
+        if (doScroll) {
+            const cur = document.querySelector('.vditor-reset mark.vd-find-current');
+            if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+    }
+
+    function findNext() {
+        if (!findState.matches.length) return;
+        findState.index = (findState.index + 1) % findState.matches.length;
+        findUpdateCount();
+        findScrollToCurrent(true);
+    }
+
+    function findPrev() {
+        if (!findState.matches.length) return;
+        findState.index = (findState.index - 1 + findState.matches.length) % findState.matches.length;
+        findUpdateCount();
+        findScrollToCurrent(true);
+    }
+
+    // 替换当前命中：index 不变即自然指向下一处（当前处已被新文本占据）
+    function findReplaceOne() {
+        if (findState.invalid || findState.index < 0 || findState.index >= findState.matches.length) return;
+        const mm = findState.matches[findState.index];
+        const text = getContent() || '';
+        const repl = document.getElementById('replace-input').value;
+        let piece = repl;
+        if (findState.opts.regex) {
+            // 用非 global 副本在命中原串上展开 $1 等反向引用
+            const re = findBuildRegex();
+            const ng = new RegExp(re.source, re.flags.replace('g', ''));
+            piece = text.slice(mm.start, mm.end).replace(ng, repl);
+        }
+        const out = text.slice(0, mm.start) + piece + text.slice(mm.end);
+        setContent(out);
+        dirty = true;
+        findAfterContentChange();
+    }
+
+    // 全部替换：正则走原生 replace（支持 $1）；其余从尾向前手动替换
+    function findReplaceAll() {
+        if (findState.invalid || !findState.matches.length) return;
+        const text = getContent() || '';
+        const repl = document.getElementById('replace-input').value;
+        let out;
+        if (findState.opts.regex) {
+            const re = findBuildRegex();
+            out = text.replace(re, repl);
+        } else {
+            out = text;
+            for (let i = findState.matches.length - 1; i >= 0; i--) {
+                const mm = findState.matches[i];
+                out = out.slice(0, mm.start) + repl + out.slice(mm.end);
+            }
+        }
+        setContent(out);
+        dirty = true;
+        findAfterContentChange();
+    }
+
+    // 内容被替换后：源串立即重算；渲染 DOM 随 Vditor 重渲染异步更新，高亮延后刷新
+    function findAfterContentChange() {
+        findCompute();
+        clearTimeout(findHiTimer);
+        findHiTimer = setTimeout(findHighlight, 60);
+    }
+
+    function findOpen(prefill, withReplace) {
+        findState.open = true;
+        findState.replaceOpen = !!withReplace;
+        document.getElementById('find-bar').hidden = false;
+        document.getElementById('find-replace-row').hidden = !findState.replaceOpen;
+        const inp = document.getElementById('find-input');
+        if (prefill) {
+            inp.value = prefill;
+            findState.term = prefill;
+        }
+        findCompute();
+        inp.focus();
+        inp.select();
+    }
+
+    function findClose() {
+        findState.open = false;
+        findState.replaceOpen = false;
+        findClearMarks();
+        findState.matches = [];
+        findState.index = -1;
+        findState.term = '';
+        findState.invalid = false;
+        const bar = document.getElementById('find-bar');
+        if (bar) bar.hidden = true;
+        const inp = document.getElementById('find-input');
+        if (inp) inp.value = '';
+    }
+
+    // ---- 面板事件绑定（脚本位于 body 末尾，DOM 已就绪） ----
+    (function initFindBar() {
+        const inp = document.getElementById('find-input');
+        if (!inp) return;
+        inp.addEventListener('input', () => {
+            findState.term = inp.value;
+            findState.index = -1;
+            clearTimeout(findDebounce);
+            findDebounce = setTimeout(findCompute, 120);
+        });
+        inp.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) findPrev(); else findNext(); }
+            else if (e.key === 'F3') { e.preventDefault(); if (e.shiftKey) findPrev(); else findNext(); }
+        });
+        document.getElementById('find-prev').addEventListener('click', findPrev);
+        document.getElementById('find-next').addEventListener('click', findNext);
+        document.getElementById('find-close').addEventListener('click', findClose);
+        document.getElementById('find-toggle-replace').addEventListener('click', () => {
+            findState.replaceOpen = !findState.replaceOpen;
+            document.getElementById('find-replace-row').hidden = !findState.replaceOpen;
+            if (findState.replaceOpen) document.getElementById('replace-input').focus();
+        });
+        document.getElementById('replace-one').addEventListener('click', findReplaceOne);
+        document.getElementById('replace-all').addEventListener('click', findReplaceAll);
+        const optMap = [['find-opt-case', 'caseSensitive'],
+                        ['find-opt-word', 'wholeWord'],
+                        ['find-opt-regex', 'regex']];
+        for (const [id, key] of optMap) {
+            const b = document.getElementById(id);
+            b.addEventListener('click', () => {
+                findState.opts[key] = !findState.opts[key];
+                b.setAttribute('aria-pressed', findState.opts[key] ? 'true' : 'false');
+                findState.index = -1;
+                findCompute();
+            });
+        }
+        // 用户在编辑区直接输入时，高亮可能已陈旧——先清除再按新内容重算，
+        // 既保证计数实时，也确保 <mark> 不会残留进编辑器模型。
+        const vd = document.getElementById('vditor');
+        if (vd) vd.addEventListener('input', () => {
+            if (!findState.open) return;
+            findClearMarks();
+            clearTimeout(findDebounce);
+            findDebounce = setTimeout(findCompute, 120);
+        });
+    })();
     function currentFileName() {
         if (currentPath) {
             let n = currentPath.replace(/\.md$/i, '');
@@ -2829,6 +3165,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 const fill = () => {
                     setContent(content);
                     dirty = false;
+                    // 1.6.0：切换文件后查找状态与高亮全部失效，防陈旧命中
+                    if (findState.open) findClose();
                     scheduleCounter();
                     if (wantRaw) {
                         const t1 = (window.performance && performance.now) ? performance.now() : Date.now();
@@ -2889,6 +3227,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     }
 
     function doSave(silent) {
+        // 1.6.0：保存前强制清除查找高亮，确保 <mark> 绝不混进正文
+        findClearMarks();
         fetch('/api/save', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ root: currentRoot, path: currentPath, content: getContent(), manual: !silent })
@@ -4142,6 +4482,27 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             saveToNas(false);
             return false;
         }
+        // 1.6.0：Ctrl/Cmd+F 查找、Ctrl+H 替换（捕获阶段拦截，优先于 Vditor
+        // contenteditable 键处理与浏览器原生查找栏）。面板已开时 Ctrl+F 仅
+        // 聚焦输入框，不重复唤起、不清状态。
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (findState.open) {
+                document.getElementById('find-input').focus();
+                document.getElementById('find-input').select();
+            } else {
+                const sel = (window.getSelection && window.getSelection().toString()) || '';
+                findOpen(sel.trim(), false);
+            }
+            return false;
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'H')) {
+            e.preventDefault();
+            e.stopPropagation();
+            findOpen('', true);
+            return false;
+        }
         // Esc：关闭当前最上层的弹窗，效果等同各弹窗右上角的关闭按钮。
         // 顺序按「后打开的先关」排列；登录层与遮罩背景不属于弹窗，不受Esc 影响。
         //
@@ -4153,6 +4514,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // 故 kb-help 这层改用匿名函数（与 word-help 同款写法）；其余各层函数均为顶层，安全。
         // 若日后新增弹窗入栈，务必先用 node+vm 确认该 close 符号在顶层可见（见 test_v121.py）。
         if (e.key === 'Escape') {
+            // 1.6.0：查找栏是最 transient 的 UI，Esc 优先关它，再走弹窗栈
+            if (findState.open) { findClose(); return; }
             const layers = [
                 { mask: 'bigdoc-mask',    close: closeBigDocGate },
                 { mask: 'confirm-mask',   close: function () { const cc = _confirmCancel; hideConfirm(); if (cc) cc(); } },
