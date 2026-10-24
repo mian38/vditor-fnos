@@ -229,29 +229,44 @@
         .tb-menu .mi:active:not(:disabled) { transform: translateY(1px); }
         .tb-menu .mi:disabled { opacity: .5; cursor: not-allowed; }
         .tb-menu .mi-sep { height: 1px; margin: 4px 6px; background: var(--c-border-2); }
-        /* ---------------- 1.6.0.2：顶栏三档响应式（问题⑤） ----------------
+        /* ---------------- 1.6.0.3：顶栏响应式两档（问题⑤重定） ----------------
            >=860px：全部按钮平铺（默认态，无需规则）。
-           <860px ：低频按钮退入「⋯ 更多」——退出/设置/信息/纯文本。
-           <520px ：用户要求「不用图标，纯文字」的极限档——查找/导出/主题/用户名
-                    也退入菜单，顶栏只保留：折叠钮｜文件名｜保存｜⋯ 更多。
-           说明：两档均用 ID 选择器（0,2,0 高于 #topbar button 的 0,1,1），
-           无需 !important；#btn-more 默认 display:none 由本块下方规则给出，
-           显隐纯 CSS 控制，不用 hidden 属性（避免与 JS 的 el.hidden 过滤语义混淆）。 */
+           <860px ：顶栏只保留 保存｜⋯ 更多——其余按钮（查找/导出/主题/退出/
+                    设置/信息/纯文本）与用户名、字数统计全部退场；可操作的进
+                    「⋯ 更多」菜单（buildMoreMenu 按 el.hidden 之外的口径见 JS），
+                    用户名与字数纯展示直接隐藏。
+           1.6.0.2 曾用三档（859/519 两断点），实机反馈「中间态仍溢出、逻辑难懂」，
+           1.6.0.3 按反馈收敛为一档：要么全平铺，要么只留保存+更多。
+           说明：用 ID 选择器（0,2,0 高于 #topbar button 的 0,1,1），无需 !important；
+           #btn-more 默认 display:none 由本块下方规则给出，显隐纯 CSS 控制，
+           不用 hidden 属性（避免与 JS 的 el.hidden 过滤语义混淆）。 */
         #topbar #btn-more { display: none; }
         @media (max-width: 859px) {
             #topbar #btn-more { display: inline-flex; }
-            #topbar #btn-logout,
-            #topbar #btn-settings,
-            #topbar #btn-doc-info,
-            #topbar #btn-raw-mode { display: none; }
-        }
-        @media (max-width: 519px) {
             #topbar #btn-find,
             #topbar #btn-export,
             #topbar #btn-theme,
+            #topbar #btn-logout,
+            #topbar #btn-settings,
+            #topbar #btn-doc-info,
+            #topbar #btn-raw-mode,
             #topbar .user,
             #topbar .word-counter { display: none; }
         }
+        /* 1.6.0.3：触发钮「菜单开着」的选中态（与分段控件 / 查找选项同语言：
+           主色浅底 + 主色描边）。对齐「设置 → 维护 → 状态与日志」四按钮的 .on 语义，
+           让「菜单已展开」在按钮本身有视觉提示，再点一次即收回。 */
+        #topbar .tb-trigger[aria-expanded="true"] {
+            background: var(--c-brand-soft);
+            color: var(--c-brand-hover);
+            border-color: var(--c-brand);
+        }
+        /* 1.6.0.3：顶栏预算防塌缩（问题③实证：长文件名 + 字数统计 + 全按钮组
+           平铺时，.fname / #cur-name 的 min-width:0 会把文件名窗口挤到 0 宽，
+           文本被完全裁剪、滚动无从发生）。字数与用户名是纯展示，允许收缩裁剪，
+           把空间让给文件名窗口；按钮组永不动（flex:0 0 auto）。 */
+        #topbar .word-counter { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+        #topbar .user { flex: 0 1 auto; min-width: 0; overflow: hidden; }
         /* 移动端下拉面板脱离裁剪容器后，强制 position:fixed 不被内联 absolute 覆盖，浮层覆盖编辑区 */
         #vditor { flex: 1 1 auto; min-height: 0; }
         /* ---- 纯文本模式（大文件降级）：不渲染，仅编辑原始 Markdown ---- */
@@ -1070,14 +1085,16 @@
                 <span class="user" id="user-label"></span>
                 <button id="btn-logout" class="btn btn--ghost">退出</button>
                 <button id="btn-settings" class="btn btn--ghost">设置</button>
-                <!-- 1.6.0.2：「导出 .md」「导出 HTML」合并为一个「导出 ▾」按钮，
+                <!-- 1.6.0.2：「导出 .md」「导出 HTML」合并为「导出」按钮，
                      点击弹出下拉菜单二选一（菜单面板见 #export-menu）。
-                     动机：顶栏按钮过多，窄屏 / 大缩放下放不下（问题⑤）。 -->
-                <button id="btn-export" class="btn btn--ghost tb-trigger" aria-expanded="false" title="导出当前文档">导出 ▾</button>
+                     动机：顶栏按钮过多，窄屏 / 大缩放下放不下（问题⑤）。
+                     1.6.0.3：按反馈去掉 ▾ 指示符，仅保留「导出」文字 -->
+                <button id="btn-export" class="btn btn--ghost tb-trigger" aria-expanded="false" title="导出当前文档">导出</button>
                 <button id="btn-doc-info" class="btn btn--ghost">信息</button>
-                <!-- 1.6.0.2：查找入口常驻顶栏（此前仅 Ctrl+F/Ctrl+H，无可见入口）。
-                     行为与 Ctrl+F 一致：有选区则预填；面板已开仅聚焦不清状态 -->
-                <button id="btn-find" class="btn btn--ghost" title="查找与替换（Ctrl+F / Ctrl+H）">🔍 查找</button>
+                <!-- 1.6.0.3：查找入口常驻顶栏（此前仅 Ctrl+F/Ctrl+H，无可见入口）。
+                     行为与 Ctrl+F 一致：有选区则预填；面板已开仅聚焦不清状态。
+                     1.6.0.3：按反馈去掉图标，仅保留「查找」文字 -->
+                <button id="btn-find" class="btn btn--ghost" title="查找与替换（Ctrl+F / Ctrl+H）">查找</button>
                 <!-- 1.4.2：仅在打开大文档时出现（由 updateRawModeBtn 依据文档大小控制显隐） -->
                 <button id="btn-raw-mode" class="btn btn--ghost" title="切换为纯文本模式（关闭渲染，适合大文件）" hidden>纯文本</button>
                 <button id="btn-theme" class="btn btn--ghost" title="切换浅色 / 暗黑模式">🌙</button>
@@ -2035,10 +2052,36 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         sessionExpiredShown = true;
         document.getElementById('session-mask').style.display = 'flex';
     }
+    // ---------- 1.6.0.3：单活会话按标签页隔离（问题④） ----------
+    // token 存 sessionStorage（每标签页独立），随每个请求经 X-Vditor-Token 头
+    // 显式携带；服务端优先读该头、缺失才回退 Cookie（_request_token）。
+    // 这样同一浏览器开两个标签页各自登录时，先登标签页仍持旧 token 请求，
+    // 新登录踢旧会话后它必然 401——「后登踢先登」在多标签页间真正生效
+    // （此前 token 只走共享 Cookie，先登页面会静默升级成新 token）。
+    // 隐私模式下 sessionStorage 不可用时静默退回纯 Cookie 行为。
+    const TOKEN_KEY = 'vditor-token';
+    function tokenGet() { try { return sessionStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
+    function tokenSet(t) { try { if (t) sessionStorage.setItem(TOKEN_KEY, t); } catch (e) { /* 隐私模式：退回 Cookie 行为 */ } }
+    function tokenClear() { try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* 忽略 */ } }
     (function installSessionGuard() {
         const rawFetch = window.fetch.bind(window);
         window.fetch = function (input, init) {
             const url = typeof input === 'string' ? input : (input && input.url) || '';
+            init = init || {};
+            // 携带本标签页的会话 token（三种 headers 形态都兼容）
+            const tk = tokenGet();
+            if (tk) {
+                init.headers = init.headers || {};
+                if (typeof Headers !== 'undefined' && init.headers instanceof Headers) {
+                    if (!init.headers.has('X-Vditor-Token')) init.headers.set('X-Vditor-Token', tk);
+                } else if (Array.isArray(init.headers)) {
+                    if (!init.headers.some(function (h) { return /^x-vditor-token$/i.test(h[0]); })) {
+                        init.headers.push(['X-Vditor-Token', tk]);
+                    }
+                } else if (!('X-Vditor-Token' in init.headers)) {
+                    init.headers['X-Vditor-Token'] = tk;
+                }
+            }
             // 只拦应用自身的 API 请求，不影响 Vditor 内部第三方资源请求
             const isApi = /\/api\//.test(url);
             const exempt = AUTH_EXEMPT.some(u => url.indexOf(u) !== -1);
@@ -2259,7 +2302,17 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             rawEl.hidden = false;
             if (!rawEl._bound) {
                 rawEl._bound = true;
-                rawEl.addEventListener('input', () => { dirty = true; scheduleCounter(); });
+                // 1.6.0.3：编辑纯文本时同步重算查找——否则 matches 偏移陈旧，
+                // 之后按回车/箭头会拿着旧偏移 setSelectionRange（越界被浏览器
+                // 钳到文末），表现为「跳不动/跳到结尾」。
+                rawEl.addEventListener('input', () => {
+                    dirty = true; scheduleCounter();
+                    if (findState.open) {
+                        findClearMarks();
+                        clearTimeout(findDebounce);
+                        findDebounce = setTimeout(findCompute, 120);
+                    }
+                });
             }
         }
         if (reason) toast(reason);
@@ -2447,6 +2500,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 .then(r => r.json().then(d => ({ status: r.status, d })))
                 .then(({ status, d }) => {
                     if (!d.ok) { errEl.textContent = d.error || '设置失败'; return; }
+                    tokenSet(d.token);                   // 1.6.0.3：per-tab token 入 sessionStorage
                     hideLogin(); initEditorAndFiles();
                 }).catch(() => errEl.textContent = '网络错误');
         } else {
@@ -2457,6 +2511,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 .then(({ status, d }) => {
                     if (status === 423) { lockEl.textContent = d.error || '已锁定'; return; }
                     if (!d.ok) { errEl.textContent = d.error || '密码错误'; return; }
+                    tokenSet(d.token);                   // 1.6.0.3：per-tab token 入 sessionStorage
                     hideLogin(); initEditorAndFiles();
                 }).catch(() => errEl.textContent = '网络错误');
         }
@@ -2464,8 +2519,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     function doLogout() {
         showConfirm('退出登录', '确定要退出当前登录会话吗？退出后需重新输入密码。', () => {
             fetch('/api/logout', { method: 'POST' }).then(() => {
+                tokenClear();                            // 1.6.0.3：清掉本标签页 token 副本
                 location.reload();
-            }).catch(() => location.reload());
+            }).catch(() => { tokenClear(); location.reload(); });
         });
     }
 
@@ -2806,13 +2862,19 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         updateFilenameScroll();
     }
 
-    /* ---------- 1.6.0.2：顶栏长文件名自适应（重构版） ----------
-       空间充足时完整显示、无动画；不足时仅 #cur-name 文本自身横向往返滚动，
+    /* ---------- 1.6.0.2：顶栏长文件名自适应（1.6.0.3 重构滚动机制） ----------
+       空间充足时完整显示、无动画；不足时仅文件名文本自身横向往返滚动，
        前缀「当前文件：」与右侧按钮组保持静止；悬停暂停、移开恢复；
        窗口 resize / 浏览器缩放 / 侧栏折叠导致容器宽度变化时重测重排。
-       1.6.0.2 改动：① 前缀拆为独立 flex 子项，滚动区结构上不可能压盖前缀；
-       ② 速度改时间归一化（px/秒，帧率无关），两端到位后停顿再反向，
-          替代旧版每帧固定 1px（120Hz 屏快一倍、匀速生硬、到端立即反向）。 */
+       1.6.0.2 曾把 transform 作用在 #cur-name **本身**（即滚动窗口），
+       实测（Edge CDP 量测）：窗口随文本一起左移，一路压过「当前文件：」
+       前缀，且窗口右缘同步左收，文件名后半段永远滚不进视野——
+       用户报「滚到前缀下方 + 后半段不显示」的总根因。
+       1.6.0.3 改为 **scrollLeft 滚动**：#cur-name 作为固定裁剪窗口不动，
+       仅窗口内滚动量变化，文本在窗内滑移，尾部可完整滚入；
+       scrollWidth - clientWidth 恰为最大滚动量，量测口径天然对齐。
+       另一根因（顶栏预算塌缩）已由 CSS 侧修复：字数/用户名允许收缩，
+       .fname / #cur-name 不再被挤到 0 宽。 */
     const FNAME_SPEED = 46;      // 滚动速度 px/秒
     const FNAME_PAUSE = 900;     // 到端停顿毫秒
     const fnameScroll = { raf: 0, pos: 0, dir: 1, paused: false, overflow: 0, last: 0, pauseUntil: 0 };
@@ -2845,7 +2907,10 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             fnameScroll.pos = 0; fnameScroll.dir = 1;
             fnameScroll.pauseUntil = now + FNAME_PAUSE;
         }
-        el.style.transform = 'translateX(' + (-fnameScroll.pos) + 'px)';
+        // 1.6.0.3：scrollLeft 滚动——窗口（#cur-name）固定不动，只改窗口内滚动量。
+        // 旧版用 transform 平移窗口本身，会带着裁剪边界一起左移（压盖前缀、
+        // 尾部永不露面），是 1.6.0.2 实机反馈③的总根因。
+        el.scrollLeft = fnameScroll.pos;
         fnameScroll.raf = requestAnimationFrame(fnameTick);
     }
 
@@ -2853,7 +2918,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         const el = document.getElementById('cur-name');
         if (!el) return;
         if (fnameScroll.raf) { cancelAnimationFrame(fnameScroll.raf); fnameScroll.raf = 0; }
-        el.style.transform = '';
+        el.scrollLeft = 0;                               // 1.6.0.3：复位滚动量（替代 transform 清空）
         fnameScroll.pos = 0; fnameScroll.dir = 1; fnameScroll.last = 0; fnameScroll.pauseUntil = 0;
         // textContent 刚变更，等一帧布局稳定后再测量，避免拿到旧的 scrollWidth
         requestAnimationFrame(function () {
@@ -2941,7 +3006,27 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // 裸 querySelector('#vditor .vditor-reset') 会取到 DOM 顺序第一个的
         // wysiwyg 空壳（ir 模式下为空、不展示内容），mark 插进去用户不可见，
         // scrollIntoView 也无的放矢——即 1.6.0.1「计数命中但无高亮不跳转」。
+        // 1.6.0.3：sv（源码）模式下 .vditor-ir 同样不存在，本函数返回 null，
+        // 高亮交由 findSourceTextarea() 的选区定位分支承担（见其注释）。
         return document.querySelector('#vditor .vditor-ir > .vditor-reset');
+    }
+
+    // 1.6.0.3：源码态编辑元素（无渲染 DOM、查找定位走选区的两种模式）。
+    // ① 本应用纯文本模式：rawMode=true，元素是 #raw-editor（大文件降级 /
+    //    设置「始终纯文本」时进入）；
+    // ② Vditor 自带源码模式（工具栏「更多 → 编辑模式 → 分屏预览/源码」）：
+    //    Vditor 的 sv 元素本身就是 <textarea class="vditor-sv vditor-reset">，
+    //    实证 1.6.0.2 实机反馈②：此前该模式两条定位路都走不到——
+    //    rawMode 为 false（sv 是 Vditor 内部模式，与本应用 rawMode 无关）、
+    //    .vditor-ir 又不存在——计数正常但无选区无跳转，用户感知
+    //    「查找在纯文本下不生效」。currentMode 为主判据、可见性为兜底。
+    function findSourceTextarea() {
+        if (rawMode) return rawEl;
+        let isSv = false;
+        try { isSv = !!(vditor && vditor.vditor && vditor.vditor.currentMode === 'sv'); } catch (e) { /* Vditor 内部结构防御 */ }
+        const sv = document.querySelector('#vditor .vditor-sv');
+        if (sv && sv.tagName === 'TEXTAREA' && (isSv || sv.offsetParent !== null)) return sv;
+        return null;
     }
 
     // 清除高亮：把每个 <mark> 精确展开回原文本节点并 normalize，杜绝污染编辑器 DOM
@@ -3024,13 +3109,21 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     }
 
     function findScrollToCurrent(doScroll) {
-        // 纯文本模式：把源串偏移翻译成 textarea 选区（精确）
-        if (rawMode && rawEl && findState.matches[findState.index]) {
+        // 源码态（本应用纯文本 / Vditor sv 源码模式）：把源串偏移翻译成 textarea 选区（精确）。
+        // 1.6.0.3 统一入口：此前 sv 模式两条路都走不到（详见 findSourceTextarea 注释），
+        // 表现为「计数正常但回车/箭头毫无反应」；本应用纯文本模式此前虽可走通，
+        // 但文档被编辑后 matches 偏移陈旧，setSelectionRange 越界会被浏览器
+        // 钳到文末——同样表现为「跳不动」。故这里对越界偏移做钳位防御。
+        const ta = findSourceTextarea();
+        if (ta && findState.matches[findState.index]) {
             const mm = findState.matches[findState.index];
+            const len = (ta.value || '').length;
+            const s = Math.max(0, Math.min(mm.start, len));
+            const e = Math.max(s, Math.min(mm.end, len));
             try {
-                rawEl.focus();
-                rawEl.setSelectionRange(mm.start, mm.end);
-            } catch (e) { /* 选区失败不影响其它逻辑 */ }
+                ta.focus();
+                ta.setSelectionRange(s, e);
+            } catch (err) { /* 选区失败不影响其它逻辑 */ }
             return;
         }
         // 1.6.0.2：同步限定 .vditor-ir 作用域（与 findHighlightRoot 同源，
@@ -3118,6 +3211,18 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         if (row) row.hidden = !findState.replaceOpen;
     }
 
+    // 1.6.0.3：选区预填统一入口。window.getSelection() 取不到 textarea
+    // 内部选区（源码态两种模式——本应用纯文本与 Vditor sv——都是 textarea），
+    // 须直接读 selectionStart/End；富文本模式仍走 window.getSelection()。
+    function findSelectionPrefill() {
+        const ta = findSourceTextarea();
+        if (ta && typeof ta.selectionStart === 'number' &&
+            ta.selectionEnd > ta.selectionStart) {
+            return (ta.value || '').substring(ta.selectionStart, ta.selectionEnd);
+        }
+        return (window.getSelection && window.getSelection().toString()) || '';
+    }
+
     function findOpen(prefill, withReplace) {
         findState.open = true;
         findState.replaceOpen = !!withReplace;
@@ -3159,8 +3264,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 inp.select();
                 return;
             }
-            const sel = (window.getSelection && window.getSelection().toString()) || '';
-            findOpen(sel.trim(), false);
+            findOpen(findSelectionPrefill().trim(), false);
         });
         inp.addEventListener('input', () => {
             findState.term = inp.value;
@@ -3205,18 +3309,20 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         });
     })();
 
-    /* ---------- 1.6.0.2：顶栏下拉菜单（「导出 ▾」/「⋯ 更多」） ----------
+    /* ---------- 1.6.0.2：顶栏下拉菜单（「导出」/「⋯ 更多」；1.6.0.3 改两档） ----------
      * 背景（问题⑤）：顶栏按钮平铺在窄屏 / 大页面缩放下放不下，浏览器又不给
      * 顶栏横向滚动（会带着整页跑）。对策分两路：
-     *   1) 「导出 .md」「导出 HTML」合并为一个「导出 ▾」，下拉二选一；
-     *   2) 新增「⋯ 更多」收纳钮，经媒体查询分档把低频按钮收进菜单，
-     *      <520px 极限档顶栏只剩 折叠｜文件名｜保存｜⋯更多（纯文字，无图标）。
+     *   1) 「导出 .md」「导出 HTML」合并为一个「导出」按钮，下拉二选一；
+     *   2) 新增「⋯ 更多」收纳钮，<860px 时顶栏只保留 保存｜⋯ 更多，
+     *      其余按钮与用户名、字数全部退场（1.6.0.3 起由三档收敛为两档）。
      * 实现要点：
      *   - 所有函数均为**顶层声明**（vm 测试可直接调用；Esc 链路引用安全，
      *     见文件末尾 keydown 处理器注释里的 1.2.0 作用域事故）；
      *   - 菜单项用 data-act（本地动作）/ data-fwd（转发顶栏按钮 .click()）
-     *     两种契约，more-menu 每次打开前按各按钮 hidden 属性重建——
-     *     注意判据是 **el.hidden 属性**而非 offsetParent：被媒体查询隐藏的
+     *     两种契约，more-menu 每次打开前重建：fwd 项按各按钮 hidden
+     *     **属性**过滤（条件按钮如非大文档时的「纯文本」会被滤掉），
+     *     act 项（导出）不依附按钮显隐、恒显（1.6.0.3 修复，见其内注释）；
+     *     注意判据是 el.hidden 属性而非 offsetParent：被媒体查询隐藏的
      *     按钮（当前宽度放不下的）恰恰应当出现在菜单里；
      *   - 关闭三入口：点触发钮 / 点菜单项 / 点菜单外任意处 / Esc（见 keydown）。 */
     function tbMenuOpen(menuId, anchorId) {
@@ -3286,6 +3392,22 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 const hr = document.createElement('div');
                 hr.className = 'mi-sep';
                 menu.appendChild(hr);
+                continue;
+            }
+            // 1.6.0.3 修复（CDP 实证抓出）：act 类型条目（导出两项）此前误走了
+            // 下方 fwd 的存在性过滤——it.fwd 为 undefined，
+            // getElementById(undefined) 返回 null 被 continue 跳过，
+            // 导致「⋯ 更多」菜单里从来没有导出项。而 <860px 时导出按钮
+            // 恰被媒体查询收纳，导出就此成为「不可能的任务」。
+            // 动作项不依附于任何顶栏按钮的显隐，恒显。
+            if (it.act) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'mi';
+                b.setAttribute('role', 'menuitem');
+                b.dataset.act = it.act;
+                b.textContent = it.label;
+                menu.appendChild(b);
                 continue;
             }
             const el = document.getElementById(it.fwd);
@@ -4800,8 +4922,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 document.getElementById('find-input').focus();
                 document.getElementById('find-input').select();
             } else {
-                const sel = (window.getSelection && window.getSelection().toString()) || '';
-                findOpen(sel.trim(), false);
+                findOpen(findSelectionPrefill().trim(), false);
             }
             return false;
         }
