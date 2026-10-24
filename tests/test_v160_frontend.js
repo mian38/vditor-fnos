@@ -33,8 +33,10 @@ check('「当前文件：」前缀为独立 flex 子项（flex:0 0 auto 静止�
   /#topbar\s+\.fname-prefix\s*\{[^}]*flex:\s*0 0 auto/.test(CSS));
 check('按钮组不参与收缩（#topbar .top-actions > * flex:0 0 auto）',
   /#topbar\s+\.top-actions\s*>\s*\*\s*\{\s*flex:\s*0 0 auto/.test(CSS));
-check('字数统计仍不收缩（flex:0 0 auto 保留）',
-  /#topbar\s+\.word-counter\s*\{[^}]*flex:\s*0 0 auto/.test(CSS));
+check('字数统计可收缩让位（1.6.0.3 防塌缩：flex:0 1 auto + min-width:0，取代 1.5.0 的不收缩）',
+  /#topbar\s+\.word-counter\s*\{[^}]*flex:\s*0 1 auto[^}]*min-width:\s*0/.test(CSS));
+check('用户名同样可收缩（与字数统计同一预算策略）',
+  /#topbar\s+\.user\s*\{[^}]*flex:\s*0 1 auto[^}]*min-width:\s*0/.test(CSS));
 check('setCurName 处调用 updateFilenameScroll',
   /function setCurName\(name\)\s*\{\s*document\.getElementById\('cur-name'\)\.textContent = name \|\| '未选择';\s*updateFilenameScroll\(\);/.test(code));
 check('updateFilenameScroll 用 rAF 延迟一帧测量（避免拿到旧 scrollWidth）',

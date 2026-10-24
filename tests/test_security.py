@@ -10,7 +10,7 @@
 
 直接运行：python test_security.py
 """
-import os, sys, io
+import os, sys
 
 # 直接 import 纯函数模块（无副作用，不触发服务端状态）
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

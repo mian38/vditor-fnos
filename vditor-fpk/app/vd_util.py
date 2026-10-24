@@ -9,7 +9,6 @@
 """
 import os
 import re
-import json
 import time
 import hashlib
 import ipaddress

@@ -13,7 +13,7 @@
 
 直接运行：python test_perf.py
 """
-import os, sys, io, json, time, socket, tempfile, subprocess, shutil, hashlib
+import os, sys, json, time, socket, tempfile, subprocess, shutil, hashlib
 import urllib.request, urllib.error, urllib.parse
 
 # 本文件位于 tests/ 下，仓库根为其上一级目录

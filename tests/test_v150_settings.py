@@ -145,8 +145,13 @@ check("三态说明文案改为 500KB 且不再提字符数",
       "超过约 500KB 的文档自动使用纯文本模式" in idx)
 # 「100 万字符」只允许出现在**代码注释**里（那里正是在解释为何弃用字符口径），
 # 绝不能出现在任何**面向用户**的文案中。逐条检查可见文案即可。
+# 注：此前的过滤只去掉了 `//` 行注释，漏了块注释（`/* … */`）与 HTML 注释
+#（`<!-- … -->`）——1.6.0.4 在代码里补了块注释说明镜像量测成本，行首不是 `//`，
+# 于是被误判成用户文案。这里先把两类块注释整体剥离再行过滤。
+_idx_visible = re.sub(r"/\*[\s\S]*?\*/", "", idx)
+_idx_visible = re.sub(r"<!--[\s\S]*?-->", "", _idx_visible)
 _user_facing = "\n".join(
-    ln for ln in idx.splitlines() if not ln.strip().startswith("//"))
+    ln for ln in _idx_visible.splitlines() if not ln.strip().startswith("//"))
 check("用户可见文案中不再出现「100 万字符」", "100 万字符" not in _user_facing)
 check("使用指南同步为 500KB", "打开体积超过约 <b>500KB</b> 的文档" in idx)
 check("引入 docBaseBytes 统一口径", "let docBaseBytes = 0;" in idx)
@@ -233,7 +238,6 @@ _cfgdir = tempfile.mkdtemp(prefix="vditor150cfg_")
 try:
     with open(os.path.join(_cfgdir, "settings.json"), "w", encoding="utf-8") as f:
         json.dump({"autosave_interval": 90, "versioning": True}, f)
-    import importlib
     import server as _srv
     _orig = _srv.SETTINGS_FILE
     _srv.SETTINGS_FILE = os.path.join(_cfgdir, "settings.json")
