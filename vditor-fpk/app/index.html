@@ -208,6 +208,12 @@
         .vditor-ir .vditor-reset mark.vd-find-current { background: #ffa940; color: inherit; outline: 1px solid var(--c-brand); }
         html[data-theme="dark"] .vditor-ir .vditor-reset mark.vd-find { background: rgba(210, 153, 34, .45); }
         html[data-theme="dark"] .vditor-ir .vditor-reset mark.vd-find-current { background: rgba(210, 153, 34, .75); }
+        /* 1.6.0.5：所见即所得（wysiwyg）模式的高亮——与 ir 同语言。
+           此前只写了 .vditor-ir 作用域，wysiwyg 下的 marks 即使插对地方也没有样式 */
+        .vditor-wysiwyg mark.vd-find { background: #ffe58f; color: inherit; border-radius: 2px; }
+        .vditor-wysiwyg mark.vd-find-current { background: #ffa940; color: inherit; outline: 1px solid var(--c-brand); }
+        html[data-theme="dark"] .vditor-wysiwyg mark.vd-find { background: rgba(210, 153, 34, .45); }
+        html[data-theme="dark"] .vditor-wysiwyg mark.vd-find-current { background: rgba(210, 153, 34, .75); }
         /* ---------------- 1.6.0.2：顶栏下拉菜单（「导出 ▾」/「⋯ 更多」） ----------------
            定位由 JS 写到内联 style（position:fixed + left/top），此处只定外观与层级。
            z-index 逐个显式声明（1.5.0.7 铁律）：10015 = 高于基础框 10010、
@@ -3033,14 +3039,25 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
     function findHighlightRoot() {
         if (rawMode) return null;                       // 纯文本模式无渲染 DOM
-        // 1.6.0.2：必须限定 .vditor-ir。Vditor 的 DOM 里有 4 个 .vditor-reset
-        // （wysiwyg 空壳 / sv textarea / ir 真正编辑区 / preview），
-        // 裸 querySelector('#vditor .vditor-reset') 会取到 DOM 顺序第一个的
-        // wysiwyg 空壳（ir 模式下为空、不展示内容），mark 插进去用户不可见，
-        // scrollIntoView 也无的放矢——即 1.6.0.1「计数命中但无高亮不跳转」。
-        // 1.6.0.3：sv（源码）模式下 .vditor-ir 同样不存在，本函数返回 null，
-        // 高亮交由 findSourceTextarea() 的选区定位分支承担（见其注释）。
-        return document.querySelector('#vditor .vditor-ir > .vditor-reset');
+        // 1.6.0.5：高亮根必须随 Vditor 渲染模式走——此前只认 .vditor-ir，
+        // 在所见即所得（wysiwyg）模式下 marks 全插进 DOM 里存在但不可见的
+        // ir 空壳（CDP 实证：wyMarks=0 / irMarks=3），用户看不到高亮、
+        // 跳转也无的放矢。currentMode 是 Vditor 自己的权威判据
+        //（其模式切换即改它）。
+        let mode = '';
+        try { mode = (vditor && vditor.vditor && vditor.vditor.currentMode) || ''; } catch (e) { /* 内部结构防御 */ }
+        if (mode === 'sv') return null;                 // sv：textarea，无渲染 DOM 可包
+        if (mode === 'wysiwyg') {
+            return document.querySelector('#vditor .vditor-wysiwyg');
+        }
+        // ir（默认）/ 取不到 mode 时的兜底：限定 .vditor-ir > .vditor-reset。
+        // Vditor 的 DOM 里有 4 个 .vditor-reset（wysiwyg 空壳 / sv textarea /
+        // ir 真正编辑区 / preview），不限定会取到 wysiwyg 空壳——即
+        // 1.6.0.1「计数命中但无高亮不跳转」的总根因；且要求可见，
+        // 防止 mode 取不到时拿到隐藏空壳。
+        const ir = document.querySelector('#vditor .vditor-ir > .vditor-reset');
+        if (ir && ir.offsetParent === null) return null;
+        return ir;
     }
 
     // 1.6.0.3：源码态编辑元素（无渲染 DOM、查找定位走选区的两种模式）。
@@ -3054,10 +3071,22 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     //    「查找在纯文本下不生效」。currentMode 为主判据、可见性为兜底。
     function findSourceTextarea() {
         if (rawMode) return rawEl;
-        let isSv = false;
-        try { isSv = !!(vditor && vditor.vditor && vditor.vditor.currentMode === 'sv'); } catch (e) { /* Vditor 内部结构防御 */ }
-        const sv = document.querySelector('#vditor .vditor-sv');
-        if (sv && sv.tagName === 'TEXTAREA' && (isSv || sv.offsetParent !== null)) return sv;
+        // 1.6.0.5：改为以 currentMode 为权威判据。此前用「sv textarea 可见」
+        // 作兜底，但 wysiwyg 模式下该 textarea 的 offsetParent 仍非 null
+        //（Vditor 用别的方式隐藏），于是跳转走了 textarea 分支——选区落进
+        // 隐藏的 sv 文本域，wysiwyg 的高亮当前项反而标不上（CDP 实证：
+        // wy 有 3 个 mark 但 current 为 0，跳转看似无效）。
+        let mode = '';
+        try { mode = (vditor && vditor.vditor && vditor.vditor.currentMode) || ''; } catch (e) { /* 内部结构防御 */ }
+        if (mode === 'sv') {
+            const sv = document.querySelector('#vditor .vditor-sv');
+            return (sv && sv.tagName === 'TEXTAREA') ? sv : null;
+        }
+        if (mode === '') {
+            // mode 取不到（Vditor 未就绪 / 内部结构变动）时的兜底：按可见性判断
+            const sv = document.querySelector('#vditor .vditor-sv');
+            if (sv && sv.tagName === 'TEXTAREA' && sv.offsetParent !== null) return sv;
+        }
         return null;
     }
 
@@ -3126,16 +3155,23 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
 
     // 清除高亮：把每个 <mark> 精确展开回原文本节点并 normalize，杜绝污染编辑器 DOM
     function findClearMarks() {
-        const host = findHighlightRoot();
-        if (!host) return;
-        const marks = host.querySelectorAll('mark.vd-find');
-        for (const mk of marks) {
-            const parent = mk.parentNode;
-            if (!parent) continue;
-            while (mk.firstChild) parent.insertBefore(mk.firstChild, mk);
-            parent.removeChild(mk);
-            if (parent.normalize) parent.normalize();
+        // 1.6.0.5：清除**所有已知高亮宿主**（ir + wysiwyg），不再只清当前模式的。
+        // 模式切换只重渲染目标编辑区，原宿主里的旧 marks 会残留（CDP 实证：
+        // wysiwyg→ir 后 wy 仍留 3 个），切回原模式时会与新建的重复、且使
+        // current 序号错位。raw 模式下这两处元素即使存在也仅是隐藏容器，
+        // 一并清掉无害。
+        const hosts = document.querySelectorAll('#vditor .vditor-ir > .vditor-reset, #vditor .vditor-wysiwyg');
+        for (const host of hosts) {
+            const marks = host.querySelectorAll('mark.vd-find');
+            for (const mk of marks) {
+                const parent = mk.parentNode;
+                if (!parent) continue;
+                while (mk.firstChild) parent.insertBefore(mk.firstChild, mk);
+                parent.removeChild(mk);
+                if (parent.normalize) parent.normalize();
+            }
         }
+        findSeq++;                       // 1.6.0.5：标记「这是我们自己的 DOM 变动」
     }
 
     // 渲染区高亮：逐文本节点独立匹配（跨元素命中不跨节点拼接，已知限制）
@@ -3173,6 +3209,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
             node.parentNode.replaceChild(frag, node);
         }
+        findSeq++;                       // 1.6.0.5：标记「这是我们自己的 DOM 变动」
     }
 
     // 源串匹配计算（权威计数）；算完同步高亮与计数
@@ -3201,6 +3238,21 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         if (findState.matches.length && findState.index < 0) findState.index = 0;
         findUpdateCount();
         findHighlight();
+        // 1.6.0.5：重算后重新标「当前命中」——自动重算（模式切换等）不应丢高亮
+        findMarkCurrent();
+    }
+
+    // 1.6.0.5：把「当前命中」的 class 标记独立成函数——findCompute 重算后也要
+    // 重新标一次，否则任何自动重算（模式切换 / 编辑器重渲染 / 观察者触发）
+    // 都会用 findHighlight 重建不带 current 的 marks，当前命中高亮被抹掉
+    //（CDP 实证：点击跳转瞬间 cur=1，360ms 后自动重算把它清成 0）。
+    function findMarkCurrent() {
+        const marks = document.querySelectorAll(
+            '.vditor-ir .vditor-reset mark.vd-find, .vditor-wysiwyg mark.vd-find');
+        for (let i = 0; i < marks.length; i++) {
+            marks[i].classList.toggle('vd-find-current', i === findState.index);
+        }
+        return marks;
     }
 
     function findScrollToCurrent(doScroll) {
@@ -3223,14 +3275,13 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             } catch (err) { /* 选区/滚动失败不影响其它逻辑 */ }
             return;
         }
-        // 1.6.0.2：同步限定 .vditor-ir 作用域（与 findHighlightRoot 同源，
-        // 防止误触 wysiwyg/sv/preview 区的同名节点）
-        const marks = document.querySelectorAll('.vditor-ir .vditor-reset mark.vd-find');
-        for (let i = 0; i < marks.length; i++) {
-            marks[i].classList.toggle('vd-find-current', i === findState.index);
-        }
+        // 1.6.0.2：限定活动编辑区作用域（与 findHighlightRoot 同源，防止误触
+        // 隐藏空壳/preview 区的同名节点）；1.6.0.5：wysiwyg 模式的 marks 在
+        // .vditor-wysiwyg，与 ir 并列查询（findMarkCurrent 统一处理）
+        findMarkCurrent();
         if (doScroll) {
-            const cur = document.querySelector('.vditor-ir .vditor-reset mark.vd-find-current');
+            const cur = document.querySelector(
+                '.vditor-ir .vditor-reset mark.vd-find-current, .vditor-wysiwyg mark.vd-find-current');
             if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
     }
@@ -3353,14 +3404,12 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     (function initFindBar() {
         const inp = document.getElementById('find-input');
         if (!inp) return;
-        // 1.6.0.2：顶栏查找按钮——行为与 Ctrl+F 完全一致（有选区预填；面板已开仅聚焦）
+        // 顶栏查找按钮：行为与 Ctrl+F 基本一致（有选区预填）；1.6.0.5 起
+        // 面板已开时再点即**收回**（实机反馈②：此前只聚焦不移除，点了没反应）。
+        // Ctrl+F 仍保持「已开则聚焦」的浏览器惯例，不在此列。
         const btnFind = document.getElementById('btn-find');
         if (btnFind) btnFind.addEventListener('click', () => {
-            if (findState.open) {
-                inp.focus();
-                inp.select();
-                return;
-            }
+            if (findState.open) { findClose(); return; }
             findOpen(findSelectionPrefill().trim(), false);
         });
         inp.addEventListener('input', () => {
@@ -3403,6 +3452,67 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             findClearMarks();
             clearTimeout(findDebounce);
             findDebounce = setTimeout(findCompute, 120);
+        });
+    })();
+
+    /* ---------- 1.6.0.5：Vditor 渲染模式切换后自动恢复查找（反馈①） ----------
+       背景：Vditor 自带的模式切换（工具栏 更多→编辑模式→所见即所得/即时渲染/
+       分屏预览，或 ⌥⌘7/8/9）会重渲染目标模式的编辑区——ir/wysiwyg 是整体
+       innerHTML 重排，我们插的 <mark> 被冲掉；切换后查找栏计数虽在但高亮全无、
+       跳转失效，用户必须改一遍查找词才恢复（实机反馈原话）。
+       对策：观察 #vditor 的结构变动，防抖后重算查找（findCompute 内含重新高亮）。
+       两类变动必须排除，否则会形成无限重算循环：
+         ① 我们自己插/拔 mark —— 用 findSeq 序号识别（findClearMarks /
+            findHighlight 结束时自增；观察者见到序号变化即跳过并重新对齐）；
+         ② 当前命中 mark 的 class 切换（findScrollToCurrent 每次都 toggle）
+            —— 纯 mark 的 attributes 变动直接忽略。 */
+    let findSeq = 0;
+    (function initFindModeWatch() {
+        const host = document.getElementById('vditor');
+        if (!host || typeof MutationObserver === 'undefined') return;
+        let pending = false;
+        let lastSeq = 0;
+        // 只认「编辑区宿主」内的变动（ir / wysiwyg / sv 三个模式容器）：
+        // 工具栏状态、预览面板、大纲等变动与查找无关，计入会trigger无谓重算
+        //（CDP 实证：点跳转让编辑器失焦 → 工具栏按钮 class 变化 → 触发重算
+        // → 当前命中高亮被抹；虽然 findMarkCurrent 已补标，但白算一次仍应避免）
+        function inModeHost(el) {
+            let n = el;
+            while (n && n !== host.parentNode) {
+                if (n.classList && (n.classList.contains('vditor-ir') ||
+                    n.classList.contains('vditor-wysiwyg') ||
+                    n.classList.contains('vditor-sv'))) return true;
+                n = n.parentElement;
+            }
+            return false;
+        }
+        const obs = new MutationObserver(function (muts) {
+            if (!findState.open) return;
+            // ① 纯 mark 级 attributes 变动（当前命中 toggle）→ 忽略
+            let relevant = false;
+            for (let i = 0; i < muts.length; i++) {
+                const mu = muts[i];
+                if (mu.type === 'attributes' && mu.target && mu.target.tagName === 'MARK') continue;
+                if (inModeHost(mu.target)) { relevant = true; break; }
+                // 模式切换会给模式容器的 style 置 display（target 即容器）
+                if (mu.target && mu.target.classList &&
+                    (mu.target.classList.contains('vditor-ir') ||
+                     mu.target.classList.contains('vditor-wysiwyg') ||
+                     mu.target.classList.contains('vditor-sv'))) { relevant = true; break; }
+            }
+            if (!relevant) return;
+            // ② 我们自己刚做过高亮/清高亮 → 跳过本轮并重新对齐序号
+            if (findSeq !== lastSeq) { lastSeq = findSeq; return; }
+            if (pending) return;
+            pending = true;
+            setTimeout(function () {
+                pending = false;
+                if (findState.open) findCompute();
+            }, 150);
+        });
+        obs.observe(host, {
+            childList: true, subtree: true,
+            attributes: true, attributeFilter: ['style', 'class']
         });
     })();
 
