@@ -84,6 +84,111 @@
 
 ---
 
+## 1.6.0.3（2026-10-24）· 测试版（未发布）
+
+**1.6.0.2 实机反馈 6 项 + CDP 实证抓出的 1.6.0.2 遗留 bug（更多菜单缺导出项）**
+
+### 修复
+
+1. **Vditor sv 源码模式查找不生效**（`index.html`）
+
+   - 根因（实证）：工具栏「更多 → 编辑模式 → 分屏预览/源码」进入 sv 模式后，
+     `findScrollToCurrent` 两条定位路都走不到——`rawMode` 为 false（sv 是 Vditor
+     内部模式，与本应用 rawMode 无关）、`.vditor-ir > .vditor-reset` 又不存在。
+     CDP 实测：计数正常（1/2）但选区停在文末（7079-7079）、无任何跳转反馈。
+   - 修法：新增 `findSourceTextarea()` 统一源码态编辑元素——rawMode →
+     `#raw-editor`；sv 模式 → `#vditor .vditor-sv`（Vditor 的 sv 元素本身就是
+     `<textarea class="vditor-sv vditor-reset">`；`currentMode === 'sv'` 为主判据、
+     可见性为兜底）。`findScrollToCurrent` 改走该统一入口，并对越界偏移做钳位
+     （陈旧 matches 不再被浏览器钳到文末）。
+   - 连带加固：`findSelectionPrefill()` 选区预填统一入口（`window.getSelection()`
+     取不到 textarea 内部选区，源码态预填此前恒为空）；纯文本编辑器 input 时
+     同步重算查找（此前编辑后 matches 偏移陈旧）。
+   - 实证：sv 模式 Enter 精确选中命中词（112-118）、next 跳第二处、替换生效
+     （`getContent` 同步反映）；自研纯文本模式经真实键盘全链路复测通过。
+
+2. **「⋯ 更多」菜单缺少导出项（1.6.0.2 遗留，CDP 实证抓出）**（`index.html`）
+
+   - 根因：`buildMoreMenu` 对 `TB_MORE_ITEMS` 里 `act` 类型条目（导出两项）误走了
+     `fwd` 的存在性过滤——`it.fwd` 为 undefined，`getElementById(undefined)` 返回
+     null 被 `continue` 跳过；而 <860px 时导出按钮恰被媒体查询收纳，导出成为
+     「不可能的任务」。vm 测试此前被桩的 `getEl(undefined)` 自动创建幻影元素蒙蔽
+     （旧测试看到 8 项，真实浏览器只有 6 项——**桩比真实 DOM 宽恕，是漏测根因**）。
+   - 修法：`act` 条目单独分支恒显（不依附按钮显隐）；vm 测试补「全部 fwd 隐藏时
+     导出两项仍在」断言。
+
+3. **文件名滚动压盖前缀 + 后半段不显示**（`index.html`）
+
+   - 根因（CDP 几何实证）：`transform` 作用在滚动窗口 `#cur-name` **本身**——
+     窗口随文本一起左移，全程压过「当前文件：」前缀（overlap=true），且窗口右缘
+     同步左收，尾部永不滚入视野；长文件名 + 字数统计 + 全按钮组平铺时，
+     `.fname` / `#cur-name` 的 `min-width:0` 进一步把窗口挤到 **0 宽**
+     （clientWidth=0，文本被完全裁剪）。
+   - 修法：滚动机制由 `transform` 平移窗口改为 **`scrollLeft` 滚动**（窗口固定、
+     内容在窗内滑移；`scrollWidth - clientWidth` 恰为最大滚动量，量测口径天然
+     对齐）；顶栏预算防塌缩——`.word-counter` / `.user` 改
+     `flex: 0 1 auto; min-width: 0; overflow: hidden` 允许收缩让位（按钮组永不动）。
+   - 实证：clientW=229 / scrollW=901，窗口左缘恒定 403、`overlap` 全程 false、
+     scrollLeft 111→187 递增，尾部可完整滚入。
+
+### 新增
+
+4. **单活会话 per-tab token（X-Vditor-Token 头）**（`server.py` / `index.html`）
+
+   - 根因（实证）：token 此前只走 HttpOnly Cookie，而 Cookie 在同一浏览器所有
+     标签页间共享——第二个标签页登录后服务端虽清空旧会话并下发新 token，先登页面
+     却因共享 cookie 罐「静默升级」到新 token，永远收不到 401（CDP 双 page 实测：
+     二次登录后 tabA 仍 200）。**踢出逻辑本身不是按 IP 判断**（`start_session` 是
+     「新登录即清空全部会话」），失效点在 token 的传输通道。
+   - 修法：`_request_token()` 优先读 `X-Vditor-Token` 头、缺失回退 Cookie；
+     login/setup 响应体下发 `token`；前端存 `sessionStorage`（每标签页独立），
+     fetch 包装器统一注入头（三种 headers 形态兼容、调用方已带则不重复）；
+     logout 清副本。
+   - 语义：每个完成登录的标签页持有自己的 token 副本，新登录踢旧会话时先登页面
+     必 401；「从已登录浏览器新开的标签页」无副本、经 cookie 被动继承当前会话
+     （无需再登录，它本就是当前会话的视图）。
+   - 取舍：token 从 HttpOnly cookie 变为 JS 可读的 sessionStorage（XSS 面略增），
+     换取按标签页隔离；隐私模式 sessionStorage 不可用时静默退回纯 Cookie 行为。
+   - 测试：`test_single_session.py` 18 → 28 断言，新增 per-tab 场景（旧 token 401 /
+     新 token 200 / cookie 回退 / 头优先于 cookie / 垃圾头拒绝 / 带头 logout）。
+
+5. **按钮纯文字 + 触发钮选中态**（`index.html`）
+
+   - `#btn-find` 去 🔍（仅「查找」）、`#btn-export` 去 ▾（仅「导出」），title 保留。
+   - `.tb-trigger[aria-expanded="true"]` 选中态（主色浅底 + 主色描边），对齐
+     「设置 → 维护 → 状态与日志」四按钮的 `.on` 语义——菜单开着时按钮本身有视觉提示。
+   - 注：导出菜单「再点触发钮收回」经 CDP **真实鼠标实证本就正常**（开→关→开
+     循环通过），本版补选中态视觉与回归断言，未改其行为。
+
+### 更改
+
+6. **顶栏响应式三档 → 两档**（`index.html`）
+
+   - 删 519px 中间态：<860px 时顶栏只显示 保存｜⋯ 更多，查找/导出/主题/退出/
+     设置/信息/纯文本/用户名/字数全部退场（可操作的进更多菜单，纯展示直接隐藏）。
+   - 实证：859px 收纳态、860px 全平铺，边界精确落在断点上。
+
+### 测试
+
+- `test_v160_frontend.js` 102 → **124 项**：滚动断言 transform → scrollLeft；
+  按钮文案/两档响应式/选中态/防塌缩 CSS；`act` 条目恒显 + toggle 循环；新增
+  「1.6.0.3 sv 源码模式查找」（findSourceTextarea / findSelectionPrefill /
+  选区跳转 / 越界钳位）与「per-tab token 头注入」（注入/不重复/清除/隐私模式降级）。
+- `test_single_session.py` 18 → **28 项**（见新增 4）。
+- 全量复跑：frontend 27 / ui_buttons 89 / security 30 / core 33 / v141 107 /
+  version 8 / rawmode 139，全绿。
+- 实证手段：Edge headless + CDP（`Input.dispatchMouseEvent` 真实点击、
+  `Input.insertText` 真实键入、双 page 模拟双标签页、`getBoundingClientRect`
+  量几何），诊断脚本存于临时目录未进仓库。
+
+### 版本
+
+- 全部为 1.6.0.2 实机反馈修复与顶栏交互修正，前三段不变，第四段递增：
+  **1.6.0.2 → 1.6.0.3**；四位测试版，禁止对外发布（tag / Release / 上传均须
+  人类明确指令）。
+
+---
+
 ## 1.6.0.2（2026-10-23）· 测试版（未发布）
 
 **1.6.0.1 实机反馈 6 项：查找入口 / 记事本布局 / 高亮跳转 / 文件名滚动 / 顶栏溢出 / 单活会话**
