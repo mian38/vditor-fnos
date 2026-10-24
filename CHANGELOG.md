@@ -84,6 +84,83 @@
 
 ---
 
+## 1.6.0.5（2026-10-24）· 测试版（未发布）
+
+**1.6.0.4 实机反馈 3 项（wysiwyg 查找 / 切模式查找失效 / 查找钮收回）**
+
+### 修复
+
+1. **「所见即所得」（wysiwyg）模式查找只计数、不高亮、不跳转**（`index.html`）
+
+   - 根因（CDP 实证）：`findHighlightRoot` 只查 `#vditor .vditor-ir > .vditor-reset`，
+     而 wysiwyg 模式的活跃编辑区是 `.vditor-wysiwyg`——marks 全插进 DOM 里存在
+     但不可见的 ir 空壳（实测 wyMarks=0 / irMarks=3），用户既看不到高亮、
+     `scrollIntoView` 也无的放矢。计数与替换本身是好的（数据层正常），
+     坏的是全部视觉反馈。
+   - 修法：`findHighlightRoot` 改为**模式感知**——`currentMode==='sv'`→null、
+     `==='wysiwyg'`→`.vditor-wysiwyg`、其余→限定 `.vditor-ir > .vditor-reset`
+     且要求可见（防 mode 取不到时拿隐藏空壳）。`findScrollToCurrent` 的 marks
+     查询与当前命中查询同步覆盖 `.vditor-wysiwyg`；CSS 补 wysiwyg 的 mark
+     规则（浅色 + 深色，与 ir 同语言）。
+   - 连带：`findSourceTextarea` 的「sv textarea 可见」兜底在 wysiwyg 下误判
+     （实测该 textarea 的 `offsetParent` 在 wysiwyg 模式仍非 null）→ 跳转走了
+     textarea 分支、选区落进隐藏文本域，wysiwyg 的当前命中反而标不上
+     （实测 wy 有 3 个 mark 但 current=0）。改为**以 currentMode 为权威**，
+     可见性判断只在 mode 取不到时兜底。
+
+2. **切换渲染模式后查找状态陈旧**（`index.html`）
+
+   - 根因（CDP 实证）：Vditor 自带的模式切换（工具栏 更多→编辑模式，或
+     ⌥⌘7/8/9）会**整体重渲染**目标编辑区——ir/wysiwyg 是 `innerHTML=` 重排，
+     我们插的 `<mark>` 被冲掉；旧宿主里的 marks 还会残留（实测 wysiwyg→ir 后
+     wy 仍留 3 个）。切换后计数虽在但高亮全无、当前命中丢失，必须改一遍
+     查找词才恢复（实机反馈原话「需要修改查找的内容才重新生效」）。
+   - 修法：新增 **MutationObserver 观察编辑区宿主动静**（只认 `.vditor-ir` /
+     `.vditor-wysiwyg` / `.vditor-sv` 容器内的变动，排除工具栏/预览等噪声——
+     实测点跳转让编辑器失焦会引发工具栏按钮 class 变化，误触发重算），
+     防抖 150ms 后重算查找。两类自身变动必须排除，否则死循环：
+     ① 我们插/拔 mark —— 用 `findSeq` 序号识别（`findClearMarks`/`findHighlight`
+     结束时自增，观察者见序号变化即跳过并对齐）；
+     ② 当前命中 mark 的 class 切换 —— 纯 mark 的 attributes 变动直接忽略。
+   - 连带两个配套修正：
+     - `findClearMarks` 改为清**所有高亮宿主**（ir + wysiwyg），否则切换模式
+       后旧宿主残留的 marks 会在切回时与新建重复、使 current 序号错位；
+     - 抽出 `findMarkCurrent()` 并在 `findCompute()` 末尾调用——否则任何自动
+       重算都会用不带 current 的新 marks 替换旧的（实测：点跳转瞬间 cur=1，
+       360ms 后自动重算清成 0）。
+
+3. **查找栏已打开时点顶栏「查找」按钮无反应**（`index.html`）
+
+   - 根因：按钮处理器在 `findState.open` 为真时只做 `focus()+select()`，
+     不移除面板——点击没有可见结果。
+   - 修法：改为 toggle（已开 → `findClose()`）；Ctrl+F 保持浏览器的
+     「已打开则聚焦」惯例不变（实测两者行为已分别验证）。
+
+### 测试
+
+- `test_v160_frontend.js` 144 → **157 项**：
+  - 静态：wysiwyg 高亮 CSS（浅/深）、`findMarkCurrent` 定义与两处调用、
+    `findClearMarks` 双宿主、观察者（MutationObserver + findSeq 守卫）、
+    查找钮 toggle 语义、`findHighlightRoot` 模式感知正则；
+  - vm：`findHighlightRoot` 三种 mode（wysiwyg→.vditor-wysiwyg / sv→null /
+    mode 缺失→ir 回落）、`findMarkCurrent` 当前索引转移、查找钮三次点击
+    开→关→开循环。
+- 桩加固：`querySelectorAll` 区分「含 mark 的选择器→marks」与
+  「宿主选择器→hosts」（`findClearMarks` 已改为 document 级查询，
+  只打元素级会测空）。
+- 全量复跑：rawmode 139 / ui_buttons 89 / frontend 27 / security 30 /
+  core 33 / v141 107 / single_session 28 / version 8 / concurrent_save 49 /
+  cli 38，全绿。
+- 实证手段同前（Edge headless + CDP 真实点击/键入 + 结构量测）。
+
+### 版本
+
+- 全部为 1.6.0.4 实机反馈修复，前三段不变，第四段递增：
+  **1.6.0.4 → 1.6.0.5**；四位测试版，禁止对外发布（tag / Release / 上传
+  均须人类明确指令）。
+
+---
+
 ## 1.6.0.4（2026-10-24）· 测试版（未发布）
 
 **1.6.0.3 实机反馈 3 项（窄屏字数入口 / 查找栏溢出 / 源码态跳转）**
