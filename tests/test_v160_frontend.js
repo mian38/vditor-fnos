@@ -117,6 +117,7 @@ function mk(id) {
     _id: id, id: id, textContent: '', title: '', value: '', innerHTML: '', disabled: false,
     style: {}, dataset: {}, children: [], hidden: false, className: '',
     offsetWidth: 100, offsetHeight: 100, scrollWidth: 0, clientWidth: 0,
+    get offsetTop() { return stubOffsetTop; },
     classList: { add(c) { cls.add(c); }, remove(c) { cls.delete(c); },
                  toggle(c, f) { f ? cls.add(c) : cls.delete(c); }, contains(c) { return cls.has(c); } },
     appendChild(c) { this.children.push(c); if (c && typeof c === 'object') c.parentNode = this; return c; },
@@ -156,6 +157,12 @@ function mk(id) {
           this.className.split(/\s+/).indexOf(last.slice(1)) >= 0) return this;
       return null;
     },
+    // 1.6.0.4：元素级 querySelector 也认 data-wc（refreshWcMenuItem 走
+    // menu.querySelector('.mi[data-wc]')，不是 document 级）
+    querySelector(sel) {
+      if (typeof sel === 'string' && sel.indexOf('data-wc') >= 0) return qsWcItem;
+      return mk('q');
+    },
     getBoundingClientRect() { return { top: 0, left: 0, right: 100, bottom: 30, width: 100, height: 30 }; }
   };
   Object.defineProperty(el, 'firstChild', { get() { return this.children[0] || null; } });
@@ -167,6 +174,8 @@ function mkName() {
   el.scrollWidth = 500; el.clientWidth = 300;
   return el;
 }
+// 1.6.0.4：镜像量测桩——marker 的 offsetTop 可配置（scrollTaToIndex 读它）
+let stubOffsetTop = 4242;
 function getEl(id) { return ids[id] || (ids[id] = mk(id)); }
 const store = {};
 const ssStore = {};                     // 1.6.0.3：sessionStorage 存储（per-tab token）
@@ -175,6 +184,9 @@ const fetchCalls = [];                  // 1.6.0.3：fetch 记录器（验证 X-
 let qsHost = null;
 // 1.6.0.3：Vditor sv 源码模式的 textarea 桩（class="vditor-sv vditor-reset"）
 let qsSv = null;
+// 1.6.0.4：refreshWcMenuItem 走 menu.querySelector('.mi[data-wc]')，
+// 桩需能返回真实信息项（否则摸到幻影元素，测了个寂寞）
+let qsWcItem = null;
 const walkerNodes = [];
 const ctx = {
   console, document: {
@@ -192,6 +204,7 @@ const ctx = {
       // ir 与 sv 互斥（真实 DOM 亦如此）：sv 模式激活时 .vditor-ir 不存在
       if (sel === '#vditor .vditor-ir > .vditor-reset') return qsSv ? null : (qsHost || mk('qs'));
       if (sel === '#vditor .vditor-sv') return qsSv;      // 1.6.0.3：sv textarea（null=不在 sv 模式）
+      if (sel.indexOf('data-wc') >= 0) return qsWcItem;  // 1.6.0.4：字数信息项
       return mk('qs');
     },
     querySelectorAll: (sel) => (sel === '.tb-menu' ? [getEl('export-menu'), getEl('more-menu')] : []),
@@ -212,6 +225,9 @@ const ctx = {
   btoa: s => Buffer.from(s).toString('base64'), atob: s => Buffer.from(s, 'base64').toString(),
   addEventListener() {}, removeEventListener() {}, history: {},
   performance: { now: () => Date.now() },
+  // 1.6.0.4：镜像量测需要 getComputedStyle（桩返回空属性集，
+  // taMirrorOffsetTop 对 undefined 属性赋值不抛错）
+  getComputedStyle: () => ({}),
   requestAnimationFrame: (fn) => { rafQueue.push(fn); return rafQueue.length; },
   cancelAnimationFrame: () => {},
   ResizeObserver: function (cb) { this.cb = cb; this.observe = function () { roInstances.push(this); }; },
@@ -667,6 +683,100 @@ check('sessionStorage 不可用时 tokenGet 静默返回 null（隐私模式降�
   ctx.sessionStorage = orig;
   return v === null;
 })());
+
+// ================= 1.6.0.4：源码态查找跳转（反馈③） =================
+console.log('== 1.6.0.4 源码态查找跳转 ==');
+check('scrollTaToIndex / taMirrorOffsetTop 已定义',
+  typeof ctx.scrollTaToIndex === 'function'
+  && typeof ctx.taMirrorOffsetTop === 'function');
+check('findScrollToCurrent 源码态分支显式调用 scrollTaToIndex（setSelectionRange 不滚动，实证）',
+  /function findScrollToCurrent\(doScroll\)[\s\S]{0,1600}scrollTaToIndex\(ta, s\)/.test(code));
+check('scrollTaToIndex 镜像/比例双路径（FIND_MIRROR_MAX_CHARS 分档，超大文档不卡布局）',
+  /FIND_MIRROR_MAX_CHARS\s*=\s*\d+/.test(code)
+  && /taMirrorOffsetTop\(ta, index\)/.test(code)
+  && /\(index \/ len\)/.test(code));
+check('查找栏窄屏换行（640px 断点：fb-row wrap + 输入框 140px 保底，反馈②）',
+  /@media \(max-width: 640px\)[\s\S]{0,300}#find-bar \.fb-row\s*\{\s*flex-wrap:\s*wrap/.test(CSS)
+  && /@media \(max-width: 640px\)[\s\S]{0,500}#find-bar \.set-input\s*\{\s*flex:\s*1 1 140px/.test(CSS));
+check('更多菜单信息项样式（mi-info：可换行、无悬停态）',
+  /\.tb-menu \.mi-info\s*\{[^}]*white-space:\s*normal/.test(CSS)
+  && /\.tb-menu \.mi-info:hover\s*\{\s*background:\s*transparent/.test(CSS));
+check('菜单项处理器排除 data-wc 信息项（点击不关菜单，反馈①）',
+  /mi\.dataset && mi\.dataset\.wc/.test(code));
+check('buildMoreMenu 末尾追加 data-wc 信息项',
+  /info\.className = 'mi mi-info'/.test(code) && /info\.dataset\.wc = '1'/.test(code));
+check('updateCounter 末尾调用 refreshWcMenuItem（菜单保持打开时实时刷新）',
+  /function updateCounter\(\)[\s\S]{0,1800}refreshWcMenuItem\(\);/.test(code));
+check('wcMenuText / refreshWcMenuItem 已定义',
+  typeof ctx.wcMenuText === 'function' && typeof ctx.refreshWcMenuItem === 'function');
+
+// sv textarea 桩（Vditor sv 元素本身即 textarea）
+const svTa2 = mk('sv-ta2');
+svTa2.tagName = 'TEXTAREA';
+svTa2.offsetParent = {};
+svTa2.value = 'abc abc';
+svTa2.scrollHeight = 20000; svTa2.clientHeight = 600;
+svTa2.scrollTop = 0;
+svTa2.setSelectionRange = function (s, e) { this.selectionStart = s; this.selectionEnd = e; };
+svTa2.focus = function () { this._focused = true; };
+qsSv = svTa2;
+findContent = 'abc abc';
+ctx.findOpen('abc', false);
+err = null;
+try { ctx.findScrollToCurrent(true); } catch (e) { err = e; }
+check('sv 模式：findScrollToCurrent 设选区不抛错', err === null, err && err.message);
+check('sv 模式：选中当前命中（0-3）', svTa2.selectionStart === 0 && svTa2.selectionEnd === 3,
+  { s: svTa2.selectionStart, e: svTa2.selectionEnd });
+check('sv 模式：显式滚动到镜像量测位置（stubOffsetTop - clientHeight/3 = 4042）',
+  svTa2.scrollTop === 4242 - 200, svTa2.scrollTop);
+// 已设过 scrollTop 后再跳一处：滚动量应更新而非停留
+stubOffsetTop = 9000;
+ctx.findNext();
+check('sv 模式：连续跳转滚动量随新命中更新（9000-200=8800）',
+  svTa2.scrollTop === 8800 && svTa2.selectionStart === 4, { sl: svTa2.scrollTop, s: svTa2.selectionStart });
+// 超大文档：比例估算路径（不触发镜像，len > FIND_MIRROR_MAX_CHARS）
+stubOffsetTop = 999999;                     // 若误走镜像会得到 999999-200，借此区分路径
+svTa2.value = 'x'.repeat(600001);
+svTa2.scrollHeight = 1200000;
+ctx.scrollTaToIndex(svTa2, 300000);
+check('超大文档走比例估算（300000/600001×1200000-200≈599799，非镜像值）',
+  Math.abs(svTa2.scrollTop - 599799) <= 2, svTa2.scrollTop);
+// 越界偏移不抛错（matches 陈旧）
+err = null;
+try { ctx.scrollTaToIndex(svTa2, 99999999); } catch (e) { err = e; }
+check('scrollTaToIndex 越界 index 不抛错（比例仍有效）', err === null, err && err.message);
+qsSv = null;
+
+// ================= 1.6.0.4：字数统计入「⋯ 更多」（反馈①） =================
+console.log('== 1.6.0.4 字数统计菜单项 ==');
+moreMenu.hidden = false;
+moreMenu.children.length = 0;
+ctx.buildMoreMenu();
+const wcItem = moreMenu.children.find(c => c.dataset && c.dataset.wc);
+check('buildMoreMenu 末尾追加字数统计信息项（class=mi mi-info + data-wc）',
+  !!wcItem && wcItem.className === 'mi mi-info', wcItem && wcItem.className);
+check('信息项文案含三项口径（正文/含语法/阅读）',
+  !!wcItem && wcItem.textContent.indexOf('字数：正文 ') === 0
+  && wcItem.textContent.indexOf('含语法') > 0, wcItem && wcItem.textContent);
+// 点击信息项：菜单项处理器应直接返回（不关菜单）
+err = null;
+try { docLs.click[0]({ target: wcItem }); } catch (e) { err = e; }
+check('点击字数信息项不抛错且不关闭菜单', err === null && moreMenu.hidden === false,
+  { err: err && err.message, hidden: moreMenu.hidden });
+// 实时刷新：菜单开着 + 顶栏计数变化 → 信息项文案更新
+getEl('wc-text').textContent = '1234';
+getEl('wc-md').textContent = '2345';
+getEl('wc-read').textContent = '约 3 分钟';
+qsWcItem = wcItem;                            // 让桩的 querySelector 返回真实信息项
+ctx.refreshWcMenuItem();
+check('refreshWcMenuItem 菜单打开时实时刷新文案',
+  !!wcItem && wcItem.textContent === '字数：正文 1234 · 含语法 2345 · 约 3 分钟',
+  wcItem && wcItem.textContent);
+// 菜单关闭时刷新为空操作（不抛错）
+moreMenu.hidden = true;
+err = null;
+try { ctx.refreshWcMenuItem(); } catch (e) { err = e; }
+check('refreshWcMenuItem 菜单关闭时静默跳过', err === null, err && err.message);
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);;
