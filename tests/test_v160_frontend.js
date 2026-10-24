@@ -91,8 +91,11 @@ check('高亮 <mark> 限定 .vditor-ir 渲染区（1.6.0.2：4 个 .vditor-reset
   /\.vditor-ir \.vditor-reset mark\.vd-find\s*\{/.test(CSS)
   && /\.vditor-ir \.vditor-reset mark\.vd-find-current\s*\{/.test(CSS)
   && /html\[data-theme="dark"\] \.vditor-ir \.vditor-reset mark\.vd-find\s*\{/.test(CSS));
-check('findHighlightRoot 只查 .vditor-ir > .vditor-reset（4 个 .vditor-reset 中唯 ir 可编辑；sv 模式自然落空）',
-  /function findHighlightRoot\(\)\s*\{\s*if \(rawMode\) return null;[\s\S]{0,900}return document\.querySelector\('#vditor \.vditor-ir > \.vditor-reset'\);/.test(code));
+check('findHighlightRoot 模式感知（1.6.0.5）：sv→null / wysiwyg→.vditor-wysiwyg / ir→限定 .vditor-ir 且要求可见',
+  /function findHighlightRoot\(\)\s*\{\s*if \(rawMode\) return null;[\s\S]{0,900}mode === 'sv'\) return null;/.test(code)
+  && /mode === 'wysiwyg'\)\s*\{[\s\S]{0,200}\.vditor-wysiwyg/.test(code)
+  && /\.vditor-ir > \.vditor-reset'\)/.test(code)
+  && /ir\.offsetParent === null\) return null;/.test(code));
 check('正则非法有 try/catch 兜底（不抛错）',
   /try \{ return new RegExp\(src, flags\); \} catch \(e\) \{ return \{ error: e \}; \}/.test(code));
 check('替换全部：正则走原生 replace（支持 $1），非正则从尾向前',
@@ -187,6 +190,13 @@ let qsSv = null;
 // 1.6.0.4：refreshWcMenuItem 走 menu.querySelector('.mi[data-wc]')，
 // 桩需能返回真实信息项（否则摸到幻影元素，测了个寂寞）
 let qsWcItem = null;
+// 1.6.0.5：findClearMarks 清「所有高亮宿主」（ir + wysiwyg），
+// 桩的 querySelectorAll 需能返回这些宿主
+let qsHostList = [];
+// 1.6.0.5：findMarkCurrent 的 marks 查询结果（含 mark 的选择器单独配置）
+let qsMarksList = [];
+// 1.6.0.5：wysiwyg 编辑区宿主桩
+let qsWy = null;
 const walkerNodes = [];
 const ctx = {
   console, document: {
@@ -204,10 +214,17 @@ const ctx = {
       // ir 与 sv 互斥（真实 DOM 亦如此）：sv 模式激活时 .vditor-ir 不存在
       if (sel === '#vditor .vditor-ir > .vditor-reset') return qsSv ? null : (qsHost || mk('qs'));
       if (sel === '#vditor .vditor-sv') return qsSv;      // 1.6.0.3：sv textarea（null=不在 sv 模式）
+      if (sel === '#vditor .vditor-wysiwyg') return qsWy; // 1.6.0.5：wysiwyg 编辑区
       if (sel.indexOf('data-wc') >= 0) return qsWcItem;  // 1.6.0.4：字数信息项
       return mk('qs');
     },
-    querySelectorAll: (sel) => (sel === '.tb-menu' ? [getEl('export-menu'), getEl('more-menu')] : []),
+    querySelectorAll: (sel) => {
+      if (sel === '.tb-menu') return [getEl('export-menu'), getEl('more-menu')];
+      // 1.6.0.5：含 mark 的选择器 → 返回配置的 marks；否则返回高亮宿主
+      if (sel.indexOf('mark.vd-find') >= 0) return qsMarksList;
+      if (sel.indexOf('.vditor-ir') >= 0 || sel.indexOf('.vditor-wysiwyg') >= 0) return qsHostList;
+      return [];
+    },
     addEventListener(t, fn) { (docLs[t] = docLs[t] || []).push(fn); },
     removeEventListener() {},
     body: mk('body'), documentElement: mk('html'), cookie: ''
@@ -420,6 +437,7 @@ markA.parentNode = para; spaceText.parentNode = para; markB.parentNode = para;
 para.children = [markA, spaceText, markB];
 const marks = [markA, markB];
 host.querySelectorAll = () => marks;
+qsHostList = [host];                        // 1.6.0.5：findClearMarks 走 document.querySelectorAll 取宿主
 err = null;
 try { ctx.findClearMarks(); } catch (e) { err = e; }
 check('findClearMarks 不抛错', err === null, err && err.message);
@@ -777,6 +795,67 @@ moreMenu.hidden = true;
 err = null;
 try { ctx.refreshWcMenuItem(); } catch (e) { err = e; }
 check('refreshWcMenuItem 菜单关闭时静默跳过', err === null, err && err.message);
+
+// ================= 1.6.0.5：wysiwyg 查找 + 切模式自动恢复 + 查找钮 toggle =================
+console.log('== 1.6.0.5 wysiwyg / 模式切换 / 查找钮 ==');
+check('wysiwyg 高亮 CSS（浅色 + 深色，与 ir 同语言）',
+  /\.vditor-wysiwyg mark\.vd-find\s*\{/.test(CSS)
+  && /\.vditor-wysiwyg mark\.vd-find-current\s*\{/.test(CSS)
+  && /html\[data-theme="dark"\] \.vditor-wysiwyg mark\.vd-find\s*\{/.test(CSS));
+check('findMarkCurrent 独立函数 + findCompute / findScrollToCurrent 均调用（自动重算不丢当前命中）',
+  /function findMarkCurrent\(\)/.test(code)
+  && /function findCompute\(\)[\s\S]{0,1400}findMarkCurrent\(\);/.test(code)
+  && /function findScrollToCurrent\(doScroll\)[\s\S]{0,1600}findMarkCurrent\(\);/.test(code));
+check('findClearMarks 清 ir + wysiwyg 两个宿主（切换模式后旧宿主不残留）',
+  /function findClearMarks\(\)[\s\S]{0,700}#vditor \.vditor-ir > \.vditor-reset, #vditor \.vditor-wysiwyg/.test(code));
+check('模式切换观察者（MutationObserver + findSeq 自触发守卫）',
+  /initFindModeWatch/.test(code) && /new MutationObserver/.test(code)
+  && /findSeq\+\+/.test(code) && /findSeq !== lastSeq/.test(code));
+check('顶栏查找按钮为 toggle（已开再点调用 findClose）',
+  /btnFind\.addEventListener\('click', \(\) => \{[\s\S]{0,200}findState\.open\) \{ findClose\(\); return; \}/.test(code));
+
+// —— vm：findHighlightRoot 模式感知 ——
+const wyHost = mk('wy-host');
+wyHost.className = 'vditor-wysiwyg';
+qsWy = wyHost;
+vm.runInContext("vditor = { vditor: { currentMode: 'wysiwyg' } };", ctx);
+check('findHighlightRoot：wysiwyg 模式返回 .vditor-wysiwyg 宿主',
+  ctx.findHighlightRoot() === wyHost, (ctx.findHighlightRoot() || {})._id);
+vm.runInContext("vditor = { vditor: { currentMode: 'sv' } };", ctx);
+check('findHighlightRoot：sv 模式返回 null（textarea 无渲染 DOM）',
+  ctx.findHighlightRoot() === null);
+vm.runInContext("vditor = null;", ctx);
+check('findHighlightRoot：mode 取不到时回落 ir 选择器（qsHost）',
+  ctx.findHighlightRoot() === qsHost, (ctx.findHighlightRoot() || {})._id);
+
+// —— vm：findMarkCurrent 标记当前命中（跨宿主） ——
+const mkA = mk('mkA'); mkA.className = 'vd-find';
+const mkB = mk('mkB'); mkB.className = 'vd-find';
+qsMarksList = [mkA, mkB];
+vm.runInContext("findState.index = 1; findState.matches = [{start:0,end:1},{start:2,end:3}];", ctx);
+ctx.findMarkCurrent();
+check('findMarkCurrent：只给当前索引的 mark 挂 vd-find-current',
+  !mkA.classList.contains('vd-find-current') && mkB.classList.contains('vd-find-current'));
+vm.runInContext("findState.index = 0;", ctx);
+ctx.findMarkCurrent();
+check('findMarkCurrent：索引变化后 current 随之转移',
+  mkA.classList.contains('vd-find-current') && !mkB.classList.contains('vd-find-current'));
+qsMarksList = [];
+
+// —— vm：顶栏查找按钮 toggle ——
+const barForToggle = getEl('find-bar');
+ctx.findClose();                                    // 先确保关闭态
+barForToggle.hidden = true;
+const btnF = getEl('btn-find');
+err = null;
+try { btnF._fire('click'); } catch (e) { err = e; }
+check('点查找钮：关闭态 → 打开', err === null && barForToggle.hidden === false, { err: err && err.message, hidden: barForToggle.hidden });
+err = null;
+try { btnF._fire('click'); } catch (e) { err = e; }
+check('再点查找钮：已开 → 收回（1.6.0.5 反馈②）', err === null && barForToggle.hidden === true, { err: err && err.message, hidden: barForToggle.hidden });
+err = null;
+try { btnF._fire('click'); } catch (e) { err = e; }
+check('第三次点查找钮：重新打开（toggle 循环）', err === null && barForToggle.hidden === false);
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);;
