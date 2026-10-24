@@ -191,6 +191,13 @@
             background: var(--c-brand-soft); color: var(--c-brand-hover);
             border-color: var(--c-brand);
         }
+        /* 1.6.0.4：窄屏查找栏允许换行（反馈②：输入框被压缩到不可用且整行溢出）。
+           输入框给 140px 保底宽度，放不下的按钮（上一处/下一处/选项组）自然换到
+           第二行；替换行同理。>=641px 时原 nowrap 布局不受影响。 */
+        @media (max-width: 640px) {
+            #find-bar .fb-row { flex-wrap: wrap; }
+            #find-bar .set-input { flex: 1 1 140px; min-width: 140px; }
+        }
         /* 查找高亮：渲染区 <mark>。1.6.0.2 修复：必须限定 .vditor-ir ——
            Vditor DOM 内共有 4 个 .vditor-reset（wysiwyg 空壳 / sv textarea /
            ir 真正编辑区 / preview），不限定则 querySelector 取到 wysiwyg
@@ -229,6 +236,13 @@
         .tb-menu .mi:active:not(:disabled) { transform: translateY(1px); }
         .tb-menu .mi:disabled { opacity: .5; cursor: not-allowed; }
         .tb-menu .mi-sep { height: 1px; margin: 4px 6px; background: var(--c-border-2); }
+        /* 1.6.0.4：信息项（字数统计）——只读展示，无悬停态、默认光标、可换行。
+           <860px 时顶栏字数框退场，统计入口移入「⋯ 更多」（反馈①）。 */
+        .tb-menu .mi-info {
+            cursor: default; opacity: .85; color: var(--c-text-3);
+            font-size: var(--fs-sm); white-space: normal; line-height: 1.5;
+        }
+        .tb-menu .mi-info:hover { background: transparent; color: var(--c-text-3); }
         /* ---------------- 1.6.0.3：顶栏响应式两档（问题⑤重定） ----------------
            >=860px：全部按钮平铺（默认态，无需规则）。
            <860px ：顶栏只保留 保存｜⋯ 更多——其余按钮（查找/导出/主题/退出/
@@ -2447,6 +2461,24 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             '正文字数（不含 Markdown 语法）：' + textLen.toLocaleString() +
             '；含语法字数（Markdown 原文，不含结尾换行）：' + mdLen.toLocaleString() +
             '。预计阅读时间 = 正文字数 ÷ ' + READ_SPEED + ' 字/分钟，向上取整，当前约 ' + readMin + ' 分钟。点击「?」查看详细说明。');
+        refreshWcMenuItem();
+    }
+
+    // ---------- 1.6.0.4：字数统计的窄屏入口（反馈①） ----------
+    // <860px 时顶栏字数框退场，「⋯ 更多」菜单底部常驻一条只读信息项，
+    // 打开菜单即为最新值（buildMoreMenu 每次打开前重建）；菜单保持打开
+    // 期间若用户继续编辑，也随 updateCounter 实时刷新。
+    function wcMenuText() {
+        const t = (document.getElementById('wc-text') || {}).textContent || '0';
+        const m = (document.getElementById('wc-md') || {}).textContent || '0';
+        const r = (document.getElementById('wc-read') || {}).textContent || '约 0 分钟';
+        return '字数：正文 ' + t + ' · 含语法 ' + m + ' · ' + r;
+    }
+    function refreshWcMenuItem() {
+        const menu = document.getElementById('more-menu');
+        if (!menu || menu.hidden) return;
+        const item = menu.querySelector('.mi[data-wc]');
+        if (item) item.textContent = wcMenuText();
     }
 
     // ---------- 鉴权 ----------
@@ -3029,6 +3061,69 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         return null;
     }
 
+    /* ---------- 1.6.0.4：源码态查找跳转（把选区滚入视野） ----------
+       实证（Edge headless + CDP）：textarea 的 setSelectionRange 只设选区、
+       不产生滚动；focus() 仅在「赋值后首次聚焦」时滚到当前选区（而赋值后的
+       默认选区在文末），显式设过选区后再 blur/focus 也不再滚——旧实现
+       「先 focus 后 setSelectionRange」的净效果就是「选中了但视图不动」，
+       即 1.6.0.3 实机反馈③。故必须显式计算并赋值 scrollTop。
+       精度分两档：
+       - 文档 ≤ FIND_MIRROR_MAX_CHARS：镜像量测——建一个复制 textarea 排版
+         样式（字体/行高/padding/white-space/width 等）的隐藏 div，写入
+         value.slice(0, index) 后追加零宽标记，读 marker.offsetTop 即为
+         选区的绝对纵坐标。软换行天然精确（实测 5 万/20 万字符约 55/125ms）。
+       - 更大文档：布局成本随切片线性增长（实测 100 万字符约 670ms、
+         1000 万约 7s），退化为按字符比例估算 scrollHeight——均匀文本误差
+         <0.1%，足以把命中带入视野，用户可微调。大文档本就以流畅优先。 */
+    const FIND_MIRROR_MAX_CHARS = 500000;
+    function taMirrorOffsetTop(ta, index) {
+        const cs = getComputedStyle(ta);
+        const mirror = document.createElement('div');
+        const props = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight',
+            'letterSpacing', 'wordSpacing', 'textIndent', 'tabSize', 'textTransform',
+            'direction', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+            'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+            'boxSizing', 'whiteSpace', 'wordBreak', 'overflowWrap'];
+        for (const p of props) {
+            try { mirror.style[p] = cs[p]; } catch (e) { /* 忽略不支持的属性 */ }
+        }
+        mirror.style.position = 'absolute';
+        mirror.style.visibility = 'hidden';
+        mirror.style.pointerEvents = 'none';
+        mirror.style.top = '0';
+        mirror.style.left = '-99999px';
+        mirror.style.height = 'auto';
+        mirror.style.maxHeight = 'none';
+        mirror.style.overflow = 'visible';
+        mirror.style.width = cs.width;
+        mirror.textContent = (ta.value || '').slice(0, index);
+        const marker = document.createElement('span');
+        marker.textContent = '\u200b';
+        mirror.appendChild(marker);
+        document.body.appendChild(mirror);
+        let top = 0;
+        try { top = marker.offsetTop || 0; } catch (e) { top = 0; }
+        document.body.removeChild(mirror);
+        return top;
+    }
+    function scrollTaToIndex(ta, index) {
+        const max = ta.scrollHeight - ta.clientHeight;
+        if (max <= 0) return;
+        const len = (ta.value || '').length;
+        let top = null;
+        if (len <= FIND_MIRROR_MAX_CHARS) {
+            try { top = taMirrorOffsetTop(ta, index); } catch (e) { top = null; }
+        }
+        if (top === null) {
+            // 比例估算兜底（超大文档或镜像量测失败）
+            top = len ? Math.round((index / len) * ta.scrollHeight) : 0;
+        }
+        // 目标：命中行落在视窗中上部（留 1/3 下余量，符合自上而下阅读习惯）
+        let target = Math.round(top - ta.clientHeight / 3);
+        target = Math.max(0, Math.min(target, max));
+        ta.scrollTop = target;
+    }
+
     // 清除高亮：把每个 <mark> 精确展开回原文本节点并 normalize，杜绝污染编辑器 DOM
     function findClearMarks() {
         const host = findHighlightRoot();
@@ -3123,7 +3218,9 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             try {
                 ta.focus();
                 ta.setSelectionRange(s, e);
-            } catch (err) { /* 选区失败不影响其它逻辑 */ }
+                // 1.6.0.4：显式把选区滚入视野（setSelectionRange/focus 都不滚，见 scrollTaToIndex 注释）
+                scrollTaToIndex(ta, s);
+            } catch (err) { /* 选区/滚动失败不影响其它逻辑 */ }
             return;
         }
         // 1.6.0.2：同步限定 .vditor-ir 作用域（与 findHighlightRoot 同源，
@@ -3428,6 +3525,17 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             }
             menu.appendChild(b);
         }
+        // 1.6.0.4：底部常驻字数统计信息项（<860px 顶栏字数框退场后的入口，反馈①）。
+        // 用 div 而非 button（不可聚焦/不响应点击），data-wc 供实时刷新定位。
+        const sep = document.createElement('div');
+        sep.className = 'mi-sep';
+        menu.appendChild(sep);
+        const info = document.createElement('div');
+        info.className = 'mi mi-info';
+        info.dataset.wc = '1';
+        info.setAttribute('role', 'presentation');
+        info.textContent = wcMenuText();
+        menu.appendChild(info);
     }
     // 菜单项契约值即 data-act 全量（export-md / export-html），非 exportDoc 的短参
     // （md / html）——1.6.0.2 首版曾误写 kind==='html'，导致点「导出渲染 HTML」
@@ -3452,7 +3560,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         // 菜单项点击（capture：先于外部点击关闭逻辑执行）
         document.addEventListener('click', function (e) {
             const mi = (e.target && e.target.closest) ? e.target.closest('.tb-menu .mi') : null;
-            if (!mi || mi.disabled) return;
+            // 1.6.0.4：信息项（data-wc 字数统计）只读，点击不触发动作也不关菜单
+            if (!mi || mi.disabled || (mi.dataset && mi.dataset.wc)) return;
             if (mi.dataset.act) exportFromMenu(mi.dataset.act);
             else if (mi.dataset.fwd) {
                 const b = document.getElementById(mi.dataset.fwd);
