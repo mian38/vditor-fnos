@@ -84,6 +84,79 @@
 
 ---
 
+## 1.6.0.4（2026-10-24）· 测试版（未发布）
+
+**1.6.0.3 实机反馈 3 项（窄屏字数入口 / 查找栏溢出 / 源码态跳转）**
+
+### 修复
+
+1. **源码态查找「能选中、不跳转」**（`index.html`）
+
+   - 根因（Edge CDP 实证）：textarea 的 `setSelectionRange` 只设选区、**不产生滚动**；
+     `focus()` 仅在「赋值后首次聚焦」时滚到当前选区（而 `value` 赋值后默认选区在
+     文末），显式设过选区后再 blur/focus 也不再滚。旧实现「先 focus 后
+     setSelectionRange」的净效果 = 先滚到底再静默设选区——raw 模式 scrollTop
+     停在 max（114316/114316）而选区在 64.8% 处；sv 模式 scrollTop 纹丝不动。
+   - 修法：新增 `scrollTaToIndex(ta, index)` 显式计算并赋值 scrollTop——
+     文档 ≤ `FIND_MIRROR_MAX_CHARS`（50 万字符）用**镜像量测**（复制 textarea
+     排版样式的隐藏 div + `value.slice(0, index)` + 零宽标记读 `offsetTop`，
+     软换行天然精确；实测 5 万 / 20 万字符约 55/125ms），更大文档退化为
+     **字符比例估算**（布局成本随切片线性增长，实测 100 万字符约 670ms、
+     1000 万约 7s，不可接受；均匀文本误差 <0.1%，足以把命中带入视野）。
+     目标位置 = 命中行落在视窗中上部（留 clientHeight/3 下余量）。
+   - 实证：raw 模式选区 165759-165770 → scrollTop 89398、镜像探针 visible=true；
+     sv 模式第二处命中 5641-5651 → scrollTop 8678、visible=true。
+   - 备选方案否记：`getSelection().getRangeAt(0).getBoundingClientRect()` 在
+     Chromium 对 textarea 选区返回全零；原生 focus 滚动不可靠（见根因）。
+
+2. **窄屏查找栏输入框压缩 + 整行溢出**（`index.html`）
+
+   - 根因：`.fb-row` 为 nowrap，窄屏下 7 个控件争抢宽度，输入框
+     （flex:1 1 auto; min-width:0）被压至约 35px 且行内容溢出栏体。
+   - 修法：640px 媒体查询——`.fb-row { flex-wrap: wrap }` + 输入框
+     `flex: 1 1 140px; min-width: 140px` 保底，放不下的按钮（上一处/下一处/
+     选项组）自然换行；替换行同规则覆盖。
+   - 实证：400px 视口下输入框 200px、行右缘 388 ≤ 栏右缘 400、overflow=false。
+
+### 新增
+
+3. **字数统计窄屏入口（「⋯ 更多」菜单信息项）**（`index.html`）
+
+   - 背景（反馈①）：1.6.0.3 两档响应式把顶栏字数框在 <860px 完全收起，
+     移动端失去统计入口。
+   - 修法：`buildMoreMenu` 末尾追加只读信息项（`mi mi-info` + `data-wc`，
+     div 非 button、不可聚焦）；打开菜单即最新值，菜单保持打开期间编辑文档
+     经 `updateCounter → refreshWcMenuItem` 实时刷新；菜单项点击处理器排除
+     `data-wc`（点它不关菜单）。
+   - 实证：400px 下信息项「字数：正文 6,423 · 含语法 8,458 · 约 17 分钟」，
+     键入 9 字符后变 6,432 / 8,470，菜单不关。
+   - 命名教训：类名含 `--`（`mi--info`）会被「孤儿 CSS 变量」守卫正则
+     (`(--[a-z0-9-]+)\s*:`) 误判为变量声明 → 按 `mi-sep` 惯例改名单连字符
+     `mi-info`（该守卫的 `--ghost`/`--primary` 等全靠 VEDITOR_OWNED 排除罩着，
+     不顺手修正则，避免牵动既有排除语义）。
+
+### 测试
+
+- `test_v160_frontend.js` 124 → **144 项**：源码态跳转（scrollTaToIndex /
+  taMirrorOffsetTop 定义与调用、镜像/比例双路径、sv 选区 + 滚动量、连续跳转
+  更新、越界不抛错）、查找栏窄屏换行 CSS、字数信息项（追加/文案/点击不关
+  菜单/实时刷新/关闭时静默）。
+- 桩加固：`getComputedStyle` 空属性集、`offsetTop` 可配置（镜像量测）、
+  **元素级** `querySelector` 认 `data-wc`——`menu.querySelector` 与
+  `document.querySelector` 是两条路，只打一边会测空（本轮实际踩到）。
+- 全量复跑：rawmode 139 / ui_buttons 89 / frontend 27 / security 30 /
+  core 33 / v141 107 / single_session 28 / version 8 / concurrent_save 49 /
+  cli 38，全绿。
+- 实证手段同 1.6.0.3（Edge headless + CDP 真实键入/点击/几何量测）。
+
+### 版本
+
+- 全部为 1.6.0.3 实机反馈修复，前三段不变，第四段递增：
+  **1.6.0.3 → 1.6.0.4**；四位测试版，禁止对外发布（tag / Release / 上传
+  均须人类明确指令）。
+
+---
+
 ## 1.6.0.3（2026-10-24）· 测试版（未发布）
 
 **1.6.0.2 实机反馈 6 项 + CDP 实证抓出的 1.6.0.2 遗留 bug（更多菜单缺导出项）**
