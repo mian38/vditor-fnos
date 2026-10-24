@@ -92,12 +92,14 @@ if not _ready:
     raise SystemExit("服务未能在 %s 就绪（端口 %d），中止" % (URL, port))
 
 
-def req(method, path, body=None, cookie=None, ctype="application/json"):
+def req(method, path, body=None, cookie=None, ctype="application/json", token=None):
     h = {}
     if ctype:
         h["Content-Type"] = ctype
     if cookie:
         h["Cookie"] = cookie
+    if token:
+        h["X-Vditor-Token"] = token
     data = body if isinstance(body, (bytes, type(None))) else json.dumps(body).encode()
     r = urllib.request.Request(URL + path, data=data, headers=h, method=method)
     try:
@@ -194,6 +196,50 @@ try:
     check("错误密码登录被拒（401）", st == 401 and not d.get("ok"), (st, d))
     st, d, _ = req("GET", "/api/settings", cookie=cookieD)
     check("错误密码不影响现有会话（仍 200）", st == 200, (st, d))
+
+    # ---------- 9. 1.6.0.3：per-tab token（X-Vditor-Token 头）----------
+    # 背景（1.6.0.2 实机反馈④）：token 此前只走 HttpOnly Cookie，而 Cookie 在
+    # 同一浏览器的所有标签页间共享——第二个标签页登录后，先登页面拿着共享
+    # cookie 罐里的新 token 照常 200，「后登踢先登」在同浏览器内形同虚设。
+    # 1.6.0.3：login/setup 响应体下发 token，前端存 sessionStorage（每标签页
+    # 独立）并经 X-Vditor-Token 头显式携带；服务端优先读头、缺失回退 Cookie。
+    # 本节用两个独立 token 模拟同一浏览器的两个标签页。
+    st, d, ckE = req("POST", "/api/login", {"password": "secret123"})
+    tokenE = (d or {}).get("token") or ""
+    check("login 响应体携带 token（前端据此存 sessionStorage）",
+          st == 200 and d.get("ok") and len(tokenE) >= 20, (st, bool(tokenE)))
+    st, d, ckF = req("POST", "/api/login", {"password": "secret123"})
+    tokenF = (d or {}).get("token") or ""
+    check("第二次 login 携带另一个 token", st == 200 and bool(tokenF) and tokenF != tokenE,
+          (bool(tokenE), bool(tokenF)))
+
+    # 标签页 A（持有 tokenE）：被标签页 B 的登录踢出 → 401
+    st, d, _ = req("GET", "/api/settings", token=tokenE)
+    check("per-tab：先登标签页持旧 token 请求 → 401 被踢（反馈④核心场景）",
+          st == 401 and d.get("code") == 401, (st, d))
+    st, d, _ = req("GET", "/api/settings", token=tokenF)
+    check("per-tab：后登标签页持新 token 请求 → 200", st == 200, (st, d))
+
+    # Cookie 回退：只带 cookie（无头）仍可用——「从已登录浏览器新开的标签页」
+    # 被动继承当前会话，无需再次登录
+    st, d, _ = req("GET", "/api/settings", cookie=cookie_of(ckF))
+    check("Cookie 回退兼容：无 token 头时仍认 cookie（新开标签页被动认证）", st == 200, (st, d))
+
+    # 头优先于 cookie：陈旧 cookie + 有效 token 头 → 200
+    st, d, _ = req("GET", "/api/settings", cookie=cookie_of(ckE), token=tokenF)
+    check("请求头优先于 Cookie：陈旧 cookie + 有效 token 头 → 200", st == 200, (st, d))
+    # 有效 cookie + 垃圾 token 头 → 401（头优先，垃圾头不静默回落 cookie）
+    st, d, _ = req("GET", "/api/settings", cookie=cookie_of(ckF), token="garbage-token")
+    check("垃圾 token 头被拒绝（401，不静默回落 Cookie）", st == 401, (st, d))
+
+    # 经头的 logout：只失效该 token 对应会话
+    st, d, _ = req("POST", "/api/logout", token=tokenF)
+    check("带头 logout 成功", st == 200 and d.get("ok"), (st, d))
+    st, d, _ = req("GET", "/api/settings", token=tokenF)
+    check("带头 logout 后该 token 失效（401）", st == 401, (st, d))
+    # 但 cookie 回退通道此时也已失效（会话已删）→ 语义一致
+    st, d, _ = req("GET", "/api/settings", cookie=cookie_of(ckF))
+    check("会话已删后 cookie 回退同样失效（401）", st == 401, (st, d))
 
 finally:
     proc.kill()

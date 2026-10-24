@@ -38,9 +38,11 @@ check('字数统计仍不收缩（flex:0 0 auto 保留）',
 check('setCurName 处调用 updateFilenameScroll',
   /function setCurName\(name\)\s*\{\s*document\.getElementById\('cur-name'\)\.textContent = name \|\| '未选择';\s*updateFilenameScroll\(\);/.test(code));
 check('updateFilenameScroll 用 rAF 延迟一帧测量（避免拿到旧 scrollWidth）',
-  /function updateFilenameScroll\(\)[\s\S]{0,400}requestAnimationFrame/.test(code));
-check('fnameTick(now) 用 transform:translateX 往返滚动（不碰布局，时间戳归一化）',
-  /function fnameTick\(now\)[\s\S]{0,1200}translateX/.test(code));
+  /function updateFilenameScroll\(\)[\s\S]{0,600}requestAnimationFrame/.test(code));
+check('fnameTick(now) 用 scrollLeft 往返滚动（窗口固定、内容在窗内滚，时间戳归一化）',
+  /function fnameTick\(now\)[\s\S]{0,1200}scrollLeft/.test(code));
+check('fnameTick 不再用 transform 平移窗口本身（1.6.0.2 压盖前缀总根因，已弃用）',
+  !/el\.style\.transform\s*=\s*'translateX/.test(code));
 check('fnameTick 对缺省时间戳有防御（typeof now!==\'number\' 退化 performance.now）',
   /typeof now !== 'number'/.test(code));
 check('fnameTick 速度/停顿为时间基常量（FNAME_SPEED/FNAME_PAUSE，非每帧 1px）',
@@ -89,8 +91,8 @@ check('高亮 <mark> 限定 .vditor-ir 渲染区（1.6.0.2：4 个 .vditor-reset
   /\.vditor-ir \.vditor-reset mark\.vd-find\s*\{/.test(CSS)
   && /\.vditor-ir \.vditor-reset mark\.vd-find-current\s*\{/.test(CSS)
   && /html\[data-theme="dark"\] \.vditor-ir \.vditor-reset mark\.vd-find\s*\{/.test(CSS));
-check('findHighlightRoot 只查 .vditor-ir > .vditor-reset（4 个 .vditor-reset 中唯 ir 可编辑）',
-  /function findHighlightRoot\(\)\s*\{\s*if \(rawMode\) return null;[\s\S]{0,400}return document\.querySelector\('#vditor \.vditor-ir > \.vditor-reset'\);/.test(code));
+check('findHighlightRoot 只查 .vditor-ir > .vditor-reset（4 个 .vditor-reset 中唯 ir 可编辑；sv 模式自然落空）',
+  /function findHighlightRoot\(\)\s*\{\s*if \(rawMode\) return null;[\s\S]{0,900}return document\.querySelector\('#vditor \.vditor-ir > \.vditor-reset'\);/.test(code));
 check('正则非法有 try/catch 兜底（不抛错）',
   /try \{ return new RegExp\(src, flags\); \} catch \(e\) \{ return \{ error: e \}; \}/.test(code));
 check('替换全部：正则走原生 replace（支持 $1），非正则从尾向前',
@@ -167,8 +169,12 @@ function mkName() {
 }
 function getEl(id) { return ids[id] || (ids[id] = mk(id)); }
 const store = {};
+const ssStore = {};                     // 1.6.0.3：sessionStorage 存储（per-tab token）
+const fetchCalls = [];                  // 1.6.0.3：fetch 记录器（验证 X-Vditor-Token 头注入）
 // 可配置的 query 结果（供 findHighlightRoot 测试注入假渲染区）
 let qsHost = null;
+// 1.6.0.3：Vditor sv 源码模式的 textarea 桩（class="vditor-sv vditor-reset"）
+let qsSv = null;
 const walkerNodes = [];
 const ctx = {
   console, document: {
@@ -182,7 +188,12 @@ const ctx = {
         nextNode() { cur = walkerNodes.shift() || null; return cur; }
       };
     },
-    querySelector: (sel) => (sel === '#vditor .vditor-ir > .vditor-reset' ? (qsHost || mk('qs')) : mk('qs')),
+    querySelector: (sel) => {
+      // ir 与 sv 互斥（真实 DOM 亦如此）：sv 模式激活时 .vditor-ir 不存在
+      if (sel === '#vditor .vditor-ir > .vditor-reset') return qsSv ? null : (qsHost || mk('qs'));
+      if (sel === '#vditor .vditor-sv') return qsSv;      // 1.6.0.3：sv textarea（null=不在 sv 模式）
+      return mk('qs');
+    },
     querySelectorAll: (sel) => (sel === '.tb-menu' ? [getEl('export-menu'), getEl('more-menu')] : []),
     addEventListener(t, fn) { (docLs[t] = docLs[t] || []).push(fn); },
     removeEventListener() {},
@@ -192,10 +203,11 @@ const ctx = {
   location: { href: 'http://x/', search: '', hash: '', protocol: 'http:' },
   innerWidth: 1024, innerHeight: 768,
   localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
+  sessionStorage: { getItem: k => (k in ssStore ? ssStore[k] : null), setItem: (k, v) => { ssStore[k] = String(v); }, removeItem: k => { delete ssStore[k]; } },
   setTimeout: (fn) => { timers.push(fn); return timers.length; },
   clearTimeout: () => {},
   setInterval() {}, clearInterval() {},
-  fetch() { return Promise.reject(new Error('no-net')); },
+  fetch(input, init) { fetchCalls.push({ url: input, init: init }); return Promise.reject(new Error('no-net')); },
   TextEncoder, TextDecoder, alert() {}, confirm() { return true; }, prompt() { return null; },
   btoa: s => Buffer.from(s).toString('base64'), atob: s => Buffer.from(s, 'base64').toString(),
   addEventListener() {}, removeEventListener() {}, history: {},
@@ -234,13 +246,14 @@ function step(n) { for (let i = 0; i < n && rafQueue.length; i++) { fakeNow += 1
 function flushTimers() { const t = timers.slice(); timers.length = 0; t.forEach(fn => fn()); }
 
 nameEl.scrollWidth = 100; nameEl.clientWidth = 300;
+nameEl.scrollLeft = 0;
 let err = null;
 try { ctx.setCurName('短名.md'); } catch (e) { err = e; }
 check('setCurName 短名不抛错', err === null, err && err.message);
 check('setCurName 写入 textContent', nameEl.textContent === '短名.md', nameEl.textContent);
 rafQueue.length = 0; ctx.updateFilenameScroll();
 step(3);
-check('不溢出时无滚动动画（transform 为空）', nameEl.style.transform === '', nameEl.style.transform);
+check('不溢出时无滚动动画（scrollLeft 保持 0）', nameEl.scrollLeft === 0, nameEl.scrollLeft);
 
 nameEl.scrollWidth = 500; nameEl.clientWidth = 300;
 err = null;
@@ -250,25 +263,22 @@ rafQueue.length = 0; ctx.updateFilenameScroll();
 step(1);                       // 测量帧：读 overflow 并挂 tick
 step(1);                       // 首帧：初始化 last（dt=0），pos=0 触发左端 900ms 到端停顿
 // 1.6.0.2 设计：起滚与到端均有 FNAME_PAUSE(900ms) 停顿（给用户读完开头的时间），
-// 故必须跨过初始停顿后再采样，否则采到的全是停顿帧（translateX(0px)）。
+// 故必须跨过初始停顿后再采样，否则采到的全是停顿帧（scrollLeft 恒 0）。
 for (let i = 0; i < 70; i++) step(1);
-const t1 = nameEl.style.transform;
+const t1 = nameEl.scrollLeft;
 for (let i = 0; i < 20; i++) step(1);
-const t2 = nameEl.style.transform;
-check('溢出时启动滚动（transform 非空）', t1 !== '', t1);
-check('transform 逐步左移（translateX 负值递增）',
-  /translateX\(-(\d+(?:\.\d+)?)px\)/.test(t2)
-  && parseFloat(RegExp.$1) > parseFloat((/-(\d+(?:\.\d+)?)px\)/.exec(t1) || [0, 0])[1]),
-  { t1: t1, t2: t2 });
+const t2 = nameEl.scrollLeft;
+check('溢出时启动滚动（scrollLeft > 0）', t1 > 0, t1);
+check('scrollLeft 逐步增大（内容向窗内滚动，窗口本身不动）', t2 > t1, { t1: t1, t2: t2 });
 nameEl._fire('mouseenter');
 step(3);
-const beforePause = nameEl.style.transform;
+const beforePause = nameEl.scrollLeft;
 step(3);
-check('悬停后滚动暂停（transform 不再变化）', nameEl.style.transform === beforePause,
-  { before: beforePause, after: nameEl.style.transform });
+check('悬停后滚动暂停（scrollLeft 不再变化）', nameEl.scrollLeft === beforePause,
+  { before: beforePause, after: nameEl.scrollLeft });
 nameEl._fire('mouseleave');
 step(1);
-check('移开恢复后 transform 继续变化', nameEl.style.transform !== beforePause);
+check('移开恢复后 scrollLeft 继续变化', nameEl.scrollLeft !== beforePause);
 err = null;
 try {
   check('ResizeObserver 已实例化并观察 .fname', roInstances.length >= 1, roInstances.length);
@@ -402,12 +412,14 @@ check('清除后还原为纯文本节点（无 mark 残留）',
   && para.children.filter(c => c.nodeType === 3).map(c => c.nodeValue).join('') === 'abc abc',
   para.children.map(c => c.nodeType === 3 ? '#' + c.nodeValue : (c.className || c._id)));
 
-// ================= 1.6.0.2：顶栏下拉菜单（导出合并 / ⋯ 更多 / 三档响应式） =================
-console.log('== 1.6.0.2 顶栏下拉菜单（静态） ==');
+// ================= 1.6.0.2：顶栏下拉菜单（1.6.0.3：纯文字按钮 + 两档响应式） =================
+console.log('== 顶栏下拉菜单（静态） ==');
 check('导出按钮已合并（btn-export-md / btn-export-html 均已移除）',
   !/id="btn-export-md"/.test(html) && !/id="btn-export-html"/.test(html));
-check('「导出 ▾」按钮存在且挂 tb-trigger 契约类（供外部点击收口判定）',
-  /<button id="btn-export" class="btn btn--ghost tb-trigger"/.test(html));
+check('「导出」按钮为纯文字（1.6.0.3 去掉 ▾ 指示符）且挂 tb-trigger 契约类',
+  /<button id="btn-export" class="btn btn--ghost tb-trigger"[^>]*>导出<\/button>/.test(html));
+check('「查找」按钮为纯文字（1.6.0.3 去掉 🔍 图标）',
+  /<button id="btn-find" class="btn btn--ghost"[^>]*>查找<\/button>/.test(html));
 check('「⋯ 更多」按钮存在（默认隐藏纯 CSS 控制，不用 hidden 属性）',
   /<button id="btn-more" class="btn btn--ghost tb-trigger"/.test(html)
   && !/<button id="btn-more"[^>]*hidden/.test(html));
@@ -427,11 +439,19 @@ check('菜单项四态齐全（hover 浅底 / focus-visible 品牌环 / active �
   && /\.tb-menu \.mi:disabled/.test(CSS));
 check('#btn-more 默认 display:none（>=860px 不出现）',
   /#topbar #btn-more\s*\{\s*display:\s*none/.test(CSS));
-check('<860px：退出/设置/信息/纯文本退入菜单，⋯更多显示',
-  /@media \(max-width: 859px\)[\s\S]{0,400}#topbar #btn-more\s*\{\s*display:\s*inline-flex/.test(CSS)
-  && /@media \(max-width: 859px\)[\s\S]{0,700}#topbar #btn-raw-mode\s*\{\s*display:\s*none/.test(CSS));
-check('<520px：查找/导出/主题/用户名/字数统计也退入（纯文字极限档）',
-  /@media \(max-width: 519px\)[\s\S]{0,500}#topbar #btn-find,\s*#topbar #btn-export,\s*#topbar #btn-theme/.test(CSS));
+check('<860px：只显示 保存 + ⋯更多——查找/导出/主题/退出/设置/信息/纯文本/用户名/字数全部退场（1.6.0.3 两档，删 519px 中间态）',
+  /@media \(max-width: 859px\)[\s\S]{0,1200}#topbar #btn-find,\s*#topbar #btn-export,\s*#topbar #btn-theme,\s*#topbar #btn-logout,\s*#topbar #btn-settings,\s*#topbar #btn-doc-info,\s*#topbar #btn-raw-mode,\s*#topbar \.user,\s*#topbar \.word-counter\s*\{\s*display:\s*none/.test(CSS)
+  && !/@media \(max-width: 519px\)/.test(CSS));
+check('保存按钮不在 859px 收纳清单里（恒显最右）',
+  !/@media \(max-width: 859px\)[\s\S]{0,1200}#topbar #btn-save\s*\{\s*display:\s*none/.test(CSS));
+check('触发钮选中态：aria-expanded=true 时主色浅底+主色描边（对齐状态与日志四按钮 .on 语义）',
+  /#topbar \.tb-trigger\[aria-expanded="true"\]\s*\{[^}]*background:\s*var\(--c-brand-soft\)/.test(CSS)
+  && /#topbar \.tb-trigger\[aria-expanded="true"\]\s*\{[^}]*border-color:\s*var\(--c-brand\)/.test(CSS));
+check('顶栏防塌缩：字数与用户名允许收缩裁剪（flex 0 1 auto + min-width:0 + overflow:hidden）',
+  /#topbar \.word-counter\s*\{[^}]*flex:\s*0 1 auto/.test(CSS)
+  && /#topbar \.word-counter\s*\{[^}]*min-width:\s*0/.test(CSS)
+  && /#topbar \.user\s*\{[^}]*flex:\s*0 1 auto/.test(CSS)
+  && /#topbar \.user\s*\{[^}]*min-width:\s*0/.test(CSS));
 check('导出旧绑定已从 initEditorAndFiles 顶栏组移除（改由顶层 initTbMenus 绑定）',
   !/getElementById\('btn-export-md'\)/.test(code)
   && !/getElementById\('btn-export-html'\)/.test(code));
@@ -440,8 +460,10 @@ check('initTbMenus 为顶层 IIFE（菜单在登录前即完成绑定，行为�
 check('菜单过滤判据是 el.hidden 属性而非 offsetParent（媒体查询收纳的按钮仍入菜单）',
   /if \(!el \|\| el\.hidden\) continue;/.test(code)
   && !/buildMoreMenu[\s\S]{0,600}offsetParent/.test(code));
+check('1.6.0.3：act 类型条目（导出两项）恒显，不走 fwd 存在性过滤（修复窄屏下无法导出）',
+  /if \(it\.act\) \{[\s\S]{0,500}b\.dataset\.act = it\.act/.test(code));
 
-console.log('== 1.6.0.2 顶栏下拉菜单（vm 运行时） ==');
+console.log('== 顶栏下拉菜单（vm 运行时） ==');
 check('菜单函数均为顶层可见（tbMenuOpen/tbMenuClose/tbMenuIsOpen/closeTransientMenus/buildMoreMenu/exportFromMenu）',
   ['tbMenuOpen', 'tbMenuClose', 'tbMenuIsOpen', 'closeTransientMenus', 'buildMoreMenu', 'exportFromMenu']
     .every(f => typeof ctx[f] === 'function'));
@@ -460,22 +482,38 @@ moreMenu.className = 'tb-menu';
 
 err = null;
 try { exportBtn._fire('click'); } catch (e) { err = e; }
-check('点「导出 ▾」不抛错', err === null, err && err.message);
+check('点「导出」不抛错', err === null, err && err.message);
 check('导出菜单打开且触发钮 aria-expanded=true',
   exportMenu.hidden === false && exportBtn.getAttribute('aria-expanded') === 'true',
   { hidden: exportMenu.hidden, aria: exportBtn.getAttribute('aria-expanded') });
 check('tbMenuIsOpen 反映打开态', ctx.tbMenuIsOpen('export-menu') === true);
+// 1.6.0.3：菜单开着时再点触发钮 → 收回（用户反馈⑥；CDP 真实鼠标实证通过）
+err = null;
+try { exportBtn._fire('click'); } catch (e) { err = e; }
+check('菜单开着时再点「导出」→ 收回（aria-expanded 复位 false）',
+  exportMenu.hidden === true && exportBtn.getAttribute('aria-expanded') === 'false',
+  { hidden: exportMenu.hidden, aria: exportBtn.getAttribute('aria-expanded') });
+err = null;
+try { exportBtn._fire('click'); } catch (e) { err = e; }
+check('第三次点「导出」→ 重新打开（toggle 循环）', exportMenu.hidden === false);
 
 err = null;
 try { moreBtn._fire('click'); } catch (e) { err = e; }
 check('同时只开一个：开「⋯ 更多」时导出菜单自动关闭',
   exportMenu.hidden === true && moreMenu.hidden === false,
   { export: exportMenu.hidden, more: moreMenu.hidden });
-check('buildMoreMenu 生成全部可见按钮项（含被媒体查询收纳的查找/设置等）', (function () {
+check('buildMoreMenu：act 条目（导出两项）恒显且带 data-act（1.6.0.3 修复：此前被 fwd 过滤误杀，窄屏无法导出）', (function () {
   const items = moreMenu.children.filter(c => c.className === 'mi');
-  return items.length === 8 && items.some(c => c.dataset.fwd === 'btn-find')
+  const acts = items.filter(c => c.dataset && c.dataset.act);
+  return acts.length === 2
+      && acts.some(c => c.dataset.act === 'export-md' && c.textContent.indexOf('Markdown') >= 0)
+      && acts.some(c => c.dataset.act === 'export-html' && c.textContent.indexOf('HTML') >= 0);
+})(), moreMenu.children.map(c => c.dataset && (c.dataset.act || c.dataset.fwd)));
+check('buildMoreMenu：fwd 条目含被媒体查询收纳的查找/设置等（隐藏属性之外的按钮仍入菜单）', (function () {
+  const items = moreMenu.children.filter(c => c.className === 'mi');
+  return items.some(c => c.dataset.fwd === 'btn-find')
       && items.some(c => c.dataset.fwd === 'btn-logout');
-})(), moreMenu.children.map(c => c.dataset && c.dataset.fwd));
+})());
 check('hidden 属性控制的条件按钮被过滤（raw-mode 隐藏时不出现在菜单）', (function () {
   getEl('btn-raw-mode').hidden = true;
   moreMenu.children.length = 0;          // 桩的 textContent='' 不清空 children，先手动重置
@@ -487,6 +525,17 @@ check('raw-mode 恢复可见后重新入菜单', (function () {
   moreMenu.children.length = 0;
   ctx.buildMoreMenu();
   return moreMenu.children.some(c => c.dataset && c.dataset.fwd === 'btn-raw-mode');
+})());
+check('全部 fwd 按钮均隐藏时导出两项仍在（收纳态的唯一导出入口）', (function () {
+  ['btn-find', 'btn-doc-info', 'btn-raw-mode', 'btn-theme', 'btn-settings', 'btn-logout']
+    .forEach(id => { getEl(id).hidden = true; });
+  moreMenu.children.length = 0;
+  ctx.buildMoreMenu();
+  const items = moreMenu.children.filter(c => c.className === 'mi');
+  const r = items.length === 2 && items.every(c => c.dataset.act);
+  ['btn-find', 'btn-doc-info', 'btn-raw-mode', 'btn-theme', 'btn-settings', 'btn-logout']
+    .forEach(id => { getEl(id).hidden = false; });
+  return r;
 })());
 check('菜单项 data-act=export-md → exportDoc("md")', (function () {
   const calls = [];
@@ -536,6 +585,88 @@ check('tbMenuOpen 定位写入内联 left/top（px 数值，非 NaN）', (functi
   return /^-?\d+(\.\d+)?px$/.test(exportMenu.style.left || '')
       && /^-?\d+(\.\d+)?px$/.test(exportMenu.style.top || '');
 })(), { left: exportMenu.style.left, top: exportMenu.style.top });
+
+// ================= 1.6.0.3：Vditor sv 源码模式查找（反馈②） =================
+console.log('== 1.6.0.3 sv 源码模式查找 ==');
+check('findSourceTextarea / findSelectionPrefill 已定义',
+  typeof ctx.findSourceTextarea === 'function'
+  && typeof ctx.findSelectionPrefill === 'function');
+// sv textarea 桩（Vditor 的 sv 元素本身即 <textarea class="vditor-sv vditor-reset">）
+const svTa = mk('sv-ta');
+svTa.tagName = 'TEXTAREA';
+svTa.offsetParent = {};                 // 可见 = sv 模式激活
+svTa.value = 'abc abc';
+svTa.selectionStart = 0; svTa.selectionEnd = 0;
+svTa.setSelectionRange = function (s, e) { this.selectionStart = s; this.selectionEnd = e; };
+svTa.focus = function () { this._focused = true; };
+qsSv = svTa;
+check('findSourceTextarea：sv 模式（rawMode=false + sv textarea 可见）返回该 textarea',
+  ctx.findSourceTextarea() === svTa, ctx.findSourceTextarea() && ctx.findSourceTextarea()._id);
+check('findHighlightRoot：sv 模式下 ir 选择器落空（无渲染 DOM 可包，高亮改走选区）',
+  (function () { const r = ctx.findHighlightRoot(); return r === null; })());
+check('findSelectionPrefill：优先读 textarea 内部选区（window.getSelection 取不到）', (function () {
+  svTa.selectionStart = 4; svTa.selectionEnd = 7; svTa.value = 'abc abc';
+  const p = ctx.findSelectionPrefill();
+  svTa.selectionStart = 0; svTa.selectionEnd = 0;
+  return p === 'abc';
+})(), svTa.value);
+// sv 模式跳转：findScrollToCurrent 把源串偏移翻译成 sv textarea 选区
+findContent = 'abc abc';
+ctx.findOpen('abc', false);
+check('sv 模式 findScrollToCurrent：当前命中 → sv textarea 选区 0-3', (function () {
+  ctx.findScrollToCurrent(true);
+  return svTa.selectionStart === 0 && svTa.selectionEnd === 3;
+})(), { s: svTa.selectionStart, e: svTa.selectionEnd });
+ctx.findNext();
+check('sv 模式 findNext → findScrollToCurrent：选区跳到第二处 4-7', (function () {
+  return svTa.selectionStart === 4 && svTa.selectionEnd === 7;
+})(), { s: svTa.selectionStart, e: svTa.selectionEnd });
+check('sv 模式越界偏移钳位（陈旧 matches 不抛错、不跳到文末之外）', (function () {
+  // findState 是 script 作用域的 const，须经 runInContext 在同一上下文内操作
+  vm.runInContext('findState.matches = [{ start: 9999, end: 10002 }]; findState.index = 0;', ctx);
+  let e2 = null;
+  try { ctx.findScrollToCurrent(true); } catch (e) { e2 = e; }
+  const ok = e2 === null && svTa.selectionStart <= 'abc abc'.length;
+  vm.runInContext('findState.matches = [{ start: 0, end: 3 }, { start: 4, end: 7 }]; findState.index = 0;', ctx);
+  return ok;
+})());
+qsSv = null;                             // 还原：非 sv 模式
+check('非源码态时 findSourceTextarea 返回 null（rawMode=false 且无可见 sv textarea）',
+  ctx.findSourceTextarea() === null);
+
+// ================= 1.6.0.3：单活会话 per-tab token（反馈④） =================
+console.log('== 1.6.0.3 per-tab token 头注入 ==');
+check('tokenGet / tokenSet / tokenClear 已定义',
+  typeof ctx.tokenGet === 'function'
+  && typeof ctx.tokenSet === 'function'
+  && typeof ctx.tokenClear === 'function');
+fetchCalls.length = 0;
+ctx.tokenSet('tok-abc123');
+ctx.fetch('/api/files').catch(() => {});
+check('登录后 token 入 sessionStorage，fetch 自动带 X-Vditor-Token 头', (function () {
+  const c = fetchCalls[fetchCalls.length - 1];
+  return !!c && c.init && c.init.headers && c.init.headers['X-Vditor-Token'] === 'tok-abc123';
+})(), fetchCalls[fetchCalls.length - 1] && fetchCalls[fetchCalls.length - 1].init);
+check('已带头信息的请求不重复注入（调用方显式设置优先）', (function () {
+  fetchCalls.length = 0;
+  ctx.fetch('/api/files', { headers: { 'X-Vditor-Token': 'caller-set' } }).catch(() => {});
+  const c = fetchCalls[fetchCalls.length - 1];
+  return c.init.headers['X-Vditor-Token'] === 'caller-set';
+})());
+ctx.tokenClear();
+fetchCalls.length = 0;
+ctx.fetch('/api/files').catch(() => {});
+check('登出清 token 后不再带头（退回纯 Cookie 行为）', (function () {
+  const c = fetchCalls[fetchCalls.length - 1];
+  return !!c && (!c.init.headers || !('X-Vditor-Token' in c.init.headers));
+})());
+check('sessionStorage 不可用时 tokenGet 静默返回 null（隐私模式降级）', (function () {
+  const orig = ctx.sessionStorage;
+  ctx.sessionStorage = { getItem() { throw new Error('denied'); } };
+  const v = ctx.tokenGet();
+  ctx.sessionStorage = orig;
+  return v === null;
+})());
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);;

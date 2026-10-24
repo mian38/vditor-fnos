@@ -72,7 +72,7 @@ from vd_util import (
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.6.0.2"
+APP_VERSION = "1.6.0.3"
 
 # 超过此体积的文档不再生成「历史版本」快照。
 # 背景：快照机制是每次保存都存一份**全文**。配合默认 60 秒自动保存，
@@ -403,13 +403,32 @@ def load_app_log(limit=400):
     except Exception:
         return info
 
-def get_session(handler):
-    _sweep_sessions()
-    token = None
+def _request_token(handler):
+    """取本次请求携带的会话 token。
+
+    1.6.0.3 单活会话按标签页隔离：优先读自定义头 ``X-Vditor-Token``，
+    缺失才回退 Cookie（``vditor_sid``）。
+
+    背景（1.6.0.2 实机反馈④）：token 此前只走 HttpOnly Cookie，而 Cookie 在
+    同一浏览器的所有标签页间共享——第二个标签页登录后，服务端虽已清空旧会话
+    并下发新 token，先登页面却因共享 cookie 罐「静默升级」到新 token，
+    永远收不到 401，「后登踢先登」在同浏览器内形同虚设。
+    改为请求头承载后，每个完成登录的标签页在 sessionStorage 里持有自己的
+    token 副本，互不干扰：新登录踢旧会话时，先登页面仍拿着旧 token 请求，
+    必然 401。Cookie 回退保留给「从已登录浏览器新开的标签页」被动认证
+    （它本就是当前会话的视图，无需再次登录）。"""
+    token = (handler.headers.get("X-Vditor-Token") or "").strip()
+    if token:
+        return token
     c = handler.headers.get("Cookie", "")
     m = re.search(r"vditor_sid=([^;]+)", c or "")
     if m:
-        token = m.group(1).strip()
+        return m.group(1).strip()
+    return None
+
+def get_session(handler):
+    _sweep_sessions()
+    token = _request_token(handler)
     if not token or token not in SESSIONS:
         return None
     s = SESSIONS[token]
@@ -445,10 +464,9 @@ def start_session(handler):
     return token
 
 def end_session(handler):
-    c = handler.headers.get("Cookie", "")
-    m = re.search(r"vditor_sid=([^;]+)", c or "")
-    if m:
-        SESSIONS.pop(m.group(1).strip(), None)
+    token = _request_token(handler)
+    if token:
+        SESSIONS.pop(token, None)
 
 def _fail_entry(ip):
     """取该 IP 的失败计数条目；已超出滑动窗口则视为全新条目（并顺手清掉旧条目）。
@@ -1282,7 +1300,11 @@ class Handler(BaseHTTPRequestHandler):
             record_login_event("login_ok", ip, "")
             token = start_session(self)
             self._send_cookie(token)
-            self._send_json({"ok": True})
+            # 1.6.0.3：token 同时进响应体——前端存 sessionStorage（每标签页
+            # 独立），经 X-Vditor-Token 头显式携带，使「后登踢先登」在
+            # 同一浏览器的多标签页间也生效（Cookie 跨标签页共享，单独靠它
+            # 做不到按标签页隔离，见 _request_token 注释）。
+            self._send_json({"ok": True, "token": token})
         else:
             record_failure(ip)
             record_login_event("login_fail", ip, "")
@@ -1316,7 +1338,8 @@ class Handler(BaseHTTPRequestHandler):
         record_login_event("setup", ip, "")
         token = start_session(self)
         self._send_cookie(token)
-        self._send_json({"ok": True})
+        # 1.6.0.3：token 同时进响应体（同 _handle_login，见其注释）
+        self._send_json({"ok": True, "token": token})
 
     def _handle_upload(self):
         ctype = self.headers.get("Content-Type", "")
