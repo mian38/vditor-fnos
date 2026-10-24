@@ -45,7 +45,6 @@ import shutil
 import ipaddress
 import socket
 import threading
-import gzip
 import atexit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
@@ -67,12 +66,12 @@ from vd_util import (
     is_static_denied, is_public_static, safe_join,
     parse_multipart, _version_key, _legacy_version_key,
     _folder_note_path, _doc_asset_dir, _in_doc_folder,
-    should_gzip, gzip_bytes, client_accepts_gzip,
+    should_gzip, gzip_bytes,
 )
 
 
 # 应用版本（与安装包 manifest 保持一致；每次发布同步更新）
-APP_VERSION = "1.6.0.5"
+APP_VERSION = "1.6.0"
 
 # 超过此体积的文档不再生成「历史版本」快照。
 # 背景：快照机制是每次保存都存一份**全文**。配合默认 60 秒自动保存，

@@ -15,424 +15,104 @@
 
 ---
 
-## 1.6.0.1（2026-10-23）· 测试版（未发布）
+## 1.6.0（2026-10-24）· 正式版
 
-**1.6.0 首个测试包：并发保存修复（后端）+ 顶栏长文件名自适应 + 查找替换（前端）**
+**主题：文档查找与替换 + 顶栏自适应与收纳 + 并发保存修复（功能范围扩大，1.5.0 → 1.6.0）**
 
-### 修复
-
-1. **并发保存导致覆盖 / 丢失 / 损坏**（`server.py`）
-
-   - 根因：`ThreadingHTTPServer` 每请求一线程，`_api_save` 的「读旧内容 → 归档历史版本 → 写文件」
-     整段无任何互斥（全局仅 `LOG_LOCK` 保护登录日志）；写盘为 `open(fp,"w")` 截断后写，非原子。
-     多标签页 / 多实例对同一文档并发保存时：后写覆盖先写，且两处归档的都是同一旧版——
-     败者内容既非当前、也未被历史版本捕获，不可恢复丢失；截断窗口内还可能留下半截 / 交错损坏。
-   - 修法：新增 `SAVE_LOCK`（与 `LOG_LOCK` 同处定义），把「读旧 → 归档 → 写」整体纳入临界区
-     串行化——后写者必然读到先写者的完整结果，败者内容必进历史版本；写盘改「同目录临时文件
-     （`fp + ".tmp." + pid + 毫秒时间戳`）+ `os.replace` 原子替换」，任何时刻读到的都是完整
-     旧文件或完整新文件。`invalidate_files_cache()` 置于写盘之后，缓存与磁盘一致。
-   - 防回归：新增 `tests/test_concurrent_save.py`（已登记 `run_all.py` CASES）：10 轮 × 2 线程
-     barrier 对齐并发 + 大内容轮（200KB×2 放大截断窗口），逐轮断言磁盘内容完整等于其一、
-     败者内容已归档可恢复、无 `.tmp` 残留。已按 AGENTS.md §2「先复现再验证」：临时回退旧逻辑
-     确认测试 11 项失败（败者不可恢复），恢复修复后 49/49 通过。
-   - 范围说明：`_api_restore_version`（历史版本恢复的写盘）同为「读旧 → 直接写」的非原子路径，
-     但属版本恢复而非保存，不在本方案范围，列为后续迭代候选。
+> 本版经 5 轮实机反馈（1.6.0.1 → 1.6.0.5）。以下按主题合并，每项标注提出/定型的轮次；
+> 逐轮原始记录保留在 git 历史（`git log -- CHANGELOG.md`）与 `releases/` 对应测试包中。
+> 1.6.0.5 收官时做了一次仓库审计，清理项见文末「审计与清理」。
 
 ### 新增
 
-2. **顶栏长文件名自适应**（`index.html`）
+1. **文档查找与替换**（1.6.0.1 引入，1.6.0.2/.3/.4/.5 连续修正）
 
-   - `#topbar` 由 `overflow-x:auto` 改 `overflow:hidden`（彻底禁止顶栏横向滚动，移除已失效的
-     `::-webkit-scrollbar{height:0}` 规则）；`#topbar .fname` 改 `flex:1 1 auto; min-width:0;
-     overflow:hidden` 允许收缩并裁剪；`#cur-name` 为 `display:inline-block; max-width:100%`，
-     仅文件名文本自身滚动，前缀「当前文件：」与右侧按钮组保持静止；
-     `#topbar .top-actions > *` 加 `flex:0 0 auto`（仅布局属性，不与 `.btn--*` 变体视觉规则
-     冲突），按钮永不被长文件名挤压。
-   - 新增 `updateFilenameScroll()`：rAF 驱动 `transform:translateX` 在 `[0, -overflow]` 往返
-     （不碰布局）；`mouseenter/leave` 暂停 / 恢复；`ResizeObserver` 监听 `.fname` 宽度变化
-     （覆盖窗口 resize 与浏览器缩放）重测重排；`setCurName()` 更新文件名时调用，切文件即重置。
-     不溢出时无动画、transform 复位。
-
-3. **文档查找与替换**（`index.html`）
-
-   - 唤起：`Ctrl/Cmd+F` 在**捕获阶段** `preventDefault` 屏蔽浏览器原生查找（优先于 Vditor
-     contenteditable 键处理），有选区则预填；`Ctrl+H` 展开替换区；`Esc` 优先于弹窗栈关闭；
-     面板内 `Enter/F3` 下一处、`Shift+Enter/Shift+F3` 上一处。
-   - 匹配引擎以**源串**（`getContent()`）为权威：输入防抖 120ms，实时显示「当前/总数」；
-     选项支持区分大小写 / 整词（`\b(?:…)\b` 包裹）/ 正则（非法正则计数显示「无效」且不抛错，
-     匹配循环带 20 万次护栏防病态正则）。
-   - 替换走 `getContent → 串替换 → setContent`：单处替换后 `index` 不变，自然指向下一处；
-     全部替换中正则走原生 `replace`（支持 `$1` 反向引用），非正则从尾向前手动替换防偏移失效。
-   - 高亮：富文本（ir）模式在 `.vditor-reset` 逐文本节点包裹 `<mark class="vd-find">`
-     （当前命中 `.vd-find-current` 并 `scrollIntoView({block:'center'})`）；纯文本模式无 DOM
-     可包，改用 `setSelectionRange` 选区定位。关闭 / 切文件 / 切渲染模式时精确还原
-     （`insertBefore` 展开子节点 + `removeChild` + `normalize`）。
-   - 防 `<mark>` 污染编辑器模型：编辑区 `input` 事件即清高亮并按新内容重算；`doSave()`
-     保存前强制 `findClearMarks()`。
+   - 匹配与替换一律以**源串**（`getContent()`）为权威，计数/上下处/替换均在源串上进行；
+     富文本模式在渲染区按文本节点包 `<mark class="vd-find">` 做高亮与滚动定位。
    - 已知限制：渲染文本与源串口径可能不同（Markdown 语法符号不出现在渲染文本中），
      跨元素命中按节点独立处理，两处计数可能不一致。
-   - 测试：`tests/test_v160_frontend.js`（已登记 CASES）65 项——静态断言（CSS / DOM / 快捷键
-     集成 / 保存钩子）+ vm 真驱全链路（防抖输入、上/下一处循环、单/全替换、正则 `$1`、
-     整词与大小写、非法正则兜底、mark 包裹与精确展开还原）。
+   - 防污染：编辑区一有输入立即清高亮；保存前（`doSave`）强制清除，确保 `<mark>` 不混进正文。
+   - 顶栏入口（1.6.0.2）：有选区则预填；面板已开时点按钮收回（1.6.0.5 改 toggle，
+     Ctrl+F 保持浏览器「已开则聚焦」惯例）。
+   - 高亮根随渲染模式走（1.6.0.2/.5）：ir → `.vditor-ir > .vditor-reset`（Vditor 有 4 个
+     `.vditor-reset`，不限定会取到 wysiwyg 空壳）；wysiwyg → `.vditor-wysiwyg`；
+     sv/纯文本 → 无渲染 DOM，改用 textarea 选区（1.6.0.3）。
+   - 源码态跳转（1.6.0.3/.4）：`setSelectionRange` 只设选区不滚动、`focus()` 的滚动行为
+     不可靠 → 新增 `scrollTaToIndex()` 显式计算 scrollTop；≤50 万字符用镜像量测
+     （复制排版样式的隐藏 div 读零宽标记 `offsetTop`，软换行精确），更大文档退化为
+     字符比例估算（镜像成本线性增长，实测 10MB 约 7s）。
+   - 模式切换自愈（1.6.0.5）：Vditor 切换渲染模式会整体重渲染编辑区、冲掉 marks，
+     此前必须改查找词才恢复 → `MutationObserver` 只盯 ir/wysiwyg/sv 宿主动静，
+     防抖 150ms 重算；`findSeq` 序号区分自身高亮变动（防死循环）；`findClearMarks`
+     清所有宿主；`findMarkCurrent()` 在每次重算后补标当前命中。
 
-### 版本
+2. **顶栏长文件名自适应**（1.6.0.1 引入，1.6.0.2/.3 重构）
 
-- ②③ 为用户可见新能力 → 按 AGENTS.md §1 升 **y**：`1.5.0 → 1.6.0`（z 归零）；① 属 bug 修复
-  （单独发应为 1.5.1），按既定方案合并入 1.6.0 一并交付，不另发 1.5.1。
-- 迭代期四段式 **1.6.0.1**（1.6.0 首个测试构建），两源（`manifest` 的 `version=` 与
-  `server.py` 的 `APP_VERSION`）已由 `tools/bump_version.py` 同步；四位版本号禁止对外发布。
+   - 结构：前缀「当前文件：」为独立 flex 子项，仅 `#cur-name` 滚动，结构上不可能压盖前缀。
+   - 机制（1.6.0.3）：由 `transform` 平移窗口改为 **`scrollLeft` 窗内滚动**——
+     旧做法会把裁剪边界一起左移（压盖前缀 + 尾部永不滚入），CDP 几何实证后重构。
+   - 预算：`.word-counter`/`.user` 允许收缩裁剪（`flex:0 1 auto; min-width:0`），
+     防 `.fname`/`#cur-name` 被挤到 0 宽；按钮组恒不收缩。
+   - 速度时间归一化（px/秒，帧率无关），两端停顿 900ms，悬停暂停。
 
----
+3. **顶栏「⋯ 更多」收纳菜单 + 导出合并**（1.6.0.2，1.6.0.3 改两档）
 
-## 1.6.0.5（2026-10-24）· 测试版（未发布）
+   - 「导出 md」「导出 html」合并为「导出」下拉二选一；`#btn-more` 纯 CSS 控制显隐
+     （不用 `hidden` 属性，避免与 JS 侧 `el.hidden` 语义混淆）。
+   - 响应式（1.6.0.3）：三档收敛为两档——<860px 只留 保存｜⋯ 更多，其余按钮与
+     用户名、字数全部退场；可操作的进菜单，纯展示的直接隐藏。
+   - 修复（1.6.0.3）：`act` 类型条目（导出两项）此前误走 `fwd` 的存在性过滤
+     （`getElementById(undefined) → null → continue`），导致窄屏下导出入口彻底消失。
+   - 窄屏字数入口（1.6.0.4）：菜单底部常驻只读信息项（`mi mi-info` + `data-wc`，
+     div 非 button），打开即最新值、`updateCounter → refreshWcMenuItem` 实时刷新、
+     点击不关菜单。
 
-**1.6.0.4 实机反馈 3 项（wysiwyg 查找 / 切模式查找失效 / 查找钮收回）**
+4. **单活会话（后登踢先登）**（1.6.0.2 引入，1.6.0.3 细化到标签页）
 
-### 修复
-
-1. **「所见即所得」（wysiwyg）模式查找只计数、不高亮、不跳转**（`index.html`）
-
-   - 根因（CDP 实证）：`findHighlightRoot` 只查 `#vditor .vditor-ir > .vditor-reset`，
-     而 wysiwyg 模式的活跃编辑区是 `.vditor-wysiwyg`——marks 全插进 DOM 里存在
-     但不可见的 ir 空壳（实测 wyMarks=0 / irMarks=3），用户既看不到高亮、
-     `scrollIntoView` 也无的放矢。计数与替换本身是好的（数据层正常），
-     坏的是全部视觉反馈。
-   - 修法：`findHighlightRoot` 改为**模式感知**——`currentMode==='sv'`→null、
-     `==='wysiwyg'`→`.vditor-wysiwyg`、其余→限定 `.vditor-ir > .vditor-reset`
-     且要求可见（防 mode 取不到时拿隐藏空壳）。`findScrollToCurrent` 的 marks
-     查询与当前命中查询同步覆盖 `.vditor-wysiwyg`；CSS 补 wysiwyg 的 mark
-     规则（浅色 + 深色，与 ir 同语言）。
-   - 连带：`findSourceTextarea` 的「sv textarea 可见」兜底在 wysiwyg 下误判
-     （实测该 textarea 的 `offsetParent` 在 wysiwyg 模式仍非 null）→ 跳转走了
-     textarea 分支、选区落进隐藏文本域，wysiwyg 的当前命中反而标不上
-     （实测 wy 有 3 个 mark 但 current=0）。改为**以 currentMode 为权威**，
-     可见性判断只在 mode 取不到时兜底。
-
-2. **切换渲染模式后查找状态陈旧**（`index.html`）
-
-   - 根因（CDP 实证）：Vditor 自带的模式切换（工具栏 更多→编辑模式，或
-     ⌥⌘7/8/9）会**整体重渲染**目标编辑区——ir/wysiwyg 是 `innerHTML=` 重排，
-     我们插的 `<mark>` 被冲掉；旧宿主里的 marks 还会残留（实测 wysiwyg→ir 后
-     wy 仍留 3 个）。切换后计数虽在但高亮全无、当前命中丢失，必须改一遍
-     查找词才恢复（实机反馈原话「需要修改查找的内容才重新生效」）。
-   - 修法：新增 **MutationObserver 观察编辑区宿主动静**（只认 `.vditor-ir` /
-     `.vditor-wysiwyg` / `.vditor-sv` 容器内的变动，排除工具栏/预览等噪声——
-     实测点跳转让编辑器失焦会引发工具栏按钮 class 变化，误触发重算），
-     防抖 150ms 后重算查找。两类自身变动必须排除，否则死循环：
-     ① 我们插/拔 mark —— 用 `findSeq` 序号识别（`findClearMarks`/`findHighlight`
-     结束时自增，观察者见序号变化即跳过并对齐）；
-     ② 当前命中 mark 的 class 切换 —— 纯 mark 的 attributes 变动直接忽略。
-   - 连带两个配套修正：
-     - `findClearMarks` 改为清**所有高亮宿主**（ir + wysiwyg），否则切换模式
-       后旧宿主残留的 marks 会在切回时与新建重复、使 current 序号错位；
-     - 抽出 `findMarkCurrent()` 并在 `findCompute()` 末尾调用——否则任何自动
-       重算都会用不带 current 的新 marks 替换旧的（实测：点跳转瞬间 cur=1，
-       360ms 后自动重算清成 0）。
-
-3. **查找栏已打开时点顶栏「查找」按钮无反应**（`index.html`）
-
-   - 根因：按钮处理器在 `findState.open` 为真时只做 `focus()+select()`，
-     不移除面板——点击没有可见结果。
-   - 修法：改为 toggle（已开 → `findClose()`）；Ctrl+F 保持浏览器的
-     「已打开则聚焦」惯例不变（实测两者行为已分别验证）。
-
-### 测试
-
-- `test_v160_frontend.js` 144 → **157 项**：
-  - 静态：wysiwyg 高亮 CSS（浅/深）、`findMarkCurrent` 定义与两处调用、
-    `findClearMarks` 双宿主、观察者（MutationObserver + findSeq 守卫）、
-    查找钮 toggle 语义、`findHighlightRoot` 模式感知正则；
-  - vm：`findHighlightRoot` 三种 mode（wysiwyg→.vditor-wysiwyg / sv→null /
-    mode 缺失→ir 回落）、`findMarkCurrent` 当前索引转移、查找钮三次点击
-    开→关→开循环。
-- 桩加固：`querySelectorAll` 区分「含 mark 的选择器→marks」与
-  「宿主选择器→hosts」（`findClearMarks` 已改为 document 级查询，
-  只打元素级会测空）。
-- 全量复跑：rawmode 139 / ui_buttons 89 / frontend 27 / security 30 /
-  core 33 / v141 107 / single_session 28 / version 8 / concurrent_save 49 /
-  cli 38，全绿。
-- 实证手段同前（Edge headless + CDP 真实点击/键入 + 结构量测）。
-
-### 版本
-
-- 全部为 1.6.0.4 实机反馈修复，前三段不变，第四段递增：
-  **1.6.0.4 → 1.6.0.5**；四位测试版，禁止对外发布（tag / Release / 上传
-  均须人类明确指令）。
-
----
-
-## 1.6.0.4（2026-10-24）· 测试版（未发布）
-
-**1.6.0.3 实机反馈 3 项（窄屏字数入口 / 查找栏溢出 / 源码态跳转）**
-
-### 修复
-
-1. **源码态查找「能选中、不跳转」**（`index.html`）
-
-   - 根因（Edge CDP 实证）：textarea 的 `setSelectionRange` 只设选区、**不产生滚动**；
-     `focus()` 仅在「赋值后首次聚焦」时滚到当前选区（而 `value` 赋值后默认选区在
-     文末），显式设过选区后再 blur/focus 也不再滚。旧实现「先 focus 后
-     setSelectionRange」的净效果 = 先滚到底再静默设选区——raw 模式 scrollTop
-     停在 max（114316/114316）而选区在 64.8% 处；sv 模式 scrollTop 纹丝不动。
-   - 修法：新增 `scrollTaToIndex(ta, index)` 显式计算并赋值 scrollTop——
-     文档 ≤ `FIND_MIRROR_MAX_CHARS`（50 万字符）用**镜像量测**（复制 textarea
-     排版样式的隐藏 div + `value.slice(0, index)` + 零宽标记读 `offsetTop`，
-     软换行天然精确；实测 5 万 / 20 万字符约 55/125ms），更大文档退化为
-     **字符比例估算**（布局成本随切片线性增长，实测 100 万字符约 670ms、
-     1000 万约 7s，不可接受；均匀文本误差 <0.1%，足以把命中带入视野）。
-     目标位置 = 命中行落在视窗中上部（留 clientHeight/3 下余量）。
-   - 实证：raw 模式选区 165759-165770 → scrollTop 89398、镜像探针 visible=true；
-     sv 模式第二处命中 5641-5651 → scrollTop 8678、visible=true。
-   - 备选方案否记：`getSelection().getRangeAt(0).getBoundingClientRect()` 在
-     Chromium 对 textarea 选区返回全零；原生 focus 滚动不可靠（见根因）。
-
-2. **窄屏查找栏输入框压缩 + 整行溢出**（`index.html`）
-
-   - 根因：`.fb-row` 为 nowrap，窄屏下 7 个控件争抢宽度，输入框
-     （flex:1 1 auto; min-width:0）被压至约 35px 且行内容溢出栏体。
-   - 修法：640px 媒体查询——`.fb-row { flex-wrap: wrap }` + 输入框
-     `flex: 1 1 140px; min-width: 140px` 保底，放不下的按钮（上一处/下一处/
-     选项组）自然换行；替换行同规则覆盖。
-   - 实证：400px 视口下输入框 200px、行右缘 388 ≤ 栏右缘 400、overflow=false。
-
-### 新增
-
-3. **字数统计窄屏入口（「⋯ 更多」菜单信息项）**（`index.html`）
-
-   - 背景（反馈①）：1.6.0.3 两档响应式把顶栏字数框在 <860px 完全收起，
-     移动端失去统计入口。
-   - 修法：`buildMoreMenu` 末尾追加只读信息项（`mi mi-info` + `data-wc`，
-     div 非 button、不可聚焦）；打开菜单即最新值，菜单保持打开期间编辑文档
-     经 `updateCounter → refreshWcMenuItem` 实时刷新；菜单项点击处理器排除
-     `data-wc`（点它不关菜单）。
-   - 实证：400px 下信息项「字数：正文 6,423 · 含语法 8,458 · 约 17 分钟」，
-     键入 9 字符后变 6,432 / 8,470，菜单不关。
-   - 命名教训：类名含 `--`（`mi--info`）会被「孤儿 CSS 变量」守卫正则
-     (`(--[a-z0-9-]+)\s*:`) 误判为变量声明 → 按 `mi-sep` 惯例改名单连字符
-     `mi-info`（该守卫的 `--ghost`/`--primary` 等全靠 VEDITOR_OWNED 排除罩着，
-     不顺手修正则，避免牵动既有排除语义）。
-
-### 测试
-
-- `test_v160_frontend.js` 124 → **144 项**：源码态跳转（scrollTaToIndex /
-  taMirrorOffsetTop 定义与调用、镜像/比例双路径、sv 选区 + 滚动量、连续跳转
-  更新、越界不抛错）、查找栏窄屏换行 CSS、字数信息项（追加/文案/点击不关
-  菜单/实时刷新/关闭时静默）。
-- 桩加固：`getComputedStyle` 空属性集、`offsetTop` 可配置（镜像量测）、
-  **元素级** `querySelector` 认 `data-wc`——`menu.querySelector` 与
-  `document.querySelector` 是两条路，只打一边会测空（本轮实际踩到）。
-- 全量复跑：rawmode 139 / ui_buttons 89 / frontend 27 / security 30 /
-  core 33 / v141 107 / single_session 28 / version 8 / concurrent_save 49 /
-  cli 38，全绿。
-- 实证手段同 1.6.0.3（Edge headless + CDP 真实键入/点击/几何量测）。
-
-### 版本
-
-- 全部为 1.6.0.3 实机反馈修复，前三段不变，第四段递增：
-  **1.6.0.3 → 1.6.0.4**；四位测试版，禁止对外发布（tag / Release / 上传
-  均须人类明确指令）。
-
----
-
-## 1.6.0.3（2026-10-24）· 测试版（未发布）
-
-**1.6.0.2 实机反馈 6 项 + CDP 实证抓出的 1.6.0.2 遗留 bug（更多菜单缺导出项）**
-
-### 修复
-
-1. **Vditor sv 源码模式查找不生效**（`index.html`）
-
-   - 根因（实证）：工具栏「更多 → 编辑模式 → 分屏预览/源码」进入 sv 模式后，
-     `findScrollToCurrent` 两条定位路都走不到——`rawMode` 为 false（sv 是 Vditor
-     内部模式，与本应用 rawMode 无关）、`.vditor-ir > .vditor-reset` 又不存在。
-     CDP 实测：计数正常（1/2）但选区停在文末（7079-7079）、无任何跳转反馈。
-   - 修法：新增 `findSourceTextarea()` 统一源码态编辑元素——rawMode →
-     `#raw-editor`；sv 模式 → `#vditor .vditor-sv`（Vditor 的 sv 元素本身就是
-     `<textarea class="vditor-sv vditor-reset">`；`currentMode === 'sv'` 为主判据、
-     可见性为兜底）。`findScrollToCurrent` 改走该统一入口，并对越界偏移做钳位
-     （陈旧 matches 不再被浏览器钳到文末）。
-   - 连带加固：`findSelectionPrefill()` 选区预填统一入口（`window.getSelection()`
-     取不到 textarea 内部选区，源码态预填此前恒为空）；纯文本编辑器 input 时
-     同步重算查找（此前编辑后 matches 偏移陈旧）。
-   - 实证：sv 模式 Enter 精确选中命中词（112-118）、next 跳第二处、替换生效
-     （`getContent` 同步反映）；自研纯文本模式经真实键盘全链路复测通过。
-
-2. **「⋯ 更多」菜单缺少导出项（1.6.0.2 遗留，CDP 实证抓出）**（`index.html`）
-
-   - 根因：`buildMoreMenu` 对 `TB_MORE_ITEMS` 里 `act` 类型条目（导出两项）误走了
-     `fwd` 的存在性过滤——`it.fwd` 为 undefined，`getElementById(undefined)` 返回
-     null 被 `continue` 跳过；而 <860px 时导出按钮恰被媒体查询收纳，导出成为
-     「不可能的任务」。vm 测试此前被桩的 `getEl(undefined)` 自动创建幻影元素蒙蔽
-     （旧测试看到 8 项，真实浏览器只有 6 项——**桩比真实 DOM 宽恕，是漏测根因**）。
-   - 修法：`act` 条目单独分支恒显（不依附按钮显隐）；vm 测试补「全部 fwd 隐藏时
-     导出两项仍在」断言。
-
-3. **文件名滚动压盖前缀 + 后半段不显示**（`index.html`）
-
-   - 根因（CDP 几何实证）：`transform` 作用在滚动窗口 `#cur-name` **本身**——
-     窗口随文本一起左移，全程压过「当前文件：」前缀（overlap=true），且窗口右缘
-     同步左收，尾部永不滚入视野；长文件名 + 字数统计 + 全按钮组平铺时，
-     `.fname` / `#cur-name` 的 `min-width:0` 进一步把窗口挤到 **0 宽**
-     （clientWidth=0，文本被完全裁剪）。
-   - 修法：滚动机制由 `transform` 平移窗口改为 **`scrollLeft` 滚动**（窗口固定、
-     内容在窗内滑移；`scrollWidth - clientWidth` 恰为最大滚动量，量测口径天然
-     对齐）；顶栏预算防塌缩——`.word-counter` / `.user` 改
-     `flex: 0 1 auto; min-width: 0; overflow: hidden` 允许收缩让位（按钮组永不动）。
-   - 实证：clientW=229 / scrollW=901，窗口左缘恒定 403、`overlap` 全程 false、
-     scrollLeft 111→187 递增，尾部可完整滚入。
-
-### 新增
-
-4. **单活会话 per-tab token（X-Vditor-Token 头）**（`server.py` / `index.html`）
-
-   - 根因（实证）：token 此前只走 HttpOnly Cookie，而 Cookie 在同一浏览器所有
-     标签页间共享——第二个标签页登录后服务端虽清空旧会话并下发新 token，先登页面
-     却因共享 cookie 罐「静默升级」到新 token，永远收不到 401（CDP 双 page 实测：
-     二次登录后 tabA 仍 200）。**踢出逻辑本身不是按 IP 判断**（`start_session` 是
-     「新登录即清空全部会话」），失效点在 token 的传输通道。
-   - 修法：`_request_token()` 优先读 `X-Vditor-Token` 头、缺失回退 Cookie；
-     login/setup 响应体下发 `token`；前端存 `sessionStorage`（每标签页独立），
-     fetch 包装器统一注入头（三种 headers 形态兼容、调用方已带则不重复）；
-     logout 清副本。
-   - 语义：每个完成登录的标签页持有自己的 token 副本，新登录踢旧会话时先登页面
-     必 401；「从已登录浏览器新开的标签页」无副本、经 cookie 被动继承当前会话
-     （无需再登录，它本就是当前会话的视图）。
-   - 取舍：token 从 HttpOnly cookie 变为 JS 可读的 sessionStorage（XSS 面略增），
-     换取按标签页隔离；隐私模式 sessionStorage 不可用时静默退回纯 Cookie 行为。
-   - 测试：`test_single_session.py` 18 → 28 断言，新增 per-tab 场景（旧 token 401 /
-     新 token 200 / cookie 回退 / 头优先于 cookie / 垃圾头拒绝 / 带头 logout）。
-
-5. **按钮纯文字 + 触发钮选中态**（`index.html`）
-
-   - `#btn-find` 去 🔍（仅「查找」）、`#btn-export` 去 ▾（仅「导出」），title 保留。
-   - `.tb-trigger[aria-expanded="true"]` 选中态（主色浅底 + 主色描边），对齐
-     「设置 → 维护 → 状态与日志」四按钮的 `.on` 语义——菜单开着时按钮本身有视觉提示。
-   - 注：导出菜单「再点触发钮收回」经 CDP **真实鼠标实证本就正常**（开→关→开
-     循环通过），本版补选中态视觉与回归断言，未改其行为。
+   - `start_session()` 新登录即清空所有既有会话，旧会话后续请求 401 → 前端弹「会话失效」。
+     取舍：先到先得会死锁（先登者不退出则后登者永远进不去），且重启即失效、不可靠。
+   - 1.6.0.3 根因修复：token 此前只走 HttpOnly Cookie，而 Cookie 在**同浏览器所有标签页间
+     共享**——第二个标签页登录后先登页面「静默升级」到新 token，永远收不到 401
+     （CDP 双 page 实证）。改为 **per-tab token**：login/setup 响应体下发 token →
+     前端存 `sessionStorage` → fetch 包装器注入 `X-Vditor-Token`；服务端 `_request_token()`
+     头优先、Cookie 回退（保留「从已登录浏览器新开标签页」的被动认证）。
 
 ### 更改
 
-6. **顶栏响应式三档 → 两档**（`index.html`）
-
-   - 删 519px 中间态：<860px 时顶栏只显示 保存｜⋯ 更多，查找/导出/主题/退出/
-     设置/信息/纯文本/用户名/字数全部退场（可操作的进更多菜单，纯展示直接隐藏）。
-   - 实证：859px 收纳态、860px 全平铺，边界精确落在断点上。
-
-### 测试
-
-- `test_v160_frontend.js` 102 → **124 项**：滚动断言 transform → scrollLeft；
-  按钮文案/两档响应式/选中态/防塌缩 CSS；`act` 条目恒显 + toggle 循环；新增
-  「1.6.0.3 sv 源码模式查找」（findSourceTextarea / findSelectionPrefill /
-  选区跳转 / 越界钳位）与「per-tab token 头注入」（注入/不重复/清除/隐私模式降级）。
-- `test_single_session.py` 18 → **28 项**（见新增 4）。
-- 全量复跑：frontend 27 / ui_buttons 89 / security 30 / core 33 / v141 107 /
-  version 8 / rawmode 139，全绿。
-- 实证手段：Edge headless + CDP（`Input.dispatchMouseEvent` 真实点击、
-  `Input.insertText` 真实键入、双 page 模拟双标签页、`getBoundingClientRect`
-  量几何），诊断脚本存于临时目录未进仓库。
-
-### 版本
-
-- 全部为 1.6.0.2 实机反馈修复与顶栏交互修正，前三段不变，第四段递增：
-  **1.6.0.2 → 1.6.0.3**；四位测试版，禁止对外发布（tag / Release / 上传均须
-  人类明确指令）。
-
----
-
-## 1.6.0.2（2026-10-23）· 测试版（未发布）
-
-**1.6.0.1 实机反馈 6 项：查找入口 / 记事本布局 / 高亮跳转 / 文件名滚动 / 顶栏溢出 / 单活会话**
+- **顶栏按钮纯文字**（1.6.0.3）：「查找」去 🔍、「导出」去 ▾，title 提示保留。
+- **触发钮选中态**（1.6.0.3，随「⋯ 更多」一起上线）：`.tb-trigger[aria-expanded="true"]`
+  主色浅底 + 主色描边，对齐「设置 → 维护 → 状态与日志」四按钮的 `.on` 语义。
 
 ### 修复
 
-1. **「展开/收起替换区」按钮点击无反应**（`index.html`）
+1. **并发保存覆盖/丢失/损坏**（1.6.0.1，既有缺陷）
 
-   - 根因：`.fb-row{display:flex}` 的特异性高于 UA 默认样式表里的 `[hidden]{display:none}`，
-     `replaceZone.hidden = true` 后行内 `display` 仍为 `flex`，元素照样显示。与 1.5.0beta3 前
-     「白底按钮悬停变蓝」同属一类 CSS 优先级坑，本版在菜单上第二次踩到（见新增 5）。
-   - 修法：显式补 `.fb-row[hidden]{display:none}`（`[hidden]` 属性选择器特异性 0-1-0 与类名
-     相同但位于同一规则之后，实际生效关键在于「显式声明 display:none 覆盖前面的 flex」）。
+   - 根因：多实例同时写同一文件，最后一次写入覆盖前者且无快照。
+   - 修法：`SAVE_LOCK` 串行化 + 原子写（临时文件 + `os.replace`）；被覆盖内容进入历史版本。
+   - 防回归：新增 `test_concurrent_save.py`（49 项），改动前先验证它能抓到旧 bug。
 
-2. **富文本模式查找命中不高亮、上下箭头不跳转**（`index.html`）
+> 本版新增功能（查找与替换、顶栏文件名自适应、「⋯ 更多」菜单、单活会话）在本版内的
+> 各轮修正已并入上面对应条目，不在此重复列举——那些问题在用户可见之前就已修掉。
 
-   - 根因：Vditor ir（所见即所得）模式下 `#vditor` 内存在 **4 个 `.vditor-reset`**
-     （wysiwyg 空壳 → sv 源码 textarea → **`.vditor-ir > pre` 真正编辑区** → preview），
-     原 `querySelector('.vditor-reset')` 取到的是 wysiwyg 空壳，向不渲染的节点包 `<mark>`
-     自然不可见，`scrollIntoView` 也滚不到地方。
-   - 修法：高亮根改 `document.querySelector('#vditor .vditor-ir > .vditor-reset')`，
-     富文本（ir）才走 DOM 包裹，纯文本模式仍用 `setSelectionRange` 选区定位。
+### 测试与工程
 
-3. **文件名滚动不自然且会压盖前缀**（`index.html`）
+- 测试文件 15 → 16 个，全量 `run_all.py --all` 覆盖 16 项（含 e2e/perf/stress）。
+- 1.6.0.5：`test_v160_frontend.js` 扩到 158 项；`test_single_session.py` 18 → 28 项
+  （per-tab 场景）；`test_v150_settings.py` 的注释过滤补上块注释/HTML 注释（修假阳性）
+  并正式登记进 CASES（此前漏登记，门禁从未跑到）。
+- 实证手段：Edge headless + CDP（真实鼠标/键盘事件、几何量测、双 page 模拟双标签页）。
 
-   - 根因：rAF 回调直接用 `pos += speed` 不按帧间隔归一化，刷新率越高滚得越快；首帧 `pos=0`
-     直接进入运动分支，无起滚停顿；`transform` 作用于含「当前文件：」前缀的整行，
-     滚动时前缀被一起拖走。
-   - 修法：`dt=(now-last)/1000` 并 clamp 到 0.1（切后台回来不跳变）；首帧设
-     `pauseUntil=now+900` 起滚停顿；`transform` 只作用于 `#cur-name` 自身（前缀静止），
-     速度下调至自然阅读节奏；测试采样必须跨过 900ms 初始停顿（首 5 帧全在停顿内，
-     `transform` 恒 `translateX(0px)`，属设计行为非 bug）。
+### 审计与清理（1.6.0.5 收官）
 
-### 新增
-
-4. **顶栏「🔍 查找」按钮**（`index.html`）
-
-   - `#btn-find`，与 `Ctrl+F` 复用同一 `findOpen()` 绑定（有选区预填），快捷键帮助表
-     同步补 `Ctrl+F / Ctrl+H` 两行；此前查找只能靠快捷键呼出，无可见入口。
-
-5. **导出合并 + 「⋯ 更多」菜单 + 三档响应式**（`index.html`）
-
-   - `#btn-export-md` + `#btn-export-html` 合并为 `<button id="btn-export">导出 ▾</button>`，
-     `#btn-save` 左侧新增 `<button id="btn-more">⋯ 更多</button>`（保存恒为最右主操作）；
-     `#app` 后新增 `#export-menu`（静态两项）与 `#more-menu`（动态构建）。
-   - **菜单双契约**：菜单项 `data-act`（本地动作 `export-md` / `export-html`）+
-     `data-fwd`（转发顶栏既有按钮 `.click()`，复用既有绑定不重写逻辑）。
-     `buildMoreMenu` 过滤判据是 **`el.hidden` 属性而非 `offsetParent`**——被媒体查询
-     收纳的按钮恰恰必须入菜单，用 `offsetParent` 会把他们排除在外。
-   - **三档响应式**：≥860px 全平铺；<859px 收 退出/设置/信息/纯文本 入菜单；
-     <519px 再收 查找/导出/主题/用户名/字数（纯文字极限档，无图标）。
-   - **层级**：`.tb-menu` 取 `z-index:10015`（10010 基础框与 10020 确认类之间，
-     逐个显式声明）；Esc 链顺序：菜单 > 查找栏 > 弹窗栈
-     （`if (closeTransientMenus()) return;` 插在 `findState.open` 判断之前）。
-   - **`[hidden]` 覆盖陷阱第二次踩到**：`.tb-menu{display:flex}` 同样压过 UA
-     `[hidden]{display:none}`，补 `.tb-menu[hidden]{display:none}`（与修复 1 同根因）。
-   - ⚠️ **vm 测试抓出的真实 bug**：`exportFromMenu` 里写 `kind === 'html'`，而 `data-act`
-     实际值为 `'export-md' / 'export-html'` → 点「导出渲染 HTML」实导 `.md`。
-     修为 `kind === 'export-html' ? 'html' : 'md'`（静态断言查不出，必须 vm 真调菜单项）。
-   - 测试：`tests/test_v160_frontend.js` 65 → **102 项**（静态 14 + vm 运行时 17 专测菜单，
-     含 `tbMenuOpen` 定位数值、Esc 优先级、`closeTransientMenus` 语义、响应式过滤）。
-
-6. **单活会话（后登踢先登）**（`server.py` / `index.html`）
-
-   - 方案取舍：前端「检测到另一会话正在登录就禁止登录」不可行（HTTP 无连接态、多标签页
-     无法互斥、且 30 分钟自动过期窗口内状态不可靠）；改服务端**单活会话**——登录即生效、
-     语义确定、可审计。并发上限从「会话数不限」收敛为 1。
-   - `start_session()` 重写：`kicked = len(SESSIONS)` → `SESSIONS.clear()` →
-     `record_login_event("session_kicked", ip, "evicted=%d" % kicked)`，再发新 token。
-     先登者下一个请求即 401，前端 fetch 包装器弹「会话失效」。
-   - 新增 `tests/test_single_session.py` **18 断言**（已登记 CASES）：二登踢 A（A=401/B=200）、
-     三登连锁踢 B、login-log 含 `session_kicked` 且 detail 含 `evicted=`、logout 后仍 401、
-     重登无死锁、**错误密码不踢现有会话**（防误伤）。
-   - `session-mask` 文案与帮助文档「八、账号与访问」同步补单活会话说明。
-
-### 测试
-
-- `tests/test_v160_frontend.js`：修 8 个陈旧断言（`#cur-name` flex 版 / `fnameTick(now)`
-  时间归一化 / Esc 链 / mark CSS `.vditor-ir .vditor-reset` / findHighlightRoot ir 限定）；
-  findBar 提取改 `indexOf` 精确切片（原正则三连 `</div>` 越界捕获到登录区，把 `.mi`
-  按钮算进「非法按钮」）；vm 桩增强（回填 `id` / `docLs` 登记 document 监听 /
-  `offsetWidth,Height:100` / `closest` 类名命中 / `_fire` 传默认事件 /
-  `querySelectorAll('.tb-menu')` 返两菜单 / `innerWidth,innerHeight` / 菜单初始
-  `hidden=true, className='tb-menu'` / 手动清 `children`）。
-- `tests/test_rawmode_v14.js`：[14] 段按钮清单 `'btn-export-md','btn-export-html'` →
-  `'btn-export','btn-more'`（139 通过）。
-- 测试自身踩坑（已修，非产品 bug）：桩 `id:''` 致 `tbMenuClose(menus[i].id)` 关到幻影元素；
-  桩默认 `hidden:false` 使「从未打开」被误判「已打开」（触发钮走关闭分支）；
-  桩 `textContent=''` 不清 children 致 `buildMoreMenu` 累积。
-
-### 版本
-
-- 全部为 1.6.0.1 实机反馈修复与顶栏交互增强，前三段不变，第四段递增：
-  **1.6.0.1 → 1.6.0.2**；四位测试版，禁止对外发布（tag / Release / 上传均须人类明确指令）。
+- 死代码扫描：142 个前端函数全部有引用；123 个 CSS 类中除覆盖 Vditor 自身类的
+  必要规则外无死规则；无 TODO/FIXME 遗留。
+- 删除冗余：`#topbar .word-counter`/`.user` 被覆盖的 `flex:0 0 auto` 声明合并进基础规则；
+  `.root-head .rnew` 的完全重复规则与失效 hover 规则。
+- 移除未用 import：`server.py`（`gzip`、`client_accepts_gzip`）、`vd_util.py`（`json`）
+  及 4 个测试文件中的 4 处。
+- 仓库卫生：`fix_*.md`/`plan_*.md`（agent 工作文档）与 `bench/`（本地评测产物）纳入
+  `.gitignore` 并取消跟踪（本地保留）。
+- 文档对齐：README 当前版本、`docs/MOBILE_API.md` 归档状态说明、两处过时注释。
 
 ---
 
