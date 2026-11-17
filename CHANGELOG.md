@@ -15,6 +15,50 @@
 
 ---
 
+## 1.6.1.1（2026-11-17）· 测试版（未发布）
+
+**主题：撤销栈污染 / 撤销滚动归零 / 密码可见性 / 强确认输入防绕过**
+
+### 新增
+
+1. **密码显示切换**（`index.html`）：登录、首次设置、确认密码三个输入框右侧各挂
+   `btn btn--ghost pw-toggle` 按钮，切换 `input.type` 为 `text/password`，同步
+   `aria-pressed` / `aria-label` / 文案并把焦点还给输入框；不触发提交。
+
+### 修复
+
+1. **Ctrl+Z 回退到上一个文件内容**（CDP 实证）
+
+   - 根因：`setContent()` 用 `vditor.setValue(t, false)`，Vditor 的 `setValue`
+     内部对三模式一律 `enableAddUndoStack:!0`，第二参只控制 `clearStack()`——
+     传 false 意味着**保留历史**，于是每次打开文档都把整篇内容压进撤销栈。
+     实测打开 A 后栈长 2、打开 B 后栈长 3；无编辑 Ctrl+Z 即 pop 掉「打开 B」那步，
+     内容变回 A，而 `currentPath/currentName` 仍是 B。
+   - 修法：`setContent(text, resetUndo)`，打开 / 新建 / 删除 / 恢复历史 / 模式切换
+     共 6 处传 `true` → `vditor.setValue(t, true)`（clearStack）；查找替换保持默认
+     `false`，用户主动编辑仍可撤销。实测打开 A→B 栈长恒为 1，无编辑 Ctrl+Z 内容不变。
+
+2. **撤销后滚动跳位**
+
+   - 根因：Vditor `renderDiff()` 用 `element.innerHTML = r` 整体替换编辑区，
+     浏览器重建布局后 `scrollTop` 归零（实测 1200 → 0，文档高 4904px / 视口 676px）。
+   - 修法：持续记录用户主动滚动位置 `undoScrollTop`，仅在 Ctrl+Z/Y 后 600ms 窗口内，
+     用 MutationObserver 捕获编辑区宿主内的 `childList` 变动并 rAF 写回；
+     打开新文档时 `resetUndoScroll()` 归零。实测撤销后 `0 → 1200` 恢复。
+
+### 更改
+
+- **强确认输入框只允许逐字键入**：原先仅 `onpaste="return false"`，拖入仍可绕过。
+  现拦截 `paste/copy/cut/drop/dragover/dragstart/contextmenu`、组合键，
+  并在 `beforeinput` 只放行 `insertText` / `insertCompositionText` / 删除类；
+  文字仍可选中以便校对。提示语常驻说明限制。
+
+### 测试
+
+- 新增 `test_v1611.py`（15 项）并登记 CASES；CDP 实测覆盖三种交互。
+
+---
+
 ## 1.6.0（2026-10-24）· 正式版
 
 **主题：文档查找与替换 + 顶栏自适应与收纳 + 并发保存修复（功能范围扩大，1.5.0 → 1.6.0）**

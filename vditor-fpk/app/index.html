@@ -491,6 +491,20 @@
             padding: 7px 10px; outline: none;
             transition: border-color .15s, box-shadow .15s;
         }
+        /* 1.6.1.1：登录 / 首次设置的密码「显示内容」按钮。输入框保持整行宽度，
+           按钮绝对定位到输入框右侧内缘；聚焦态由输入框 ::focus 的焦点环统一呈现，
+           按钮自身仍保留 :focus-visible 键盘焦点环（见 .btn 通用规则）。 */
+        .pw-field { position: relative; }
+        .pw-field input { width: 100%; box-sizing: border-box; padding-right: 44px !important; }
+        .pw-toggle {
+            position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+            min-width: 34px; height: 30px; padding: 0 8px;
+            font-size: var(--fs-sm); line-height: 1;
+            background: transparent; border-color: transparent; color: var(--c-text-3);
+        }
+        .pw-toggle:hover:not(:disabled) {
+            background: var(--c-bg-fill); border-color: var(--c-border); color: var(--c-text-2);
+        }
         /* 弹层内的文本框占满整行（此前靠行内 style 实现，现收敛到类） */
         .modal-card .set-input { width: 100%; box-sizing: border-box; }
         /* 删除文档强确认的「输入文件名」：这道确认的意义是让用户亲手核对文件名，
@@ -1178,13 +1192,22 @@
         <p class="sub" id="login-sub">请输入访问密码以进入编辑器</p>
         <div id="setup-fields" style="display:none;">
             <label>设置管理员密码（至少 6 位）</label>
-            <input id="setup-pw" type="password" placeholder="请输入新密码" autocomplete="new-password">
+            <div class="pw-field">
+                <input id="setup-pw" type="password" placeholder="请输入新密码" autocomplete="new-password">
+                <button id="setup-pw-toggle" class="btn btn--ghost pw-toggle" type="button" aria-label="显示密码" aria-pressed="false" title="显示密码">显示</button>
+            </div>
             <label>确认密码</label>
-            <input id="setup-pw2" type="password" placeholder="再次输入密码" autocomplete="new-password">
+            <div class="pw-field">
+                <input id="setup-pw2" type="password" placeholder="再次输入密码" autocomplete="new-password">
+                <button id="setup-pw2-toggle" class="btn btn--ghost pw-toggle" type="button" aria-label="显示密码" aria-pressed="false" title="显示密码">显示</button>
+            </div>
         </div>
         <div id="login-fields">
             <label>访问密码</label>
-            <input id="login-pw" type="password" placeholder="请输入访问密码" autocomplete="current-password">
+            <div class="pw-field">
+                <input id="login-pw" type="password" placeholder="请输入访问密码" autocomplete="current-password">
+                <button id="login-pw-toggle" class="btn btn--ghost pw-toggle" type="button" aria-label="显示密码" aria-pressed="false" title="显示密码">显示</button>
+            </div>
         </div>
         <button id="login-btn" class="btn btn--primary">进入</button>
         <div id="login-err"></div>
@@ -1520,7 +1543,7 @@
         <p class="sub" style="margin:6px 0 4px;font-weight:600;word-break:break-all;" id="bigdoc-name"></p>
         <input type="text" id="bigdoc-input" class="set-input" autocomplete="off" spellcheck="false"
                onpaste="return false" placeholder="在此输入文件名">
-        <p class="sub" id="bigdoc-hint" style="margin-top:6px;"></p>
+        <p class="sub" id="bigdoc-hint" style="margin-top:6px;">请逐字手动输入文件名；不支持粘贴、拖入或快捷键填入</p>
         <div class="set-foot">
             <button class="btn btn--ghost" id="bigdoc-ok" disabled>确认</button>
             <button class="btn btn--primary" id="bigdoc-cancel">取消</button>
@@ -2291,11 +2314,16 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         try { return vditor.getValue() || ''; } catch (e) { return ''; }
     }
     // 统一内容写入
-    function setContent(text) {
+    // 1.6.1.1：resetUndo=true 用于「打开/新建/删除/恢复历史/切换模式」等
+    // **非用户编辑**的内容替换——这类写入不该进撤销栈。Vditor 的
+    // setValue(t, clearStack) 第二参为 true 时会 clearStack() 并把当前内容
+    // 重新压为栈底，所以按 Ctrl+Z 不会再退回到上一个文件的内容。
+    // 查找替换等**用户主动编辑**保持默认 false，仍可撤销。
+    function setContent(text, resetUndo) {
         const t = text || '';
         if (rawMode) { if (rawEl) rawEl.value = t; return; }
         if (!vditor || !vditorReady) return;
-        try { vditor.setValue(t, false); } catch (e) { /* 未就绪时静默跳过 */ }
+        try { vditor.setValue(t, !!resetUndo); } catch (e) { /* 未就绪时静默跳过 */ }
     }
 
     function enterRawMode(reason, len) {
@@ -2360,7 +2388,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         rawMode = false;
         document.body.classList.remove('raw-mode');
         if (rawEl) { rawEl.classList.remove('is-active'); rawEl.hidden = true; rawEl.value = ''; }
-        if (vditor) { pendingRichText = text; setContent(text); }
+        if (vditor) { pendingRichText = text; setContent(text, true); }
         else { pendingRichText = text; buildVditor(); }
         scheduleCounter();
     }
@@ -2785,7 +2813,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                     if (!d.ok) { toast('删除失败：' + (d.error || '')); return; }
                     toast('已删除文档及其历史版本');
                     closeDocInfo();
-                    if (currentPath) { currentPath = null; currentRoot = null; syncUploadExtra(); setCurName('未选择'); if (rawMode) exitRawMode(); else setContent(''); updateRawModeBtn(); }
+                    if (currentPath) { currentPath = null; currentRoot = null; syncUploadExtra(); setCurName('未选择'); if (rawMode) exitRawMode(); else setContent('', true); updateRawModeBtn(); }
                     refreshFiles();
                 }).catch(() => toast('删除失败'));
         });
@@ -3512,6 +3540,77 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         });
     })();
 
+    /* ---------- 1.6.1.1：撤销 / 重做后保留编辑区滚动位置 ----------
+       根因（CDP 实证）：Vditor 的 undo/redo → renderDiff() 用
+       `element.innerHTML = r` 整体替换编辑区，浏览器重建布局后 scrollTop 归零
+       （实测 1200 → 0，文档高 4904px / 视口 676px，观感即「往下滚一大截」）。
+       对策：
+       ① 持续记录用户主动滚动后的 scrollTop（lastTop）；
+       ② 仅在 Ctrl+Z / Ctrl+Y / Cmd+Z / Cmd+Shift+Z 按下后的短暂窗口内，
+          用 MutationObserver 捕获 renderDiff 的整段 innerHTML 重建，
+          重建完成后把 lastTop 写回。普通编辑不介入，避免干扰用户主动跳文首。
+       纯文本模式是原生 textarea，浏览器自带滚动保留，不介入。 */
+    let undoScrollTop = 0;                  // 最近一次用户主动滚动的位置
+    let undoKeyDownAt = 0;                  // 撤销/重做按键时间戳
+    (function initUndoScrollKeep() {
+        const host = document.getElementById('vditor');
+        const activeEditor = function () {
+            if (rawMode) return null;
+            let mode = '';
+            try { mode = (vditor && vditor.vditor && vditor.vditor.currentMode) || ''; } catch (e) { }
+            if (mode === 'sv') return document.querySelector('#vditor .vditor-sv');
+            if (mode === 'wysiwyg') return document.querySelector('#vditor .vditor-wysiwyg');
+            const ir = document.querySelector('#vditor .vditor-ir > .vditor-reset');
+            return (ir && ir.offsetParent !== null) ? ir : null;
+        };
+        document.addEventListener('scroll', function (e) {
+            const ed = activeEditor();
+            if (ed && e.target === ed && ed.scrollTop > 0) undoScrollTop = ed.scrollTop;
+        }, true);
+        document.addEventListener('keydown', function (e) {
+            if (!e.ctrlKey && !e.metaKey) return;
+            const k = (e.key || '').toLowerCase();
+            if (k === 'z' || k === 'y') undoKeyDownAt = Date.now();
+        }, true);
+        const inEditorHost = function (node) {
+            if (!node) return false;
+            let n = node;
+            while (n && n !== host.parentNode) {
+                if (n.classList && (n.classList.contains('vditor-reset') ||
+                    n.classList.contains('vditor-ir') ||
+                    n.classList.contains('vditor-wysiwyg') ||
+                    n.classList.contains('vditor-sv'))) return true;
+                n = n.parentElement;
+            }
+            return false;
+        };
+        if (!host || typeof MutationObserver === 'undefined') return;
+        let pending = false;
+        const obs = new MutationObserver(function (muts) {
+            // 只在撤销键后 600ms 内生效；查找栏打开时交给查找定位逻辑
+            if (Date.now() - undoKeyDownAt > 600 || findState.open || rawMode || pending) return;
+            let structural = false;
+            for (let i = 0; i < muts.length; i++) {
+                const mu = muts[i];
+                if (mu.type !== 'childList' || !mu.removedNodes.length) continue;
+                if (inEditorHost(mu.target)) { structural = true; break; }
+            }
+            if (!structural || !undoScrollTop) return;
+            pending = true;
+            requestAnimationFrame(function () {
+                pending = false;
+                const ed = activeEditor();
+                const target = undoScrollTop;
+                if (ed && ed.scrollTop !== target) {
+                    try { ed.scrollTop = target; } catch (err) { }
+                }
+            });
+        });
+        obs.observe(host, { childList: true, subtree: true });
+    })();
+    // 打开 / 新建 / 恢复文档时归零滚动记忆（避免把上一文档的滚动位置带到新文档）
+    function resetUndoScroll() { undoScrollTop = 0; undoKeyDownAt = 0; }
+
     /* ---------- 1.6.0.2：顶栏下拉菜单（「导出」/「⋯ 更多」；1.6.0.3 改两档） ----------
      * 背景（问题⑤）：顶栏按钮平铺在窄屏 / 大页面缩放下放不下，浏览器又不给
      * 顶栏横向滚动（会带着整页跑）。对策分两路：
@@ -3704,6 +3803,32 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
      * 防止从别处复制文件名直接粘来绕过。 */
     let _bigDocCb = null;         // 通过确认后的回调
     let _bigDocName = '';         // 期望输入的文件名
+    // 1.6.1.1：强确认输入框只允许逐字手动输入——「复制/粘贴/拖入/自动填充」
+    // 全部封死。仅保留普通键入、输入法组合与删除键；文字仍可选中以便校对。
+    const BIGDOC_INPUT_HINT = '请逐字手动输入文件名；不支持粘贴、拖入或快捷键填入';
+    (function initTypedConfirmGuard() {
+        const inp = document.getElementById('bigdoc-input');
+        if (!inp) return;
+        // 右键菜单、拖拽、复制/剪切/粘贴：一律阻止默认行为
+        ['contextmenu', 'dragstart', 'dragover', 'drop', 'copy', 'cut', 'paste']
+            .forEach(function (type) {
+                inp.addEventListener(type, function (e) { e.preventDefault(); });
+            });
+        // beforeinput 兜底：只放行逐字键入、输入法组合与删除
+        inp.addEventListener('beforeinput', function (e) {
+            const t = e.inputType || '';
+            const allowed = t === 'insertText' || t === 'insertCompositionText'
+                || t === 'deleteContentBackward' || t === 'deleteContentForward'
+                || t === 'deleteWordBackward' || t === 'deleteWordForward'
+                || t === 'deleteHardLineBackward' || t === 'deleteHardLineForward';
+            if (!allowed) e.preventDefault();
+        });
+        // 组合键一律拦截（Ctrl/Cmd+V、Ctrl+C、Ctrl+X、自动填充等）
+        inp.addEventListener('keydown', function (e) {
+            if (e.ctrlKey || e.metaKey || e.altKey) e.preventDefault();
+        });
+    })();
+
     function showTypedConfirm(opts, onPass) {
         _bigDocCb = onPass || null;
         _bigDocName = (opts && opts.name) || '';
@@ -3717,7 +3842,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         ok.className = 'btn ' + ((opts && opts.danger) ? 'btn--danger' : 'btn--ghost');
         const inp = document.getElementById('bigdoc-input');
         inp.value = '';
-        document.getElementById('bigdoc-hint').textContent = '';
+        document.getElementById('bigdoc-hint').textContent = BIGDOC_INPUT_HINT;
         document.getElementById('bigdoc-ok').disabled = true;
         document.getElementById('bigdoc-mask').style.display = 'flex';
         setTimeout(() => { try { inp.focus(); } catch (e) {} }, 30);
@@ -3733,8 +3858,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         const hint = document.getElementById('bigdoc-hint');
         const match = (inp.value || '') === _bigDocName && _bigDocName !== '';
         ok.disabled = !match;
-        if (!match && inp.value) hint.textContent = '与文件名不一致，请原样输入';
-        else hint.textContent = '';
+        if (!match && inp.value) hint.textContent = BIGDOC_INPUT_HINT + '；与文件名不一致，请原样输入';
+        else hint.textContent = BIGDOC_INPUT_HINT;
     }
 
     /* ---------- 超过 10MB 的文档：普通二次确认（1.5.0.6） ----------
@@ -3808,7 +3933,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 // 先让浏览器完成一帧绘制（含模式切换后的布局），再灌入内容，
                 // 避免大文本写入长时间占用主线程造成「白屏假死」观感。
                 const fill = () => {
-                    setContent(content);
+                    resetUndoScroll();           // 1.6.1.1：新文档的滚动记忆归零
+                    setContent(content, true);   // 1.6.1.1：打开文档不入撤销栈
                     dirty = false;
                     // 1.6.0：切换文件后查找状态与高亮全部失效，防陈旧命中
                     if (findState.open) findClose();
@@ -3841,7 +3967,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             if (!d.ok) { toast('新建失败：' + (d.error || '未知错误')); return; }
             currentRoot = d.root; currentPath = d.path; dirty = false;
             syncUploadExtra();
-            if (rawMode) exitRawMode(); else setContent('');
+            if (rawMode) exitRawMode(); else setContent('', true);
             setCurName(name);
             refreshFiles();
             toast('已新建，开始编辑吧');
@@ -4402,7 +4528,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             body: JSON.stringify({ root: currentRoot, path: currentPath, ts: ts })
         }).then(r => r.json()).then(d => {
             if (!d.ok) { toast('恢复失败：' + (d.error || '')); return; }
-            setContent(d.content || '');
+            setContent(d.content || '', true);   // 1.6.1.1：恢复历史不入撤销栈
             dirty = false;
             closeHistory();
             toast('已恢复到该版本');
@@ -4725,7 +4851,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
                 // 1.4.3：必须**先**置 vditorReady 再 setContent，否则 setContent 会因
                 // 「未就绪」而静默跳过，导致教程内容 / pendingRichText 丢失。
                 vditorReady = true;
-                setContent(initial);
+                setContent(initial, true);
                 refreshFiles();
                 // 窄屏下拉面板脱离工具栏，避免被滚动容器裁掉
                 initMobilePanelFix();
@@ -5043,6 +5169,30 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             if (currentRoot && currentPath && dirty) { e.preventDefault(); e.returnValue = ''; }
         });
     }
+
+    // 1.6.1.1：密码显示 / 隐藏切换。三个密码框（登录、设置、确认）各自独立，
+    // 切换 type 后把焦点还给输入框，方便继续键入；不触发提交（button type=button）。
+    (function initPasswordToggles() {
+        const pairs = [
+            ['login-pw', 'login-pw-toggle'],
+            ['setup-pw', 'setup-pw-toggle'],
+            ['setup-pw2', 'setup-pw2-toggle']
+        ];
+        pairs.forEach(function (pair) {
+            const input = document.getElementById(pair[0]);
+            const btn = document.getElementById(pair[1]);
+            if (!input || !btn) return;
+            btn.addEventListener('click', function () {
+                const show = input.type === 'password';
+                input.type = show ? 'text' : 'password';
+                btn.textContent = show ? '隐藏' : '显示';
+                btn.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+                btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+                btn.title = show ? '隐藏密码' : '显示密码';
+                try { input.focus(); } catch (e) { /* 焦点失败不影响切换 */ }
+            });
+        });
+    })();
 
     // 登录按钮事件
     document.getElementById('login-btn').addEventListener('click', doAuth);
