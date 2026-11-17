@@ -495,19 +495,27 @@
            两态用 inline SVG（零依赖）：闭眼=不可见（初始）、睁眼=可见。
            aria-pressed 由 JS 同步，仅作语义/测试用；视觉由 .pw-eye--on/off 切换。 */
         .pw-field { position: relative; }
-        .pw-field input { width: 100%; box-sizing: border-box; padding-right: 42px !important; }
+        .pw-field input { display: block; width: 100%; box-sizing: border-box; padding-right: 42px !important; }
+        /* input 改为 block 消除 inline-block 基线间隙——此前 .pw-field 高度由行盒撑开，
+           absolute 按钮的 top:50% 基准比输入框中心低约 18px（CDP 实测），图标掉到框外 */
         /* 优先级：#login-card button（ID+元素=101）高于 .pw-toggle（类=10），
            必须用 #login-card .pw-toggle 覆写，否则按钮会被拉成整行宽
            （1.5.0.4 白底按钮被染蓝的同类坑）。 */
         #login-card .pw-toggle {
-            position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+            /* 1.6.1.3：不使用 transform 居中——全应用 .btn:active 会把 transform
+               改成 translateY(1px)，与 translateY(-50%) 冲突，按下时图标瞬移
+               13px（CDP 实测 top 374.2→387.2），观感即「弹跳」。
+               改用 calc 纯定位；并显式豁免 active 的下压规则。 */
+            position: absolute; right: 6px; top: calc(50% - 12px);
             display: flex; align-items: center; justify-content: center;
-            width: 24px; height: 24px; min-width: 0; padding: 0;
+            width: 24px; height: 24px; min-width: 0; padding: 0; margin: 0;
             border: 0; border-radius: 50%; background: transparent;
             color: var(--c-text-3); cursor: pointer;
             transition: color .15s, background .15s;
         }
         #login-card .pw-toggle:hover:not(:disabled) { background: transparent; color: var(--c-text-2); }
+        /* 豁免全应用「按钮按下统一 translateY(1px)」——眼睛按钮不参与下压 */
+        #login-card .pw-toggle:active:not(:disabled) { transform: none; }
         .pw-toggle .pw-eye { width: 18px; height: 18px; display: none; }
         .pw-toggle .pw-eye--off { display: block; }
         .pw-toggle[aria-pressed="true"] .pw-eye--off { display: none; }

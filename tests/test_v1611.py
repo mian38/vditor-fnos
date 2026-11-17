@@ -62,6 +62,13 @@ check('密码按钮为 inline SVG 眼睛图标（两态由 aria-pressed 驱动�
       and '.pw-toggle[aria-pressed="true"] .pw-eye--off' in html)
 check('输入框边框沿用原 UI（pw-field 仅调 padding-right 为图标留位）',
       'position: relative;' in html and 'padding-right: 42px !important;' in html)
+check('1.6.1.3：图标用 calc 定位且 margin:0，不依赖 transform 居中',
+      'top: calc(50% - 12px)' in html
+      and '#login-card .pw-toggle:active:not(:disabled) { transform: none; }' in html
+      and 'margin: 0;' in html
+      and 'transform: translateY(-50%)' not in html)
+check('1.6.1.3：input 改 block 消除行盒基线间隙',
+      '.pw-field input { display: block;' in html)
 
 # 4) 强确认输入守卫
 check('强确认守卫拦截 paste/copy/cut/drop/dragover/contextmenu/dragstart',

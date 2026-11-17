@@ -15,6 +15,27 @@
 
 ---
 
+## 1.6.1.3（2026-11-17）· 测试版（未发布）
+
+### 修复
+
+- **图标错位**（CDP 几何实证）：按钮 top=374.2 / 输入框 351.7–384.7，
+  中心低 18px——根因是 `#login-card button { margin-top:18px }`（登录主按钮的间距）
+  被眼睛按钮继承，absolute 定位再叠加该 margin。修：`margin: 0` 显式覆写；
+  `.pw-field input` 改 `display:block` 消除 inline-block 行盒基线间隙。
+- **按动弹跳**：全局 `.btn:active` 把 `transform` 改成 `translateY(1px)`，
+  覆盖图标原来的 `translateY(-50%)` 居中，实测按下瞬间 top 374.2→387.2。
+  修：改用 `top: calc(50% - 12px)` 纯定位（不依赖 transform），
+  并加 `#login-card .pw-toggle:active:not(:disabled) { transform: none }` 豁免下压。
+- 实测：按钮 top=356.2 / bottom=380.2 完全落在输入框 351.7–384.7 内；
+  normal / active / released 三态几何一致、transform 恒 none。
+
+### 测试
+
+- `test_v1611.py` 18 → 20 项（新增 calc 定位 / margin 归零 / input block 断言）。
+
+---
+
 ## 1.6.1.2（2026-11-17）· 测试版（未发布）
 
 **主题：登录按钮视觉对齐参考图 + 移除多余提示**
