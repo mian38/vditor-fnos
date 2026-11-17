@@ -386,7 +386,7 @@ check("存在 vditorReady 就绪标志", "let vditorReady = false;" in idx14)
 check("after() 内置 vditorReady = true", "vditorReady = true;" in idx14)
 check("destroyVditor 置 vditorReady = false", "vditorReady = false;" in idx14)
 check("after() 先置就绪再 setContent（避免内容被误丢）",
-      re.search(r"vditorReady = true;\s*\n\s*setContent\(initial\);", idx14) is not None)
+      re.search(r"vditorReady = true;\s*\n\s*setContent\(initial(?:, true)?\);", idx14) is not None)
 check("getContent 未就绪时返回空串而非抛错",
       re.search(r"if \(!vditor \|\| !vditorReady\) return '';", idx14) is not None)
 check("getContent 带 try-catch 兜底",
@@ -398,7 +398,7 @@ check("1.5.0 updateRawModeBtn 不再触碰 Vditor API（改用 docBaseBytes，�
       "else if (vditorReady && vditor) len = (getContent() || '').length;" not in idx14
       and "b.hidden = !(currentPath && isBigDoc());" in idx14)
 check("exitRawMode 不再直调 vditor.setValue（改走 setContent 守卫）",
-      re.search(r"function exitRawMode\(\)[\s\S]*?if \(vditor\) \{ pendingRichText = text; setContent\(text\); \}",
+      re.search(r"function exitRawMode\(\)[\s\S]*?if \(vditor\) \{ pendingRichText = text; setContent\(text(?:, true)?\); \}",
                 idx14) is not None)
 check("端到端回归测试已内置（探针 14）",
       "1.4.3 端到端：initEditorAndFiles 完整绑定" in
