@@ -15,93 +15,67 @@
 
 ---
 
-## 1.6.1.3（2026-11-17）· 测试版（未发布）
+## 1.6.1（2026-11-17）· 正式版
 
-### 修复
+**主题：撤销栈污染 / 撤销滚动归零 / 密码可见性 / 强确认输入防绕过（1.6.0 基础上修 bug 与细节优化，升 z 位 1.6.0 → 1.6.1）**
 
-- **图标错位**（CDP 几何实证）：按钮 top=374.2 / 输入框 351.7–384.7，
-  中心低 18px——根因是 `#login-card button { margin-top:18px }`（登录主按钮的间距）
-  被眼睛按钮继承，absolute 定位再叠加该 margin。修：`margin: 0` 显式覆写；
-  `.pw-field input` 改 `display:block` 消除 inline-block 行盒基线间隙。
-- **按动弹跳**：全局 `.btn:active` 把 `transform` 改成 `translateY(1px)`，
-  覆盖图标原来的 `translateY(-50%)` 居中，实测按下瞬间 top 374.2→387.2。
-  修：改用 `top: calc(50% - 12px)` 纯定位（不依赖 transform），
-  并加 `#login-card .pw-toggle:active:not(:disabled) { transform: none }` 豁免下压。
-- 实测：按钮 top=356.2 / bottom=380.2 完全落在输入框 351.7–384.7 内；
-  normal / active / released 三态几何一致、transform 恒 none。
-
-### 测试
-
-- `test_v1611.py` 18 → 20 项（新增 calc 定位 / margin 归零 / input block 断言）。
-
----
-
-## 1.6.1.2（2026-11-17）· 测试版（未发布）
-
-**主题：登录按钮视觉对齐参考图 + 移除多余提示**
-
-### 优化
-
-- 密码显示按钮由「显示/隐藏」文字改为 inline SVG 眼睛图标（闭眼/睁眼两态，
-  `aria-pressed` 驱动），绝对定位到输入框右端内缘、24×24px、无边框背景；
-  输入框边框沿用原 UI，仅 `padding-right` 为图标留位。
-- 优先级坑：`#login-card button` 会把按钮拉成整行宽，必须用
-  `#login-card .pw-toggle` 覆写（同一类坑见 1.5.0.4 白底按钮被染蓝）。
-
-### 更改
-
-- 二次确认框去掉 `BIGDOC_INPUT_HINT` 常驻文案及 HTML 初始文案；
-  仅保留「与文件名不一致，请原样输入」的错误反馈（输入不符时才出现）。
-  输入守卫（禁粘贴/拖入/复制/组合键）本身不变。
-
-### 验证
-
-- `test_v1611.py` 18 项全绿（新增图标两态、优先级覆写、文案移除断言）；
-  CDP 实测按钮 24×24、边框 `1px rgb(48,54,61)` 不变、两态切换正确。
-
----
-
-## 1.6.1.1（2026-11-17）· 测试版（未发布）
-
-**主题：撤销栈污染 / 撤销滚动归零 / 密码可见性 / 强确认输入防绕过**
+> 本版经 3 轮迭代（1.6.1.1 → 1.6.1.3）。以下按主题合并，逐轮原始记录见 git 历史
+> 与 `releases/` 对应测试包。
 
 ### 新增
 
 1. **密码显示切换**（`index.html`）：登录、首次设置、确认密码三个输入框右侧各挂
-   `btn btn--ghost pw-toggle` 按钮，切换 `input.type` 为 `text/password`，同步
-   `aria-pressed` / `aria-label` / 文案并把焦点还给输入框；不触发提交。
+   inline SVG 眼睛图标（闭眼 / 睁眼两态，`aria-pressed` 驱动 CSS 切换），
+   点击切换 `input.type`，焦点回到输入框、不触发提交。按钮 24×24、无文字无边框，
+   输入框边框沿用原 UI（仅 `padding-right` 留位）。
 
 ### 修复
 
 1. **Ctrl+Z 回退到上一个文件内容**（CDP 实证）
 
-   - 根因：`setContent()` 用 `vditor.setValue(t, false)`，Vditor 的 `setValue`
-     内部对三模式一律 `enableAddUndoStack:!0`，第二参只控制 `clearStack()`——
-     传 false 意味着**保留历史**，于是每次打开文档都把整篇内容压进撤销栈。
-     实测打开 A 后栈长 2、打开 B 后栈长 3；无编辑 Ctrl+Z 即 pop 掉「打开 B」那步，
-     内容变回 A，而 `currentPath/currentName` 仍是 B。
-   - 修法：`setContent(text, resetUndo)`，打开 / 新建 / 删除 / 恢复历史 / 模式切换
-     共 6 处传 `true` → `vditor.setValue(t, true)`（clearStack）；查找替换保持默认
-     `false`，用户主动编辑仍可撤销。实测打开 A→B 栈长恒为 1，无编辑 Ctrl+Z 内容不变。
+   - 根因：`setContent()` 原用 `vditor.setValue(t, false)`，Vditor 内部一律
+     `enableAddUndoStack:true`，第二参只控制 `clearStack()`——传 false 意味着保留历史，
+     于是每次打开文档都把整篇内容压进撤销栈。实测打开 A→B 栈长 2→3；
+     无编辑 Ctrl+Z 即 pop 掉「打开 B」，内容变回 A 而文件名仍是 B。
+   - 修法：`setContent(text, resetUndo)`，打开 / 新建 / 删除 / 恢复历史 / 切模式
+     共 6 处传 `true`（clearStack）；查找替换保持默认，用户主动编辑仍可撤销。
+     实测 A→B 栈长恒为 1，无编辑 Ctrl+Z 内容不变。
 
 2. **撤销后滚动跳位**
 
    - 根因：Vditor `renderDiff()` 用 `element.innerHTML = r` 整体替换编辑区，
-     浏览器重建布局后 `scrollTop` 归零（实测 1200 → 0，文档高 4904px / 视口 676px）。
+     浏览器重建布局后 scrollTop 归零（实测 1200 → 0，文档高 4904px / 视口 676px）。
    - 修法：持续记录用户主动滚动位置 `undoScrollTop`，仅在 Ctrl+Z/Y 后 600ms 窗口内，
-     用 MutationObserver 捕获编辑区宿主内的 `childList` 变动并 rAF 写回；
-     打开新文档时 `resetUndoScroll()` 归零。实测撤销后 `0 → 1200` 恢复。
+     用 MutationObserver 捕获编辑区宿主内 `childList` 变动并 rAF 写回；
+     打开新文档 `resetUndoScroll()` 归零。实测撤销后 0 → 1200 恢复。
+
+3. **图标错位与按动弹跳**
+
+   - 错位根因（CDP 几何实测）：`#login-card button { margin-top:18px }` 被 absolute
+     的眼睛按钮继承，定位基准再下移 18px（`top=374.2` vs 输入框 `351.7–384.7`）；
+     `input` 为 inline-block 又引入行盒基线间隙。修法：`margin:0` 覆写 +
+     `.pw-field input` 改 `display:block`。
+   - 弹跳根因：全局 `.btn:active` 把 `transform` 改为 `translateY(1px)`，
+     覆盖图标居中用的 `translateY(-50%)`，按下瞬移 13px、松手弹回。
+     修法：改 `top: calc(50% - 12px)` 纯定位，豁免该按钮的 active 下压。
+   - 实测：按钮 `356.2–380.2` 完全落在输入框内，normal / active / released 三态一致。
 
 ### 更改
 
-- **强确认输入框只允许逐字键入**：原先仅 `onpaste="return false"`，拖入仍可绕过。
-  现拦截 `paste/copy/cut/drop/dragover/dragstart/contextmenu`、组合键，
-  并在 `beforeinput` 只放行 `insertText` / `insertCompositionText` / 删除类；
-  文字仍可选中以便校对。提示语常驻说明限制。
+- **强确认输入框只允许逐字键入**：原先仅 `onpaste="return false"`，拖入可绕过。
+  现拦截 `paste/copy/cut/drop/dragover/dragstart/contextmenu` 与 Ctrl/Cmd/Alt 组合键，
+  `beforeinput` 只放行 `insertText` / `insertCompositionText` / 删除类；
+  文字仍可选中以便校对。去掉「请逐字手动输入文件名」常驻提示，
+  仅保留「与文件名不一致，请原样输入」的错误反馈。
 
-### 测试
+### 测试与审计
 
-- 新增 `test_v1611.py`（15 项）并登记 CASES；CDP 实测覆盖三种交互。
+- 新增 `test_v1611.py`（20 项，登记进 CASES），覆盖撤销栈 / 滚动 / 图标 / 守卫；
+  修正 `test_v141_net.py` 两条静态断言以兼容 `setContent` 新增参数。
+- 发布前审计：JS 143 函数 0 死代码、CSS 128 类无真死规则、Python 18 文件
+  0 未用 import 且 SPDX 齐全、测试 17/17 登记、版本两源一致；
+  清理过时测试说明（1.6.1.x 三段描述合并为 1.6.1 系列）。
+- 全量门禁 17/17 通过；CDP 实证覆盖三类交互。
 
 ---
 

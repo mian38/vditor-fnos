@@ -36,7 +36,7 @@ CASES = [
     ("test_concurrent_save.py", True, "并发保存防回归：SAVE_LOCK + 原子写（1.6.0）"),
     ("test_v160_frontend.js",  True, "1.6.0 前端：顶栏文件名自适应 + 查找替换（vm 驱动真实脚本）"),
     ("test_v150_settings.py",  True, "1.5.0 设置面板：文案/自动保存开关/保存快照/渲染阈值/折叠"),
-    ("test_v1611.py",         True, "1.6.1.1：撤销栈污染/滚动保留/密码显示/强确认输入守卫"),
+    ("test_v1611.py",         True, "1.6.1 系列：撤销栈/滚动/密码显示/强确认守卫/图标定位"),
     ("test_single_session.py", True, "单活会话（后登踢先登）：1.6.0.2 start_session 踢出旧会话"),
     ("test_e2e_http.py",      True,  "端到端：按浏览器调用顺序驱动 HTTP 接口"),
     ("test_perf.py",          False, "性能基线"),

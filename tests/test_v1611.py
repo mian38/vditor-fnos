@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 mian38
 # SPDX-License-Identifier: MIT
-"""1.6.1.1 专项测试：撤销栈污染修复 / 撤销滚动保留 / 密码显示按钮 / 强确认输入守卫。
+"""1.6.1 系列专项测试：撤销栈污染 / 撤销滚动 / 密码显示按钮 / 强确认输入守卫 / 图标定位。
 
 静态断言 + 轻量 DOM 桩，不拉起真实服务；行为层由 CDP 实证覆盖（见 daily log）。
 """
@@ -24,7 +24,7 @@ def check(name, cond, detail=''):
         failed += 1
         print('  FAIL ', name, detail)
 
-print('== 1.6.1.1 静态断言 ==')
+print('== 1.6.1 系列静态断言 ==')
 code = re.search(r'<script>([\s\S]*?)</script>', html).group(1)
 
 # 1) setContent 的 resetUndo 语义
