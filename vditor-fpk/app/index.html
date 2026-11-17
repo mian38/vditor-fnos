@@ -491,20 +491,27 @@
             padding: 7px 10px; outline: none;
             transition: border-color .15s, box-shadow .15s;
         }
-        /* 1.6.1.1：登录 / 首次设置的密码「显示内容」按钮。输入框保持整行宽度，
-           按钮绝对定位到输入框右侧内缘；聚焦态由输入框 ::focus 的焦点环统一呈现，
-           按钮自身仍保留 :focus-visible 键盘焦点环（见 .btn 通用规则）。 */
+        /* 1.6.1.2：改为截图样式——无文字、无边框的圆形眼睛图标，浮在输入框右侧。
+           两态用 inline SVG（零依赖）：闭眼=不可见（初始）、睁眼=可见。
+           aria-pressed 由 JS 同步，仅作语义/测试用；视觉由 .pw-eye--on/off 切换。 */
         .pw-field { position: relative; }
-        .pw-field input { width: 100%; box-sizing: border-box; padding-right: 44px !important; }
-        .pw-toggle {
-            position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-            min-width: 34px; height: 30px; padding: 0 8px;
-            font-size: var(--fs-sm); line-height: 1;
-            background: transparent; border-color: transparent; color: var(--c-text-3);
+        .pw-field input { width: 100%; box-sizing: border-box; padding-right: 42px !important; }
+        /* 优先级：#login-card button（ID+元素=101）高于 .pw-toggle（类=10），
+           必须用 #login-card .pw-toggle 覆写，否则按钮会被拉成整行宽
+           （1.5.0.4 白底按钮被染蓝的同类坑）。 */
+        #login-card .pw-toggle {
+            position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+            display: flex; align-items: center; justify-content: center;
+            width: 24px; height: 24px; min-width: 0; padding: 0;
+            border: 0; border-radius: 50%; background: transparent;
+            color: var(--c-text-3); cursor: pointer;
+            transition: color .15s, background .15s;
         }
-        .pw-toggle:hover:not(:disabled) {
-            background: var(--c-bg-fill); border-color: var(--c-border); color: var(--c-text-2);
-        }
+        #login-card .pw-toggle:hover:not(:disabled) { background: transparent; color: var(--c-text-2); }
+        .pw-toggle .pw-eye { width: 18px; height: 18px; display: none; }
+        .pw-toggle .pw-eye--off { display: block; }
+        .pw-toggle[aria-pressed="true"] .pw-eye--off { display: none; }
+        .pw-toggle[aria-pressed="true"] .pw-eye--on { display: block; }
         /* 弹层内的文本框占满整行（此前靠行内 style 实现，现收敛到类） */
         .modal-card .set-input { width: 100%; box-sizing: border-box; }
         /* 删除文档强确认的「输入文件名」：这道确认的意义是让用户亲手核对文件名，
@@ -1194,19 +1201,19 @@
             <label>设置管理员密码（至少 6 位）</label>
             <div class="pw-field">
                 <input id="setup-pw" type="password" placeholder="请输入新密码" autocomplete="new-password">
-                <button id="setup-pw-toggle" class="btn btn--ghost pw-toggle" type="button" aria-label="显示密码" aria-pressed="false" title="显示密码">显示</button>
+                <button id="setup-pw-toggle" class="btn btn--ghost pw-toggle" type="button" aria-label="显示密码" aria-pressed="false" title="显示密码"><svg class="pw-eye pw-eye--off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg><svg class="pw-eye pw-eye--on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M4 20L20 4" stroke="currentColor"/></svg></button>
             </div>
             <label>确认密码</label>
             <div class="pw-field">
                 <input id="setup-pw2" type="password" placeholder="再次输入密码" autocomplete="new-password">
-                <button id="setup-pw2-toggle" class="btn btn--ghost pw-toggle" type="button" aria-label="显示密码" aria-pressed="false" title="显示密码">显示</button>
+                <button id="setup-pw2-toggle" class="btn btn--ghost pw-toggle" type="button" aria-label="显示密码" aria-pressed="false" title="显示密码"><svg class="pw-eye pw-eye--off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg><svg class="pw-eye pw-eye--on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M4 20L20 4" stroke="currentColor"/></svg></button>
             </div>
         </div>
         <div id="login-fields">
             <label>访问密码</label>
             <div class="pw-field">
                 <input id="login-pw" type="password" placeholder="请输入访问密码" autocomplete="current-password">
-                <button id="login-pw-toggle" class="btn btn--ghost pw-toggle" type="button" aria-label="显示密码" aria-pressed="false" title="显示密码">显示</button>
+                <button id="login-pw-toggle" class="btn btn--ghost pw-toggle" type="button" aria-label="显示密码" aria-pressed="false" title="显示密码"><svg class="pw-eye pw-eye--off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg><svg class="pw-eye pw-eye--on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M4 20L20 4" stroke="currentColor"/></svg></button>
             </div>
         </div>
         <button id="login-btn" class="btn btn--primary">进入</button>
@@ -1543,7 +1550,7 @@
         <p class="sub" style="margin:6px 0 4px;font-weight:600;word-break:break-all;" id="bigdoc-name"></p>
         <input type="text" id="bigdoc-input" class="set-input" autocomplete="off" spellcheck="false"
                onpaste="return false" placeholder="在此输入文件名">
-        <p class="sub" id="bigdoc-hint" style="margin-top:6px;">请逐字手动输入文件名；不支持粘贴、拖入或快捷键填入</p>
+        <p class="sub" id="bigdoc-hint" style="margin-top:6px;"></p>
         <div class="set-foot">
             <button class="btn btn--ghost" id="bigdoc-ok" disabled>确认</button>
             <button class="btn btn--primary" id="bigdoc-cancel">取消</button>
@@ -3805,7 +3812,6 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
     let _bigDocName = '';         // 期望输入的文件名
     // 1.6.1.1：强确认输入框只允许逐字手动输入——「复制/粘贴/拖入/自动填充」
     // 全部封死。仅保留普通键入、输入法组合与删除键；文字仍可选中以便校对。
-    const BIGDOC_INPUT_HINT = '请逐字手动输入文件名；不支持粘贴、拖入或快捷键填入';
     (function initTypedConfirmGuard() {
         const inp = document.getElementById('bigdoc-input');
         if (!inp) return;
@@ -3842,7 +3848,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         ok.className = 'btn ' + ((opts && opts.danger) ? 'btn--danger' : 'btn--ghost');
         const inp = document.getElementById('bigdoc-input');
         inp.value = '';
-        document.getElementById('bigdoc-hint').textContent = BIGDOC_INPUT_HINT;
+        document.getElementById('bigdoc-hint').textContent = '';
         document.getElementById('bigdoc-ok').disabled = true;
         document.getElementById('bigdoc-mask').style.display = 'flex';
         setTimeout(() => { try { inp.focus(); } catch (e) {} }, 30);
@@ -3858,8 +3864,7 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
         const hint = document.getElementById('bigdoc-hint');
         const match = (inp.value || '') === _bigDocName && _bigDocName !== '';
         ok.disabled = !match;
-        if (!match && inp.value) hint.textContent = BIGDOC_INPUT_HINT + '；与文件名不一致，请原样输入';
-        else hint.textContent = BIGDOC_INPUT_HINT;
+        hint.textContent = (!match && inp.value) ? '与文件名不一致，请原样输入' : '';
     }
 
     /* ---------- 超过 10MB 的文档：普通二次确认（1.5.0.6） ----------
@@ -5185,7 +5190,8 @@ https://v.qq.com/x/cover/zf2z0xpqcculhcz/y0016tj0qvh.html
             btn.addEventListener('click', function () {
                 const show = input.type === 'password';
                 input.type = show ? 'text' : 'password';
-                btn.textContent = show ? '隐藏' : '显示';
+                // 1.6.1.2：图标由 aria-pressed 驱动 CSS 切换，不再写 textContent
+                //（会抹掉按钮内的 SVG）；文案只留在 title / aria-label 中供辅助技术使用。
                 btn.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
                 btn.setAttribute('aria-pressed', show ? 'true' : 'false');
                 btn.title = show ? '隐藏密码' : '显示密码';

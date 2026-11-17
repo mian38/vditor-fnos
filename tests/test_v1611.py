@@ -52,10 +52,16 @@ for pid in ['login-pw', 'setup-pw', 'setup-pw2']:
     check('%s 有显示/隐藏按钮且初始 type=password' % pid, m is not None)
 check('三个密码切换按钮均挂 btn btn--ghost 变体',
       len(re.findall(r'class="btn btn--ghost pw-toggle"', html)) == 3)
-check('切换逻辑含 aria-pressed / 显示隐藏文案 / 焦点回输入框',
+check('切换逻辑含 aria-pressed / 图标态切换 / 焦点回输入框（1.6.1.2 改 SVG 图标，不再写 textContent）',
       "btn.setAttribute('aria-pressed', show ? 'true' : 'false')" in code
-      and "btn.textContent = show ? '隐藏' : '显示'" in code
-      and 'input.focus()' in code)
+      and 'input.focus()' in code
+      and "btn.textContent = show ?" not in code)
+check('密码按钮为 inline SVG 眼睛图标（两态由 aria-pressed 驱动）',
+      html.count('class="pw-eye pw-eye--off"') == 3
+      and html.count('class="pw-eye pw-eye--on"') == 3
+      and '.pw-toggle[aria-pressed="true"] .pw-eye--off' in html)
+check('输入框边框沿用原 UI（pw-field 仅调 padding-right 为图标留位）',
+      'position: relative;' in html and 'padding-right: 42px !important;' in html)
 
 # 4) 强确认输入守卫
 check('强确认守卫拦截 paste/copy/cut/drop/dragover/contextmenu/dragstart',
@@ -66,9 +72,10 @@ check('beforeinput 仅放行逐字键入/输入法组合/删除',
       and "if (!allowed) e.preventDefault()" in code)
 check('组合键（Ctrl/Cmd/Alt）一律拦截',
       'if (e.ctrlKey || e.metaKey || e.altKey) e.preventDefault();' in code)
-check('输入框提示明确「逐字手动输入 / 不支持粘贴拖入」',
-      '请逐字手动输入文件名；不支持粘贴、拖入或快捷键填入' in html
-      and 'BIGDOC_INPUT_HINT' in code)
+check('1.6.1.2：二次确认不再显示「逐字手动输入」提示文案',
+      '请逐字手动输入文件名' not in html and 'BIGDOC_INPUT_HINT' not in code)
+check('强确认仍保留「与文件名不一致」的错误反馈',
+      "'与文件名不一致，请原样输入'" in code)
 
 print('\n结果: %d 通过, %d 失败' % (passed, failed))
 sys.exit(0 if failed == 0 else 1)
